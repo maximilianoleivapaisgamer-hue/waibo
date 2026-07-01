@@ -240,10 +240,21 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     const conversation = convResult.rows[0];
 
     if (conversation.channel === 'whatsapp') {
-      const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id FROM clients WHERE id = $1', [req.client.id]);
-      const { whatsapp_api_key: apiKey, whatsapp_provider, whatsapp_phone_id } = clientResult.rows[0] || {};
-      if (!apiKey) return res.status(400).json({ error: 'WhatsApp no está configurado para este negocio' });
-      await sendWhatsAppMessage(conversation.customer_phone, message, apiKey, { provider: whatsapp_provider || '360dialog', phoneNumberId: whatsapp_phone_id });
+      const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id, whatsapp_mode FROM clients WHERE id = $1', [req.client.id]);
+      const cr = clientResult.rows[0] || {};
+      if (cr.whatsapp_mode === 'qr') {
+        const QR_SERVICE_URL = process.env.QR_SERVICE_URL;
+        const SERVICE_SECRET = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+        if (!QR_SERVICE_URL) return res.status(400).json({ error: 'Servicio QR no disponible' });
+        const axios = require('axios');
+        await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/send`,
+          { to: conversation.customer_phone, message, secret: SERVICE_SECRET },
+          { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } }
+        );
+      } else {
+        if (!cr.whatsapp_api_key) return res.status(400).json({ error: 'WhatsApp no está configurado para este negocio' });
+        await sendWhatsAppMessage(conversation.customer_phone, message, cr.whatsapp_api_key, { provider: cr.whatsapp_provider || '360dialog', phoneNumberId: cr.whatsapp_phone_id });
+      }
 
     } else if (conversation.channel === 'instagram') {
       const igResult = await pool.query('SELECT access_token FROM instagram_tokens WHERE client_id = $1 AND active = true', [req.client.id]);

@@ -13,7 +13,9 @@ export default function Channels() {
   const [syncing, setSyncing] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const [whatsappExpanded, setWhatsappExpanded] = useState(null); // 'cloud_api' | '360dialog' | null
+  const [whatsappExpanded, setWhatsappExpanded] = useState(null); // 'cloud_api' | 'qr' | null
+  const [qrStatus, setQrStatus] = useState(null);
+  const [qrPolling, setQrPolling] = useState(null);
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
@@ -33,7 +35,8 @@ export default function Channels() {
     axios.get(`${API}/api/clients/me`, { headers: getHeaders() })
       .then(res => {
         setProfile(res.data);
-        if (res.data.whatsapp_provider) setWhatsappExpanded(res.data.whatsapp_provider);
+        if (res.data.whatsapp_mode === 'qr') setWhatsappExpanded('qr');
+        else if (res.data.whatsapp_provider === 'cloud_api') setWhatsappExpanded('cloud_api');
       })
       .catch(err => { if (err.response?.status === 401) router.push('/'); });
 
@@ -57,20 +60,6 @@ export default function Channels() {
     finally { setSaving(false); }
   };
 
-  const handleSave360 = async (e) => {
-    e.preventDefault();
-    setSaving(true);
-    try {
-      await axios.put(`${API}/api/clients/me`, {
-        whatsapp_api_key: profile.whatsapp_api_key,
-        whatsapp_provider: '360dialog'
-      }, { headers: getHeaders() });
-      setProfile({ ...profile, whatsapp_provider: '360dialog' });
-      showSuccess('✅ 360dialog configurado correctamente');
-    } catch { showError('Error guardando. Verificá los datos e intentá de nuevo.'); }
-    finally { setSaving(false); }
-  };
-
   const connectChannel = async (channel) => {
     try {
       const res = await axios.get(`${API}/api/${channel}/connect`, { headers: getHeaders() });
@@ -85,6 +74,38 @@ export default function Channels() {
     showSuccess(`${channel} desconectado`);
   };
 
+  const startQR = async () => {
+    try {
+      await axios.post(`${API}/api/whatsapp-qr/connect`, {}, { headers: getHeaders() });
+      setQrStatus({ status: 'starting', qr: null });
+      const interval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() });
+          setQrStatus(res.data);
+          if (res.data.status === 'connected') {
+            clearInterval(interval);
+            setQrPolling(null);
+            showSuccess('✅ WhatsApp conectado por QR');
+            const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+            setProfile(meRes.data);
+          }
+        } catch {}
+      }, 3000);
+      setQrPolling(interval);
+      setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 120000);
+    } catch { showError('No se pudo iniciar la conexión QR. Verificá que el servicio esté activo.'); }
+  };
+
+  const disconnectQR = async () => {
+    if (!confirm('¿Desconectar WhatsApp QR?')) return;
+    if (qrPolling) { clearInterval(qrPolling); setQrPolling(null); }
+    await axios.post(`${API}/api/whatsapp-qr/disconnect`, {}, { headers: getHeaders() });
+    setQrStatus(null);
+    const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+    setProfile(meRes.data);
+    showSuccess('WhatsApp QR desconectado');
+  };
+
   const syncTiendanube = async () => {
     setSyncing(true);
     try {
@@ -96,7 +117,9 @@ export default function Channels() {
     finally { setSyncing(false); }
   };
 
-  const isConnected = !!(profile?.whatsapp_api_key);
+  const isQRConnected = profile?.whatsapp_mode === 'qr';
+  const isCloudAPIConnected = !!(profile?.whatsapp_api_key) && profile?.whatsapp_provider === 'cloud_api';
+  const isConnected = isQRConnected || isCloudAPIConnected;
   const webhookUrl = `${API}/webhook/whatsapp/${profile?.id}`;
 
   if (!profile) return (
@@ -133,16 +156,87 @@ export default function Channels() {
               background: isConnected ? '#DCFCE7' : '#FEF3C7',
               color: isConnected ? '#15803D' : '#92400E'
             }}>
-              {isConnected
-                ? (profile.whatsapp_provider === 'cloud_api' ? '✅ Cloud API activa' : '✅ 360dialog activo')
-                : '⚠️ Sin configurar'}
+              {isQRConnected ? '✅ WhatsApp Lite activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
             </span>
           </div>
 
-          {/* ── Opción 1: Cloud API (Recomendado) ── */}
+          {/* ── Opción 1: WhatsApp Lite (QR) ── */}
+          <div style={{
+            border: `2px solid ${whatsappExpanded === 'qr' ? '#F59E0B' : 'var(--border)'}`,
+            borderRadius: 12, overflow: 'hidden', marginBottom: 12
+          }}>
+            <button
+              onClick={() => setWhatsappExpanded(whatsappExpanded === 'qr' ? null : 'qr')}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
+                background: whatsappExpanded === 'qr' ? '#FFFBEB' : 'var(--bg)',
+                border: 'none', cursor: 'pointer', textAlign: 'left'
+              }}
+            >
+              <span style={{ fontSize: 22 }}>📲</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  WhatsApp Lite (QR)
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#FEF3C7', color: '#92400E', fontWeight: 600 }}>
+                    ⚠️ Canal no oficial
+                  </span>
+                  {isQRConnected && (
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 600 }}>
+                      Activo
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Conectá tu número escaneando un QR · Sin trámites · Listo en segundos
+                </div>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>{whatsappExpanded === 'qr' ? '▲' : '▼'}</span>
+            </button>
+
+            {whatsappExpanded === 'qr' && (
+              <div style={{ padding: '0 16px 20px' }}>
+                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: 12, margin: '14px 0', fontSize: 13, color: '#92400E' }}>
+                  ⚠️ <strong>Canal no oficial.</strong> WhatsApp puede desconectar o bloquear el número en cualquier momento sin previo aviso, ya que esta modalidad no está avalada por Meta. Usala para empezar y testear mientras tramitás la Cloud API oficial. Tus conversaciones y la configuración del bot se conservan si después migrás.
+                </div>
+
+                {isQRConnected ? (
+                  <div>
+                    <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
+                      ✅ <strong>WhatsApp conectado por QR</strong> — el bot está activo en este número.
+                    </div>
+                    <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
+                      🔌 Desconectar
+                    </button>
+                  </div>
+                ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
+                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <p style={{ fontSize: 13, marginBottom: 12 }}>
+                      Abrí WhatsApp en tu celular → <strong>Configuración → Dispositivos vinculados → Vincular dispositivo</strong> y escaneá este código:
+                    </p>
+                    <img src={qrStatus.qr} alt="QR WhatsApp" style={{ width: 220, height: 220, borderRadius: 12, border: '2px solid var(--border)' }} />
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10 }}>El código expira en 60 segundos — si caduca, hacé clic en Conectar de nuevo.</p>
+                  </div>
+                ) : qrStatus?.status === 'starting' || qrStatus?.status === 'connecting' ? (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>
+                    🔄 Generando código QR...
+                  </div>
+                ) : (
+                  <button
+                    onClick={startQR}
+                    className="btn btn-primary"
+                    style={{ width: 'auto', padding: '10px 20px', background: '#F59E0B', borderColor: '#F59E0B' }}
+                  >
+                    📲 Conectar por QR
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Opción 2: Cloud API (Oficial) ── */}
           <div style={{
             border: `2px solid ${whatsappExpanded === 'cloud_api' ? 'var(--green)' : 'var(--border)'}`,
-            borderRadius: 12, marginBottom: 12, overflow: 'hidden'
+            borderRadius: 12, overflow: 'hidden'
           }}>
             <button
               onClick={() => setWhatsappExpanded(whatsappExpanded === 'cloud_api' ? null : 'cloud_api')}
@@ -154,19 +248,19 @@ export default function Channels() {
             >
               <span style={{ fontSize: 22 }}>🟢</span>
               <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  WhatsApp Cloud API — Meta directo
+                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  WhatsApp Cloud API — Meta oficial
                   <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#15803D', color: 'white', fontWeight: 600 }}>
-                    ✅ Recomendado
+                    ✅ Oficial
                   </span>
-                  {profile.whatsapp_provider === 'cloud_api' && isConnected && (
+                  {isCloudAPIConnected && (
                     <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 600 }}>
                       Activo
                     </span>
                   )}
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Gratis hasta 1.000 conversaciones/mes · Sin intermediarios · La opción oficial de Meta
+                  Gratis hasta 1.000 conversaciones/mes · Sin intermediarios · Estabilidad garantizada por Meta
                 </div>
               </div>
               <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>{whatsappExpanded === 'cloud_api' ? '▲' : '▼'}</span>
@@ -174,21 +268,20 @@ export default function Channels() {
 
             {whatsappExpanded === 'cloud_api' && (
               <div style={{ padding: '0 16px 20px' }}>
-                {/* Instrucciones */}
                 <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
                   <div style={{ fontWeight: 700, marginBottom: 10, color: '#15803D' }}>📋 Cómo configurar — paso a paso</div>
                   <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 2 }}>
                     <li>Entrá a <strong>developers.facebook.com</strong> e iniciá sesión con tu cuenta de Facebook.</li>
-                    <li>Creá una nueva app → elegí tipo <strong>"Business"</strong> → dale un nombre.</li>
-                    <li>Dentro de la app, buscá el producto <strong>"WhatsApp"</strong> y hacé clic en <strong>"Configurar"</strong>.</li>
-                    <li>En el panel de WhatsApp, vas a ver tu <strong>Phone Number ID</strong> — copialo y pegalo abajo.</li>
-                    <li>Creá un <strong>Token de acceso permanente</strong>: andá a Configuración → Avanzada → Token de acceso de sistema, o desde el panel de WhatsApp → generá un token con permisos <code>whatsapp_business_messaging</code>.</li>
-                    <li>Pegá ese token en el campo <strong>"Access Token"</strong> de abajo.</li>
-                    <li>En la sección <strong>Webhooks</strong> de tu app, configurá la URL de webhook que aparece más abajo y el token de verificación: <code>whabot2024</code>.</li>
-                    <li>Suscribite al evento <strong>messages</strong> y ¡listo!</li>
+                    <li>Necesitás una <strong>cuenta de Meta Business</strong>. Si no tenés, creala gratis en <strong>business.facebook.com</strong> → "Crear cuenta" → ingresá el nombre de tu empresa (ej: <em>"Panadería El Sol"</em>), tu nombre y tu email.</li>
+                    <li>En developers.facebook.com → <strong>"Mis apps" → "Crear app"</strong>. Cuando te pregunte el tipo, elegí <strong>"Business"</strong>. Dale un nombre descriptivo (ej: <em>"Bot WhatsApp Mi Negocio"</em>) y seleccioná tu cuenta de Meta Business.</li>
+                    <li>Dentro de la app, buscá el producto <strong>"WhatsApp"</strong> y hacé clic en <strong>"Configurar"</strong>. Aceptá las condiciones del servicio y seleccioná tu <strong>portfolio comercial</strong>. Hacé clic en <strong>"Continuar"</strong>.</li>
+                    <li>Meta te da automáticamente un <strong>número de prueba gratuito</strong> — usalo primero para verificar que el bot funciona. Después agregás tu número real desde <strong>"Registra tu número de teléfono"</strong>.</li>
+                    <li>En <strong>"Paso 1: Pruébalo"</strong>, vas a ver el <strong>Phone Number ID</strong> — copialo y pegalo en el campo de abajo.</li>
+                    <li>Generá un <strong>token de acceso temporal</strong> (para testear) o, para producción, andá a <strong>Configuración → Usuarios del sistema</strong> y creá un token permanente con el permiso <code>whatsapp_business_messaging</code>.</li>
+                    <li>Andá a <strong>"Paso 2: Configuración de producción" → "Configurar webhooks"</strong>. Pegá la URL del webhook de abajo, en el token de verificación escribí <code>whabot2024</code>, y hacé clic en <strong>"Verificar y guardar"</strong>. Después suscribite al evento <strong>messages</strong>.</li>
                   </ol>
                   <div style={{ marginTop: 10, padding: '8px 12px', background: '#DCFCE7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
-                    💡 <strong>Meta aprueba números de forma gratuita.</strong> Primero podés usar el número de prueba que te da Meta para testear, y después agregás tu número real.
+                    💡 <strong>Empezá con el número de prueba.</strong> Meta te lo da gratis y podés mandar mensajes a hasta 5 números para testear. Cuando todo funcione, agregás tu número real.
                   </div>
                 </div>
 
@@ -230,84 +323,9 @@ export default function Channels() {
               </div>
             )}
           </div>
-
-          {/* ── Opción 2: 360dialog ── */}
-          <div style={{
-            border: `2px solid ${whatsappExpanded === '360dialog' ? '#6366F1' : 'var(--border)'}`,
-            borderRadius: 12, overflow: 'hidden'
-          }}>
-            <button
-              onClick={() => setWhatsappExpanded(whatsappExpanded === '360dialog' ? null : '360dialog')}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
-                background: whatsappExpanded === '360dialog' ? '#EEF2FF' : 'var(--bg)',
-                border: 'none', cursor: 'pointer', textAlign: 'left'
-              }}
-            >
-              <span style={{ fontSize: 22 }}>🔵</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  360dialog
-                  {profile.whatsapp_provider === '360dialog' && isConnected && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EEF2FF', color: '#4338CA', fontWeight: 600 }}>
-                      Activo
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Intermediario oficial de WhatsApp · ~$8 USD/mes por número · Setup más rápido
-                </div>
-              </div>
-              <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>{whatsappExpanded === '360dialog' ? '▲' : '▼'}</span>
-            </button>
-
-            {whatsappExpanded === '360dialog' && (
-              <div style={{ padding: '0 16px 20px' }}>
-                {/* Instrucciones */}
-                <div style={{ background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 10, color: '#4338CA' }}>📋 Cómo configurar — paso a paso</div>
-                  <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 2 }}>
-                    <li>Entrá a <strong>360dialog.com</strong> y creá una cuenta.</li>
-                    <li>Registrá tu número de WhatsApp Business siguiendo su proceso de verificación (necesitás una cuenta de Meta Business y verificar el número).</li>
-                    <li>Una vez aprobado, andá a <strong>Panel → Integrations → API Keys</strong> y generá una API Key.</li>
-                    <li>Copiá esa API Key y pegala en el campo de abajo.</li>
-                    <li>En el panel de 360dialog, configurá el <strong>Webhook URL</strong> que aparece más abajo para que los mensajes lleguen a tu bot.</li>
-                  </ol>
-                  <div style={{ marginTop: 10, padding: '8px 12px', background: '#E0E7FF', borderRadius: 8, fontSize: 12, color: '#3730A3' }}>
-                    💡 <strong>Costo aproximado:</strong> ~$8 USD/mes por número. El proceso de aprobación suele tardar 1-3 días hábiles.
-                  </div>
-                </div>
-
-                <form onSubmit={handleSave360}>
-                  <div className="form-group">
-                    <label>API Key de 360dialog</label>
-                    <input
-                      type="password"
-                      placeholder="Tu clave de 360dialog"
-                      value={profile.whatsapp_api_key || ''}
-                      onChange={e => setProfile({ ...profile, whatsapp_api_key: e.target.value })}
-                    />
-                    <small style={{ fontSize: 12, color: 'var(--text-muted)' }}>La encontrás en 360dialog → Panel → Integrations → API Keys.</small>
-                  </div>
-
-                  <div style={{ background: '#EEF2FF', border: '1px solid #C7D2FE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                    <strong>🔗 URL de Webhook para 360dialog:</strong>
-                    <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: 'white', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', wordBreak: 'break-all' }}>
-                      {webhookUrl}
-                    </code>
-                    <small style={{ color: 'var(--text-muted)', display: 'block', marginTop: 6 }}>Copiá esta URL y configurala en el panel de 360dialog como tu webhook.</small>
-                  </div>
-
-                  <button className="btn btn-primary" type="submit" disabled={saving}
-                    style={{ width: 'auto', padding: '10px 24px', background: '#6366F1', borderColor: '#6366F1' }}>
-                    {saving ? 'Guardando...' : '💾 Guardar configuración 360dialog'}
-                  </button>
-                </form>
-              </div>
-            )}
-          </div>
         </div>
         {/* ──────────────── FIN WHATSAPP ──────────────── */}
+
 
         <ChannelCard
           icon="🏪" title="Tiendanube" subtitle="Sincroniza catálogo y genera links de compra directa"
