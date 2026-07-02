@@ -234,5 +234,84 @@ async function reactivateClient(clientId) {
   }
 }
 
-console.log('✅ Cronjobs iniciados (recordatorios + morosidad + limpieza + seguimientos)');
+// ── Retención de datos — 24 meses (cada domingo a las 3am) ────────────
+cron.schedule('0 3 * * 0', async () => {
+  const RETENTION_MONTHS = 24;
+  const cutoff = `NOW() - INTERVAL '${RETENTION_MONTHS} months'`;
+  let totalConversaciones = 0;
+  let totalMensajes = 0;
+  let totalTurnos = 0;
+  let totalPedidos = 0;
+  let totalVariables = 0;
+  let totalSeguimientos = 0;
+
+  console.log(`[Retención] Iniciando limpieza de datos con más de ${RETENTION_MONTHS} meses de antigüedad...`);
+
+  try {
+    // Conversaciones sin actividad en 24 meses
+    const convResult = await pool.query(
+      `SELECT id FROM conversations WHERE updated_at < ${cutoff}`
+    );
+    const convIds = convResult.rows.map(r => r.id);
+
+    if (convIds.length) {
+      // Borrar mensajes de esas conversaciones
+      const msgResult = await pool.query(
+        `DELETE FROM messages WHERE conversation_id = ANY($1::uuid[])`,
+        [convIds]
+      );
+      totalMensajes = msgResult.rowCount;
+
+      // Anonimizar la conversación (mantener registro para estadísticas)
+      const convAnon = await pool.query(
+        `UPDATE conversations
+         SET customer_phone = 'ELIMINADO', customer_name = 'ELIMINADO'
+         WHERE id = ANY($1::uuid[])`,
+        [convIds]
+      );
+      totalConversaciones = convAnon.rowCount;
+
+      // Borrar follow-ups asociados
+      const fuResult = await pool.query(
+        `DELETE FROM scheduled_followups WHERE conversation_id = ANY($1::uuid[])`,
+        [convIds]
+      );
+      totalSeguimientos = fuResult.rowCount;
+    }
+
+    // Turnos con más de 24 meses
+    const apptResult = await pool.query(
+      `DELETE FROM appointments WHERE created_at < ${cutoff}`
+    );
+    totalTurnos = apptResult.rowCount;
+
+    // Pedidos con más de 24 meses
+    const ordResult = await pool.query(
+      `DELETE FROM orders WHERE created_at < ${cutoff}`
+    );
+    totalPedidos = ordResult.rowCount;
+
+    // Variables de contacto cuya conversación ya fue anonimizada
+    const cvResult = await pool.query(
+      `DELETE FROM contact_variables
+       WHERE customer_phone = 'ELIMINADO'
+          OR updated_at < ${cutoff}`
+    );
+    totalVariables = cvResult.rowCount;
+
+    console.log(
+      `[Retención] Corrida completada:\n` +
+      `  Conversaciones anonimizadas : ${totalConversaciones}\n` +
+      `  Mensajes eliminados         : ${totalMensajes}\n` +
+      `  Turnos eliminados           : ${totalTurnos}\n` +
+      `  Pedidos eliminados          : ${totalPedidos}\n` +
+      `  Variables eliminadas        : ${totalVariables}\n` +
+      `  Seguimientos eliminados     : ${totalSeguimientos}`
+    );
+  } catch (err) {
+    console.error('[Retención] Error en cron de retención de datos:', err.message);
+  }
+});
+
+console.log('✅ Cronjobs iniciados (recordatorios + morosidad + limpieza + seguimientos + retención)');
 module.exports = { reactivateClient };
