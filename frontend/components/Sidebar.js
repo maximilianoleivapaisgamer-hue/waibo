@@ -1,4 +1,5 @@
 import { useRouter } from 'next/router';
+import Image from 'next/image';
 
 export default function Sidebar({ active }) {
   const router = useRouter();
@@ -49,7 +50,10 @@ export default function Sidebar({ active }) {
   return (
     <div className="sidebar">
       <div className="sidebar-logo">
-        <span>💬 Waibo</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <Image src="/waibo-icon.png" alt="Waibo" width={32} height={32} style={{ borderRadius: 8 }} />
+          <span style={{ fontWeight: 700, fontSize: 18 }}>Waibo</span>
+        </div>
         <small>v1.0.0 — Panel de control</small>
       </div>
       <nav>

@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import axios from 'axios';
+import Image from 'next/image';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -27,7 +28,7 @@ export default function SolicitarBaja() {
     <div className="auth-page">
       <div className="auth-card" style={{ maxWidth: 520 }}>
         <div className="auth-logo">
-          <div className="logo-icon">🔒</div>
+          <Image src="/waibo-logo.png" alt="Waibo" width={80} height={80} style={{ borderRadius: 20, marginBottom: 8 }} />
           <h1>Solicitud de baja de datos</h1>
           <p>Ejercé tu derecho de eliminación según la Ley 25.326</p>
         </div>

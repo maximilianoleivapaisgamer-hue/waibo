@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Link from 'next/link';
+import Image from 'next/image';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -31,7 +32,7 @@ export default function Login() {
     <div className="auth-page">
       <div className="auth-card">
         <div className="auth-logo">
-          <div className="logo-icon">💬</div>
+          <Image src="/waibo-logo.png" alt="Waibo" width={80} height={80} style={{ borderRadius: 20, marginBottom: 8 }} />
           <h1>Waibo</h1>
           <p>Iniciá sesión en tu panel</p>
         </div>
