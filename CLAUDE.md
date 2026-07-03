@@ -500,8 +500,8 @@ Cada cliente tiene `whatsapp_provider` ('cloud_api'|'360dialog') y `whatsapp_mod
 | Retención automática 24 meses | ✅ Cron dominical 3am en `services/cronjobs.js` |
 | Cifrado de tokens OAuth | ✅ AES-256-GCM en `services/crypto.js` |
 | Cifrado de datos de usuarios | ⏳ Cubierto por cifrado en disco de Railway |
-| Formulario web de solicitud de baja | ⚠️ Solo por email a privacidad@waibochat.com |
-| Logs de cumplimiento de solicitudes | ⚠️ El script genera output — guardar manualmente |
+| Formulario web de solicitud de baja | ✅ `/solicitar-baja` en el frontend — guarda en DB + log |
+| Logs de cumplimiento de solicitudes | ✅ `backend/logs/compliance/` — automático en script y endpoint |
 
 ### Emails de contacto
 - Soporte: hola@waibochat.com
@@ -621,11 +621,11 @@ SERVICE_SECRET=whabot_qr_secret_2024
 
 ### Alta prioridad
 - [ ] **Tunnel nombrado permanente de Cloudflare** — hoy la URL del tunnel QR cambia en cada reinicio y hay que actualizar `QR_SERVICE_URL` en Railway a mano
-- [ ] **Auto-restauración de sesiones QR al reiniciar** — hoy hay que ir a Canales → Conectar manualmente después de cada reinicio del microservicio
+- [x] ~~Auto-restauración de sesiones QR al reiniciar~~ — resuelto: el microservicio restaura las sesiones guardadas en `/sessions/` automáticamente al arrancar
 
 ### Media prioridad
-- [ ] Formulario web de baja de datos en waibochat.com/privacidad (hoy solo por email)
-- [ ] Logs persistentes de cumplimiento de solicitudes de baja (hoy es copy/paste del output del script)
+- [x] ~~Formulario web de baja de datos~~ — resuelto: `/solicitar-baja` en el frontend, guarda en `data_deletion_requests` + log en disco
+- [x] ~~Logs persistentes de solicitudes de baja~~ — resuelto: `backend/logs/compliance/` con timestamp, tanto desde el script como desde el endpoint web
 - [ ] App de Meta propia para que clientes conecten WhatsApp Cloud API sin crear su propia app de Developer
 - [ ] App de Mercado Libre propia para OAuth de un clic
 
