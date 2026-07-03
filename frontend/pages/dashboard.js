@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -109,7 +109,7 @@ export default function Dashboard() {
                   style={{
                     display: 'flex', alignItems: 'center', gap: 10, padding: '8px 10px',
                     borderRadius: 8, cursor: step.done ? 'default' : 'pointer',
-                    background: step.done ? '#F0FDF4' : 'var(--bg)'
+                    background: step.done ? '#F5F3FF' : 'var(--bg)'
                   }}
                 >
                   <span style={{ fontSize: 16 }}>{step.done ? '✅' : '⬜'}</span>
@@ -215,7 +215,7 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="card" style={{ background: '#F0FDF4', border: '1px solid #BBF7D0' }}>
+        <div className="card" style={{ background: '#F5F3FF', border: '1px solid #DDD6FE' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ fontSize: 32 }}>🚀</div>
             <div>

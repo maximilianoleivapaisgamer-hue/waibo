@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -238,7 +238,7 @@ export default function Conversations() {
                     className="conv-item"
                     onClick={() => loadMessages(conv)}
                     style={{
-                      background: selected?.id === conv.id ? '#F0FDF4' : 'transparent',
+                      background: selected?.id === conv.id ? '#F5F3FF' : 'transparent',
                       borderRadius: 8,
                       padding: '12px 8px',
                       borderBottom: '1px solid var(--border)'

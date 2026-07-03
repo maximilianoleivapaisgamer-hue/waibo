@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -10,7 +10,7 @@ const STATUS_LABELS = { pendiente: '🆕 Pendiente', preparando: '👨‍🍳 Pr
 const STATUS_COLORS = {
   pendiente: { bg: '#FEF3C7', color: '#92400E' },
   preparando: { bg: '#DBEAFE', color: '#1D4ED8' },
-  listo: { bg: '#DCFCE7', color: '#15803D' },
+  listo: { bg: '#EDE9FE', color: '#5B21B6' },
   entregado: { bg: '#F3F4F6', color: '#6B7280' },
   cancelado: { bg: '#FEE2E2', color: '#DC2626' },
 };

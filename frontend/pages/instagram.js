@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -117,7 +117,7 @@ export default function Instagram() {
             </div>
             {status?.connected ? (
               <>
-                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 500 }}>✅ Conectado</span>
+                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 500 }}>✅ Conectado</span>
                 <button onClick={disconnectInstagram} className="btn btn-secondary" style={{ width: 'auto', fontSize: 12 }}>Desconectar</button>
               </>
             ) : (
@@ -181,7 +181,7 @@ export default function Instagram() {
                       <div style={{ fontSize: 12, background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 8, padding: '7px 11px' }}>
                         <strong>🌐 Respuesta pública:</strong> {c.public_reply}
                       </div>
-                      <div style={{ fontSize: 12, background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 8, padding: '7px 11px' }}>
+                      <div style={{ fontSize: 12, background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 8, padding: '7px 11px' }}>
                         <strong>📩 DM abierto:</strong> {c.dm_sent}
                       </div>
                     </div>

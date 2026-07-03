@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -128,7 +128,7 @@ export default function MercadoLibre() {
                 </div>
                 {status?.connected ? (
                   <>
-                    <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 500 }}>✅ Conectado</span>
+                    <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 500 }}>✅ Conectado</span>
                     <button onClick={disconnectML} className="btn btn-secondary" style={{ width: 'auto', fontSize: 12 }}>Desconectar</button>
                   </>
                 ) : (
@@ -194,7 +194,7 @@ export default function MercadoLibre() {
                 <div style={{ fontSize: 13, marginBottom: 6, background: 'var(--bg)', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)' }}>
                   <strong>Pregunta:</strong> "{q.question_text}"
                 </div>
-                <div style={{ fontSize: 13, background: '#F0FDF4', padding: '8px 11px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                <div style={{ fontSize: 13, background: '#F5F3FF', padding: '8px 11px', borderRadius: 8, border: '1px solid #DDD6FE' }}>
                   <strong>🤖 Respuesta:</strong> "{q.answer_text}"
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
@@ -218,7 +218,7 @@ export default function MercadoLibre() {
               <div key={o.id} className="card" style={{ marginBottom: 10 }}>
                 <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Orden #{o.order_id} — {o.buyer_name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Producto: {o.item_title}</div>
-                <div style={{ fontSize: 13, background: '#F0FDF4', padding: '8px 11px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                <div style={{ fontSize: 13, background: '#F5F3FF', padding: '8px 11px', borderRadius: 8, border: '1px solid #DDD6FE' }}>
                   <strong>🤖 Mensaje enviado:</strong> "{o.answer_text}"
                 </div>
                 <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{timeAgo(o.created_at)}</div>

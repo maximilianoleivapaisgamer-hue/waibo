@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -153,8 +153,8 @@ export default function Channels() {
             </div>
             <span style={{
               fontSize: 12, padding: '4px 14px', borderRadius: 20, fontWeight: 500,
-              background: isConnected ? '#DCFCE7' : '#FEF3C7',
-              color: isConnected ? '#15803D' : '#92400E'
+              background: isConnected ? '#EDE9FE' : '#FEF3C7',
+              color: isConnected ? '#5B21B6' : '#92400E'
             }}>
               {isQRConnected ? '✅ WhatsApp Lite activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
             </span>
@@ -181,7 +181,7 @@ export default function Channels() {
                     ⚠️ Canal no oficial
                   </span>
                   {isQRConnected && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 600 }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
                       Activo
                     </span>
                   )}
@@ -201,7 +201,7 @@ export default function Channels() {
 
                 {isQRConnected ? (
                   <div>
-                    <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
+                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
                       ✅ <strong>WhatsApp conectado por QR</strong> — el bot está activo en este número.
                     </div>
                     <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
@@ -242,7 +242,7 @@ export default function Channels() {
               onClick={() => setWhatsappExpanded(whatsappExpanded === 'cloud_api' ? null : 'cloud_api')}
               style={{
                 width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
-                background: whatsappExpanded === 'cloud_api' ? '#F0FDF4' : 'var(--bg)',
+                background: whatsappExpanded === 'cloud_api' ? '#F5F3FF' : 'var(--bg)',
                 border: 'none', cursor: 'pointer', textAlign: 'left'
               }}
             >
@@ -250,11 +250,11 @@ export default function Channels() {
               <div style={{ flex: 1 }}>
                 <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                   WhatsApp Cloud API — Meta oficial
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#15803D', color: 'white', fontWeight: 600 }}>
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#5B21B6', color: 'white', fontWeight: 600 }}>
                     ✅ Oficial
                   </span>
                   {isCloudAPIConnected && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 600 }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
                       Activo
                     </span>
                   )}
@@ -268,8 +268,8 @@ export default function Channels() {
 
             {whatsappExpanded === 'cloud_api' && (
               <div style={{ padding: '0 16px 20px' }}>
-                <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 10, color: '#15803D' }}>📋 Cómo configurar — paso a paso</div>
+                <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
+                  <div style={{ fontWeight: 700, marginBottom: 10, color: '#5B21B6' }}>📋 Cómo configurar — paso a paso</div>
                   <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 2 }}>
                     <li>Entrá a <strong>developers.facebook.com</strong> e iniciá sesión con tu cuenta de Facebook.</li>
                     <li>Necesitás una <strong>cuenta de Meta Business</strong>. Si no tenés, creala gratis en <strong>business.facebook.com</strong> → "Crear cuenta" → ingresá el nombre de tu empresa (ej: <em>"Panadería El Sol"</em>), tu nombre y tu email.</li>
@@ -280,7 +280,7 @@ export default function Channels() {
                     <li>Generá un <strong>token de acceso temporal</strong> (para testear) o, para producción, andá a <strong>Configuración → Usuarios del sistema</strong> y creá un token permanente con el permiso <code>whatsapp_business_messaging</code>.</li>
                     <li>Andá a <strong>"Paso 2: Configuración de producción" → "Configurar webhooks"</strong>. Pegá la URL del webhook de abajo, en el token de verificación escribí <code>whabot2024</code>, y hacé clic en <strong>"Verificar y guardar"</strong>. Después suscribite al evento <strong>messages</strong>.</li>
                   </ol>
-                  <div style={{ marginTop: 10, padding: '8px 12px', background: '#DCFCE7', borderRadius: 8, fontSize: 12, color: '#166534' }}>
+                  <div style={{ marginTop: 10, padding: '8px 12px', background: '#EDE9FE', borderRadius: 8, fontSize: 12, color: '#5B21B6' }}>
                     💡 <strong>Empezá con el número de prueba.</strong> Meta te lo da gratis y podés mandar mensajes a hasta 5 números para testear. Cuando todo funcione, agregás tu número real.
                   </div>
                 </div>
@@ -393,7 +393,7 @@ export default function Channels() {
 
 function ChannelCard({ icon, title, subtitle, connected, badge, badgeColor, children }) {
   const badgeStyles = {
-    green: { background: '#DCFCE7', color: '#15803D' },
+    green: { background: '#EDE9FE', color: '#5B21B6' },
     amber: { background: '#FEF3C7', color: '#92400E' },
     gray:  { background: '#F3F4F6', color: '#6B7280' },
   };
@@ -419,7 +419,7 @@ function ConnectedInfo({ features, children }) {
     <div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 8, marginBottom: 16 }}>
         {features.map(f => (
-          <div key={f} style={{ fontSize: 13, background: '#F0FDF4', padding: '8px 12px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+          <div key={f} style={{ fontSize: 13, background: '#F5F3FF', padding: '8px 12px', borderRadius: 8, border: '1px solid #DDD6FE' }}>
             ✅ {f}
           </div>
         ))}

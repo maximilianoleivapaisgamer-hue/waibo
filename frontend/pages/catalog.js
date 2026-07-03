@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -79,7 +79,7 @@ export default function Catalog() {
                 const variants = typeof product.variants === 'string'
                   ? JSON.parse(product.variants || '[]')
                   : (product.variants || []);
-                const stockColor = product.stock === 0 ? '#DC2626' : product.stock < 5 ? '#D97706' : '#15803D';
+                const stockColor = product.stock === 0 ? '#DC2626' : product.stock < 5 ? '#D97706' : '#5B21B6';
                 const stockLabel = product.stock === 0 ? 'Sin stock' : product.stock < 5 ? `¡Solo ${product.stock}!` : `${product.stock} en stock`;
 
                 return (

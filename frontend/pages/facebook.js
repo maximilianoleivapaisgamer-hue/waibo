@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -122,7 +122,7 @@ export default function Facebook() {
             </div>
             {status?.connected ? (
               <>
-                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 500 }}>✅ Conectado</span>
+                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 500 }}>✅ Conectado</span>
                 <button onClick={disconnectFacebook} className="btn btn-secondary" style={{ width: 'auto', fontSize: 12 }}>Desconectar</button>
               </>
             ) : (
@@ -168,7 +168,7 @@ export default function Facebook() {
                   <div style={{ fontSize: 13, marginBottom: 6, background: 'var(--bg)', padding: '8px 11px', borderRadius: 8, border: '1px solid var(--border)' }}>
                     💬 "{c.comment_text}"
                   </div>
-                  <div style={{ fontSize: 12, background: '#F0FDF4', padding: '7px 11px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                  <div style={{ fontSize: 12, background: '#F5F3FF', padding: '7px 11px', borderRadius: 8, border: '1px solid #DDD6FE' }}>
                     <strong>📩 DM abierto:</strong> {c.dm_sent}
                   </div>
                   <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>{timeAgo(c.created_at)}</div>
@@ -222,7 +222,7 @@ export default function Facebook() {
                       </div>
                     )}
                     {r.reply_sent ? (
-                      <div style={{ fontSize: 12, background: '#F0FDF4', padding: '7px 11px', borderRadius: 8, border: '1px solid #BBF7D0' }}>
+                      <div style={{ fontSize: 12, background: '#F5F3FF', padding: '7px 11px', borderRadius: 8, border: '1px solid #DDD6FE' }}>
                         <strong>🤖 Respuesta automática:</strong> {r.reply_sent}
                       </div>
                     ) : (

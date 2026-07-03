@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -111,7 +111,7 @@ export default function Agenda() {
     weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
   });
 
-  const statusColor = { confirmed: '#15803D', cancelled: '#DC2626', completed: '#6B7280' };
+  const statusColor = { confirmed: '#5B21B6', cancelled: '#DC2626', completed: '#6B7280' };
   const statusLabel = { confirmed: '✅ Confirmado', cancelled: '❌ Cancelado', completed: '✔ Completado' };
 
   return (
@@ -137,7 +137,7 @@ export default function Agenda() {
             </div>
             {status?.connected ? (
               <div style={{ display: 'flex', gap: 8 }}>
-                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#DCFCE7', color: '#15803D', fontWeight: 500 }}>✅ Conectado</span>
+                <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 500 }}>✅ Conectado</span>
                 <button onClick={disconnectGoogle} className="btn btn-secondary" style={{ width: 'auto', fontSize: 12, padding: '6px 14px' }}>Desconectar</button>
               </div>
             ) : (
@@ -186,10 +186,10 @@ export default function Agenda() {
                         </div>
                       </div>
                       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 6, flexShrink: 0 }}>
-                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: appt.status === 'confirmed' ? '#DCFCE7' : '#F3F4F6', color: statusColor[appt.status] || '#6B7280', fontWeight: 500 }}>
+                        <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: appt.status === 'confirmed' ? '#EDE9FE' : '#F3F4F6', color: statusColor[appt.status] || '#6B7280', fontWeight: 500 }}>
                           {statusLabel[appt.status] || appt.status}
                         </span>
-                        <span style={{ fontSize: 11, color: appt.reminder_sent ? '#15803D' : '#9CA3AF' }}>
+                        <span style={{ fontSize: 11, color: appt.reminder_sent ? '#5B21B6' : '#9CA3AF' }}>
                           {appt.reminder_sent ? '📩 Recordatorio enviado' : '⏳ Recordatorio pendiente'}
                         </span>
                         {appt.status === 'confirmed' && (
@@ -289,7 +289,7 @@ export default function Agenda() {
               <input placeholder="lunes,martes,miercoles,jueves,viernes" value={agendaConfig.agenda_days} onChange={e => setAgendaConfig({ ...agendaConfig, agenda_days: e.target.value })} />
               <small style={{ fontSize: 12, color: 'var(--text-muted)' }}>Separados por coma, en minúsculas sin tildes.</small>
             </div>
-            <div style={{ background: '#F0FDF4', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
+            <div style={{ background: '#F5F3FF', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
               <strong>🤖 Cómo funciona el bot:</strong><br />
               Cuando un cliente escribe "quiero un turno" o "¿tienen disponibilidad?", el bot consulta tu Google Calendar, ofrece 2 horarios libres del próximo día disponible y confirma la reserva automáticamente. {agendaConfig.reminder_hours_before} hora{agendaConfig.reminder_hours_before !== 1 ? 's' : ''} antes del turno, manda un recordatorio automático.
             </div>

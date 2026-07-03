@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+﻿import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -148,8 +148,8 @@ export default function Billing() {
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                   <span style={{
                     fontSize: 12, padding: '4px 12px', borderRadius: 20, fontWeight: 600,
-                    background: subscription.status === 'authorized' ? '#DCFCE7' : '#FEF3C7',
-                    color: subscription.status === 'authorized' ? '#15803D' : '#92400E'
+                    background: subscription.status === 'authorized' ? '#EDE9FE' : '#FEF3C7',
+                    color: subscription.status === 'authorized' ? '#5B21B6' : '#92400E'
                   }}>
                     {subscription.status === 'authorized' ? '✅ Pago automático activo' : '⏳ Pendiente de confirmación'}
                   </span>
@@ -267,8 +267,8 @@ export default function Billing() {
                     <span>{new Date(r.created_at).toLocaleDateString('es-AR')} {r.amount ? `· $${Number(r.amount).toLocaleString('es-AR')}` : ''}</span>
                     <span style={{
                       fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500,
-                      background: r.status === 'approved' ? '#DCFCE7' : r.status === 'rejected' ? '#FEE2E2' : '#FEF3C7',
-                      color: r.status === 'approved' ? '#15803D' : r.status === 'rejected' ? '#DC2626' : '#92400E'
+                      background: r.status === 'approved' ? '#EDE9FE' : r.status === 'rejected' ? '#FEE2E2' : '#FEF3C7',
+                      color: r.status === 'approved' ? '#5B21B6' : r.status === 'rejected' ? '#DC2626' : '#92400E'
                     }}>
                       {r.status === 'approved' ? '✅ Aprobado' : r.status === 'rejected' ? '❌ Rechazado' : '⏳ En revisión'}
                     </span>
@@ -289,8 +289,8 @@ export default function Billing() {
                   <span style={{ fontSize: 13, fontWeight: 600 }}>${Number(p.amount).toLocaleString('es-AR')}</span>
                   <span style={{
                     fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500,
-                    background: p.status === 'approved' ? '#DCFCE7' : '#FEE2E2',
-                    color: p.status === 'approved' ? '#15803D' : '#DC2626'
+                    background: p.status === 'approved' ? '#EDE9FE' : '#FEE2E2',
+                    color: p.status === 'approved' ? '#5B21B6' : '#DC2626'
                   }}>
                     {p.status === 'approved' ? '✅ Aprobado' : '❌ ' + p.status}
                   </span>
