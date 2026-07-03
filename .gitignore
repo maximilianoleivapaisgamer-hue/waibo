@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+*/node_modules/
+**/node_modules/
+
+# Environment
+.env
+.env.local
+.env.production
+backend/.env
+frontend/.env.local
+
+# Next.js
+frontend/.next/
+frontend/out/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Uploads
+backend/uploads/
