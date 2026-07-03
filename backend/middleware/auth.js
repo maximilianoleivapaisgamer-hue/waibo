@@ -10,7 +10,12 @@ module.exports = (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.client = decoded;
+    // Si es empleado, el client_id efectivo es el del dueño
+    req.client = {
+      ...decoded,
+      id: decoded.role === 'employee' ? decoded.owner_id : decoded.id,
+      own_id: decoded.id,
+    };
     next();
   } catch (err) {
     return res.status(403).json({ error: 'Token inválido o expirado' });

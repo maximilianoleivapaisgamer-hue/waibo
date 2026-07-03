@@ -6,6 +6,7 @@ import '../styles/globals.css';
 
 const PUBLIC_PAGES = ['/', '/register', '/solicitar-baja', '/admin'];
 const ALLOWED_WHILE_SUSPENDED = ['/billing'];
+const EMPLOYEE_ALLOWED = ['/conversations', '/orders', '/agenda'];
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 function BillingGuard({ children }) {
@@ -17,6 +18,13 @@ function BillingGuard({ children }) {
     if (PUBLIC_PAGES.includes(router.pathname)) { setStatus('ok'); return; }
     const token = localStorage.getItem('whabot_token');
     if (!token) { setStatus('ok'); return; }
+
+    // Restricción de empleados
+    const clientData = JSON.parse(localStorage.getItem('whabot_client') || '{}');
+    if (clientData.role === 'employee' && !EMPLOYEE_ALLOWED.includes(router.pathname)) {
+      router.replace('/conversations');
+      return;
+    }
     axios.get(`${API}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => {
         const b = r.data;

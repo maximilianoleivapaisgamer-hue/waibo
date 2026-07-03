@@ -4,6 +4,9 @@ import ChannelLogo from './ChannelLogo';
 
 export default function Sidebar({ active }) {
   const router = useRouter();
+  const isEmployee = typeof window !== 'undefined'
+    ? JSON.parse(localStorage.getItem('whabot_client') || '{}').role === 'employee'
+    : false;
 
   const logout = () => {
     localStorage.removeItem('whabot_token');
@@ -11,16 +14,18 @@ export default function Sidebar({ active }) {
     router.push('/');
   };
 
-  const sections = [
+  const allSections = [
     {
       label: 'Principal',
+      onlyOwner: false,
       items: [
-        { key: 'dashboard', label: 'Panel principal', icon: '📊', href: '/dashboard' },
+        { key: 'dashboard', label: 'Panel principal', icon: '📊', href: '/dashboard', onlyOwner: true },
         { key: 'conversations', label: 'Conversaciones', icon: '💬', href: '/conversations' },
       ]
     },
     {
       label: 'Integraciones',
+      onlyOwner: true,
       items: [
         { key: 'channels', label: 'WhatsApp', channel: 'whatsapp', href: '/channels' },
         { key: 'instagram', label: 'Instagram', channel: 'instagram', href: '/instagram' },
@@ -30,6 +35,7 @@ export default function Sidebar({ active }) {
     },
     {
       label: 'Otros canales',
+      onlyOwner: true,
       items: [
         { key: 'facebook', label: 'Facebook', channel: 'facebook', href: '/facebook' },
         { key: 'tiendanube', label: 'Tiendanube', channel: 'tiendanube', href: '/tiendanube' },
@@ -38,24 +44,32 @@ export default function Sidebar({ active }) {
     },
     {
       label: 'Herramientas',
+      onlyOwner: false,
       items: [
-        { key: 'reports', label: 'Reportes', icon: '📈', href: '/reports' },
+        { key: 'reports', label: 'Reportes', icon: '📈', href: '/reports', onlyOwner: true },
         { key: 'orders', label: 'Pedidos', icon: '🍕', href: '/orders' },
         { key: 'agenda', label: 'Agenda', icon: '📅', href: '/agenda' },
-        { key: 'knowledge', label: 'Base de conocimiento', icon: '🧠', href: '/knowledge' },
-        { key: 'catalog', label: 'Catálogo', icon: '🏪', href: '/catalog' },
-        { key: 'test-chat', label: 'Modo prueba', icon: '🧪', href: '/test-chat' },
+        { key: 'knowledge', label: 'Base de conocimiento', icon: '🧠', href: '/knowledge', onlyOwner: true },
+        { key: 'catalog', label: 'Catálogo', icon: '🏪', href: '/catalog', onlyOwner: true },
+        { key: 'test-chat', label: 'Modo prueba', icon: '🧪', href: '/test-chat', onlyOwner: true },
       ]
     },
     {
       label: 'Cuenta',
+      onlyOwner: true,
       items: [
+        { key: 'team', label: 'Mi equipo', icon: '👥', href: '/team' },
         { key: 'config', label: 'Configurar bot', icon: '⚙️', href: '/config' },
         { key: 'billing', label: 'Mi plan', icon: '💳', href: '/billing' },
         { key: 'profile', label: 'Mi cuenta', icon: '👤', href: '/profile' },
       ]
     }
   ];
+
+  const sections = allSections
+    .filter(s => !isEmployee || !s.onlyOwner)
+    .map(s => ({ ...s, items: s.items.filter(i => !isEmployee || !i.onlyOwner) }))
+    .filter(s => s.items.length > 0);
 
   return (
     <div className="sidebar">
