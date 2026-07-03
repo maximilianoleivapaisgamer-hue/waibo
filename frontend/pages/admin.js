@@ -107,6 +107,16 @@ export default function Admin() {
     setClients(cs => cs.map(c => c.id === id ? { ...c, active: !active, billing_status: active ? 'suspended' : 'active' } : c));
   }
 
+  async function notifyPayment(id, email) {
+    if (!confirm(`¿Enviar aviso de cobro a ${email}?`)) return;
+    try {
+      await axios.post(`${API}/api/admin/clients/${id}/notify-payment`, {}, { headers });
+      alert(`✅ Aviso enviado a ${email}`);
+    } catch (e) {
+      alert('Error al enviar: ' + (e.response?.data?.error || e.message));
+    }
+  }
+
   async function resolveDeletion(id) {
     await axios.put(`${API}/api/admin/deletion-requests/${id}/resolve`, {}, { headers });
     setDeletions(ds => ds.map(d => d.id === id ? { ...d, status: 'processed' } : d));
@@ -296,11 +306,17 @@ export default function Admin() {
                       </td>
                       <td style={{ padding: '11px 14px', color: '#9CA3AF', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
                       <td style={{ padding: '11px 14px' }}>
-                        <button onClick={() => toggleClient(c.id, c.active)} style={{
-                          padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
-                          background: c.active ? '#FEE2E2' : '#EDE9FE',
-                          color: c.active ? '#DC2626' : '#5B21B6'
-                        }}>{c.active ? 'Suspender' : 'Activar'}</button>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                          <button onClick={() => toggleClient(c.id, c.active)} style={{
+                            padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+                            background: c.active ? '#FEE2E2' : '#EDE9FE',
+                            color: c.active ? '#DC2626' : '#5B21B6'
+                          }}>{c.active ? 'Suspender' : 'Activar'}</button>
+                          <button onClick={() => notifyPayment(c.id, c.email)} style={{
+                            padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+                            background: '#FEF3C7', color: '#92400E'
+                          }}>✉️ Avisar</button>
+                        </div>
                       </td>
                     </tr>
                   ))}

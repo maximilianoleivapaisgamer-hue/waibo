@@ -25,7 +25,14 @@ export default function Sidebar({ active }) {
         { key: 'channels', label: 'WhatsApp', channel: 'whatsapp', href: '/channels' },
         { key: 'instagram', label: 'Instagram', channel: 'instagram', href: '/instagram' },
         { key: 'mercadolibre', label: 'Mercado Libre', channel: 'mercadolibre', href: '/mercadolibre' },
-        { key: 'facebook', label: 'Otros canales', channel: 'facebook', href: '/facebook' },
+      ]
+    },
+    {
+      label: 'Otros canales',
+      items: [
+        { key: 'facebook', label: 'Facebook', channel: 'facebook', href: '/facebook' },
+        { key: 'tiendanube', label: 'Tiendanube', channel: 'tiendanube', href: '/tiendanube' },
+        { key: 'tiktok', label: 'TikTok', channel: 'tiktok', href: '/tiktok' },
       ]
     },
     {

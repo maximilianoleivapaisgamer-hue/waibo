@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const pool = require('../db');
+const nodemailer = require('nodemailer');
 
 function checkAdmin(req, res, next) {
   const key = req.headers['x-admin-key'];
@@ -219,6 +220,45 @@ router.get('/deletion-requests', checkAdmin, async (req, res) => {
     );
     res.json(result.rows);
   } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/admin/clients/:id/notify-payment
+router.post('/clients/:id/notify-payment', checkAdmin, async (req, res) => {
+  try {
+    const client = await pool.query('SELECT c.name, c.email, c.business_name, b.next_due, b.amount FROM clients c LEFT JOIN billing b ON b.client_id = c.id WHERE c.id = $1', [req.params.id]);
+    if (!client.rows.length) return res.status(404).json({ error: 'Cliente no encontrado' });
+    const c = client.rows[0];
+    const nextDue = c.next_due ? new Date(c.next_due).toLocaleDateString('es-AR') : 'próximamente';
+    const amount = c.amount ? `$${Number(c.amount).toLocaleString('es-AR')} ARS` : 'según tu plan';
+
+    const transporter = nodemailer.createTransport({
+      service: 'gmail',
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+    });
+
+    await transporter.sendMail({
+      from: `"Waibo" <${process.env.MAIL_USER}>`,
+      to: c.email,
+      subject: 'Recordatorio de pago — Waibo',
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1A1A2E">
+          <img src="https://frontend-lac-nine-16.vercel.app/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:16px"/>
+          <h2 style="margin:0 0 8px">Recordatorio de pago</h2>
+          <p>Hola <strong>${c.business_name || c.name}</strong>,</p>
+          <p>Te recordamos que tu suscripción a <strong>Waibo</strong> vence el <strong>${nextDue}</strong>.</p>
+          <p>El monto a abonar es <strong>${amount}</strong>.</p>
+          <p>Para renovar tu plan y seguir usando el bot sin interrupciones, ingresá a tu panel:</p>
+          <a href="https://frontend-lac-nine-16.vercel.app/billing" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Ver mi plan</a>
+          <p style="color:#6B7280;font-size:13px;margin-top:32px">Si ya realizaste el pago, ignorá este mensaje. Ante dudas escribinos a <a href="mailto:hola@waibochat.com">hola@waibochat.com</a></p>
+        </div>
+      `,
+    });
+
+    res.json({ ok: true, sent_to: c.email });
+  } catch (err) {
+    console.error('[admin/notify-payment]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
