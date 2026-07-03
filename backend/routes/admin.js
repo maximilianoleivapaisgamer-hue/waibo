@@ -241,6 +241,8 @@ router.post('/clients/:id/notify-payment', checkAdmin, async (req, res) => {
       auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
     });
 
+    await transporter.verify();
+    console.log('[mail] SMTP verificado OK');
     await transporter.sendMail({
       from: `"Waibo" <${process.env.MAIL_USER}>`,
       to: c.email,
