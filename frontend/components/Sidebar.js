@@ -22,10 +22,10 @@ export default function Sidebar({ active }) {
     {
       label: 'Integraciones',
       items: [
+        { key: 'channels', label: 'WhatsApp', channel: 'whatsapp', href: '/channels' },
         { key: 'instagram', label: 'Instagram', channel: 'instagram', href: '/instagram' },
-        { key: 'facebook', label: 'Facebook', channel: 'facebook', href: '/facebook' },
         { key: 'mercadolibre', label: 'Mercado Libre', channel: 'mercadolibre', href: '/mercadolibre' },
-        { key: 'channels', label: 'Otros canales', channel: 'whatsapp', href: '/channels' },
+        { key: 'facebook', label: 'Otros canales', channel: 'facebook', href: '/facebook' },
       ]
     },
     {
