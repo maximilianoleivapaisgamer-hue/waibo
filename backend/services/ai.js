@@ -44,15 +44,15 @@ async function callClaudeAPI(payload) {
   throw lastError;
 }
 
-async function getAIResponse(messages, systemPrompt, businessInfo, knowledgeBase = '', botName = 'Asistente', botTone = 'amigable', aiModel = null) {
-  const toneInstructions = {
-    'amigable': 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
-    'profesional': 'Usá un tono profesional y formal, pero sin ser frío.',
-    'vendedor': 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
-    'casual': 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
-  };
+const DEFAULT_TONE_INSTRUCTIONS = {
+  'amigable': 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
+  'profesional': 'Usá un tono profesional y formal, pero sin ser frío.',
+  'vendedor': 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
+  'casual': 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
+};
 
-  const tone = toneInstructions[botTone] || toneInstructions['amigable'];
+async function getAIResponse(messages, systemPrompt, businessInfo, knowledgeBase = '', botName = 'Asistente', botTone = 'amigable', aiModel = null, botToneCustom = null) {
+  const tone = botToneCustom || DEFAULT_TONE_INSTRUCTIONS[botTone] || DEFAULT_TONE_INSTRUCTIONS['amigable'];
 
   const fullSystem = `Sos ${botName}, el asistente virtual del negocio.
 

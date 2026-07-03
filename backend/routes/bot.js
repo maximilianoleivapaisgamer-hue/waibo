@@ -32,7 +32,8 @@ router.put('/config', authMiddleware, async (req, res) => {
     business_hours_enabled, business_hours_start, business_hours_end, business_hours_days, after_hours_message,
     followup_enabled, followup_wait_minutes, followup_max_attempts, followup_message,
     owner_notifications_enabled, owner_notification_phone,
-    variables_enabled, smart_scheduling_enabled
+    variables_enabled, smart_scheduling_enabled,
+    bot_tone, bot_tone_custom
   } = req.body;
 
   try {
@@ -57,8 +58,10 @@ router.put('/config', authMiddleware, async (req, res) => {
         owner_notification_phone = COALESCE($17, owner_notification_phone),
         variables_enabled = COALESCE($18, variables_enabled),
         smart_scheduling_enabled = COALESCE($19, smart_scheduling_enabled),
+        bot_tone = COALESCE($20, bot_tone),
+        bot_tone_custom = $21,
         updated_at = NOW()
-       WHERE client_id = $20
+       WHERE client_id = $22
        RETURNING *`,
       [
         system_prompt, business_info, welcome_message, human_handoff_keyword, language, ai_model,
@@ -66,6 +69,7 @@ router.put('/config', authMiddleware, async (req, res) => {
         followup_enabled, followup_wait_minutes, followup_max_attempts, followup_message,
         owner_notifications_enabled, owner_notification_phone,
         variables_enabled, smart_scheduling_enabled,
+        bot_tone, bot_tone_custom ?? null,
         req.client.id
       ]
     );

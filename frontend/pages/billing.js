@@ -137,6 +137,18 @@ export default function Billing() {
         {success && <div className="success-msg">{success}</div>}
         {error && <div className="error-msg">{error}</div>}
 
+        {billing?.status === 'suspended' && (
+          <div style={{ background: '#FEF2F2', border: '2px solid #FCA5A5', borderRadius: 14, padding: '24px 28px', marginBottom: 24 }}>
+            <div style={{ fontSize: 22, fontWeight: 800, color: '#991B1B', marginBottom: 8 }}>⛔ Tu cuenta está suspendida</div>
+            <p style={{ color: '#7F1D1D', marginBottom: 16, lineHeight: 1.6 }}>
+              El bot está desactivado en todos tus canales. Para reactivar el servicio, regularizá tu pago usando cualquiera de las opciones de abajo. En cuanto confirmemos el pago, tu cuenta se reactiva automáticamente.
+            </p>
+            <div style={{ fontSize: 13, color: '#991B1B', background: '#FEE2E2', borderRadius: 8, padding: '10px 14px' }}>
+              📩 Si ya realizaste el pago, subí el comprobante más abajo o escribinos al soporte.
+            </div>
+          </div>
+        )}
+
         {subscription?.subscribed ? (
           <div className="card" style={{ borderLeft: '4px solid var(--green)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>

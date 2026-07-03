@@ -142,7 +142,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       } else if (config.variables_enabled) {
         const result = await getResponseWithVariableExtraction(
           history, config.system_prompt, config.business_info + productContext,
-          knowledgeBase, config.bot_name, config.bot_tone, config.ai_model
+          knowledgeBase, config.bot_name, config.bot_tone, config.ai_model, config.bot_tone_custom
         );
         aiResponse = result.textResponse || 'Decime en qué puedo ayudarte 😊';
         if (result.savedVariables.length) {
@@ -151,14 +151,14 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       } else if (config.smart_scheduling_enabled) {
         const result = await getResponseWithScheduling(
           history, config.system_prompt, config.business_info + productContext,
-          knowledgeBase, config.bot_name, config.bot_tone, config.ai_model
+          knowledgeBase, config.bot_name, config.bot_tone, config.ai_model, config.bot_tone_custom
         );
         aiResponse = result.textResponse || 'Decime en qué puedo ayudarte 😊';
         if (result.scheduledFollowup) {
           await saveScheduledFollowup(clientId, conversation.id, customerPhone, 'whatsapp', null, result.scheduledFollowup);
         }
       } else {
-        aiResponse = await getAIResponse(history, config.system_prompt, config.business_info + productContext, knowledgeBase, config.bot_name, config.bot_tone, config.ai_model);
+        aiResponse = await getAIResponse(history, config.system_prompt, config.business_info + productContext, knowledgeBase, config.bot_name, config.bot_tone, config.ai_model, config.bot_tone_custom);
       }
     } catch (aiErr) {
       await createAlert(clientId, conversation.id, 'ai_failed', `El bot no pudo responder a ${customerName}: "${customerMessage.substring(0, 100)}"`);

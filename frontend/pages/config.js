@@ -99,7 +99,15 @@ export default function Config() {
                 <label>Tono de voz</label>
                 <select
                   value={config.bot_tone || 'amigable'}
-                  onChange={e => setConfig({ ...config, bot_tone: e.target.value })}
+                  onChange={e => {
+                    const defaults = {
+                      amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
+                      profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
+                      vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
+                      casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
+                    };
+                    setConfig({ ...config, bot_tone: e.target.value, bot_tone_custom: config.bot_tone_custom || defaults[e.target.value] });
+                  }}
                 >
                   <option value="amigable">😊 Amigable (voseo argentino)</option>
                   <option value="profesional">💼 Profesional y formal</option>
@@ -107,6 +115,26 @@ export default function Config() {
                   <option value="casual">😎 Casual y relajado</option>
                 </select>
               </div>
+            </div>
+            <div className="form-group" style={{ marginTop: 8 }}>
+              <label>Instrucciones de tono personalizadas</label>
+              <textarea
+                style={{ minHeight: 80 }}
+                placeholder={(() => {
+                  const defaults = {
+                    amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
+                    profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
+                    vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
+                    casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
+                  };
+                  return defaults[config.bot_tone || 'amigable'];
+                })()}
+                value={config.bot_tone_custom || ''}
+                onChange={e => setConfig({ ...config, bot_tone_custom: e.target.value })}
+              />
+              <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                Podés editar o reemplazar las instrucciones del preset seleccionado. Si lo dejás vacío, se usa el comportamiento por defecto del tono elegido.
+              </small>
             </div>
             <div className="form-group">
               <label>Instrucciones adicionales para la IA</label>

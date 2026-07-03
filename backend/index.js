@@ -51,6 +51,7 @@ const bankTransferRoutes = require('./routes/bankTransfer');
 const privacyRoutes = require('./routes/privacy');
 const adminRoutes = require('./routes/admin');
 const webchatRoutes = require('./routes/webchat');
+const reportsRoutes = require('./routes/reports');
 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/clients', apiLimiter, clientRoutes);
@@ -71,6 +72,7 @@ app.use('/webhook', webhookLimiter, webhookRoutes);
 app.use('/api/privacy', privacyRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api/webchat', webchatRoutes);
+app.use('/api/reports', apiLimiter, reportsRoutes);
 
 app.get('/', (req, res) => {
   res.json({ status: 'WhaBot API running', version: '1.0.0' });

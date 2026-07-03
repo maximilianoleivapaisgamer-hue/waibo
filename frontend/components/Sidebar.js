@@ -39,6 +39,7 @@ export default function Sidebar({ active }) {
     {
       label: 'Herramientas',
       items: [
+        { key: 'reports', label: 'Reportes', icon: '📈', href: '/reports' },
         { key: 'orders', label: 'Pedidos', icon: '🍕', href: '/orders' },
         { key: 'agenda', label: 'Agenda', icon: '📅', href: '/agenda' },
         { key: 'knowledge', label: 'Base de conocimiento', icon: '🧠', href: '/knowledge' },

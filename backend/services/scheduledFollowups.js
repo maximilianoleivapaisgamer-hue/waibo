@@ -22,15 +22,16 @@ const SCHEDULE_FOLLOWUP_TOOL = {
   }
 };
 
-async function getResponseWithScheduling(messages, systemPrompt, businessInfo, knowledgeBase, botName, botTone, aiModel) {
+const DEFAULT_TONE = {
+  amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
+  profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
+  vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
+  casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
+};
+
+async function getResponseWithScheduling(messages, systemPrompt, businessInfo, knowledgeBase, botName, botTone, aiModel, botToneCustom = null) {
   const today = new Date().toISOString().split('T')[0];
-  const toneInstructions = {
-    amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
-    profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
-    vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
-    casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
-  };
-  const tone = toneInstructions[botTone] || toneInstructions.amigable;
+  const tone = botToneCustom || DEFAULT_TONE[botTone] || DEFAULT_TONE.amigable;
 
   const fullSystem = `Sos ${botName}, el asistente virtual del negocio.
 HOY ES: ${today}

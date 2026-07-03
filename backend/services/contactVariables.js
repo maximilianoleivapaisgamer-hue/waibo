@@ -22,14 +22,15 @@ const SAVE_VARIABLE_TOOL = {
   }
 };
 
-async function getResponseWithVariableExtraction(messages, systemPrompt, businessInfo, knowledgeBase, botName, botTone, aiModel) {
-  const toneInstructions = {
-    amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
-    profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
-    vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
-    casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
-  };
-  const tone = toneInstructions[botTone] || toneInstructions.amigable;
+const DEFAULT_TONE = {
+  amigable: 'Usá un tono amigable, cálido y cercano. Usá voseo argentino.',
+  profesional: 'Usá un tono profesional y formal, pero sin ser frío.',
+  vendedor: 'Sos un vendedor experto, persuasivo y enfocado en el cierre. Rebatí objeciones con seguridad.',
+  casual: 'Sé muy casual y relajado, como si hablaras con un amigo. Podés usar emojis con frecuencia.',
+};
+
+async function getResponseWithVariableExtraction(messages, systemPrompt, businessInfo, knowledgeBase, botName, botTone, aiModel, botToneCustom = null) {
+  const tone = botToneCustom || DEFAULT_TONE[botTone] || DEFAULT_TONE.amigable;
 
   const fullSystem = `Sos ${botName}, el asistente virtual del negocio.
 

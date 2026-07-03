@@ -429,6 +429,7 @@ async function initDB() {
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS webchat_enabled BOOLEAN DEFAULT false;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS webchat_title VARCHAR(255) DEFAULT 'Chat con nosotros';
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS webchat_color VARCHAR(20) DEFAULT '#7C3AED';
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS bot_tone_custom TEXT;
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {
