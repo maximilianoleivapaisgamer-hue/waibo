@@ -12,6 +12,8 @@
 
 require('dotenv').config();
 const pool = require('../db');
+const fs = require('fs');
+const path = require('path');
 
 const phoneRaw = process.argv[2];
 
@@ -180,7 +182,12 @@ async function run() {
     logLine(`   Alertas           : ${deletedAlerts} eliminadas`);
     logLine(`   Logs ML           : ${anonML} anonimizados`);
     logLine('='.repeat(60));
-    logLine('\nGuardá este output como respaldo del cumplimiento de la solicitud.');
+    // Guardar log persistente para auditoría de compliance
+    const logsDir = path.join(__dirname, '..', 'logs', 'compliance');
+    if (!fs.existsSync(logsDir)) fs.mkdirSync(logsDir, { recursive: true });
+    const logFile = path.join(logsDir, `baja-${timestamp.replace(/[:.]/g, '-')}.log`);
+    fs.writeFileSync(logFile, log.join('\n'), 'utf8');
+    logLine(`\nLog guardado en: ${logFile}`);
 
   } catch (err) {
     await client.query('ROLLBACK');

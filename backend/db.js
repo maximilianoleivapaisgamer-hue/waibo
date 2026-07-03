@@ -415,6 +415,16 @@ async function initDB() {
       SELECT 'E-Commerce Pro', 129999, 'Todo lo del Estándar + Mercado Libre + Tiendanube',
         '["Todo del Estándar", "Mercado Libre", "Tiendanube", "Catálogo dinámico", "Estadísticas avanzadas", "Soporte prioritario"]'::jsonb
       WHERE NOT EXISTS (SELECT 1 FROM plans WHERE name = 'E-Commerce Pro');
+
+      CREATE TABLE IF NOT EXISTS data_deletion_requests (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        phone VARCHAR(50) NOT NULL,
+        name VARCHAR(255) NOT NULL,
+        reason TEXT,
+        status VARCHAR(20) DEFAULT 'pending',
+        requested_at TIMESTAMP DEFAULT NOW(),
+        processed_at TIMESTAMP
+      );
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {
