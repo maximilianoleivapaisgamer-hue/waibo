@@ -81,7 +81,7 @@ router.get('/clients', checkAdmin, async (req, res) => {
         EXISTS(SELECT 1 FROM facebook_tokens ft WHERE ft.client_id = c.id) as has_facebook,
         EXISTS(SELECT 1 FROM mercadolibre_tokens mt WHERE mt.client_id = c.id) as has_ml,
         EXISTS(SELECT 1 FROM tiendanube_tokens tt WHERE tt.client_id = c.id) as has_tiendanube,
-        EXISTS(SELECT 1 FROM whatsapp_qr_sessions wqs WHERE wqs.client_id = c.id::text AND wqs.status = 'connected') as has_whatsapp_qr,
+        EXISTS(SELECT 1 FROM whatsapp_qr_sessions wqs WHERE wqs.client_id::uuid = c.id AND wqs.status = 'connected') as has_whatsapp_qr,
 
         -- actividad
         (SELECT COUNT(*) FROM conversations cv WHERE cv.client_id = c.id) as total_conversations,
@@ -103,6 +103,7 @@ router.get('/clients', checkAdmin, async (req, res) => {
     `);
     res.json(result.rows);
   } catch (err) {
+    console.error('[admin/clients]', err.message);
     res.status(500).json({ error: err.message });
   }
 });
