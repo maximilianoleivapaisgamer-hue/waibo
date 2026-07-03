@@ -14,8 +14,38 @@ function timeAgo(date) {
   return `hace ${Math.floor(hs / 24)}d`;
 }
 
-function fmt(n) {
-  return Number(n || 0).toLocaleString('es-AR');
+function fmt(n) { return Number(n || 0).toLocaleString('es-AR'); }
+function fmtDate(d) { return d ? new Date(d).toLocaleDateString('es-AR') : '—'; }
+function fmtMoney(n) { return `$${fmt(n)}`; }
+
+const CHANNEL_COLORS = {
+  whatsapp: '#25D366', instagram: '#E1306C', facebook: '#1877F2',
+  mercadolibre: '#FFE600', tiendanube: '#2D2DFF', tiktok: '#010101',
+};
+const CHANNEL_LABELS = {
+  whatsapp: 'WA', instagram: 'IG', facebook: 'FB',
+  mercadolibre: 'ML', tiendanube: 'TN', tiktok: 'TT',
+};
+
+function ChannelDot({ channel, active }) {
+  return (
+    <span title={channel} style={{
+      display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+      width: 22, height: 22, borderRadius: 6, fontSize: 9, fontWeight: 700,
+      background: active ? CHANNEL_COLORS[channel] : '#F3F4F6',
+      color: active ? (channel === 'mercadolibre' ? '#333' : 'white') : '#9CA3AF',
+    }}>{CHANNEL_LABELS[channel]}</span>
+  );
+}
+
+function StatCard({ label, value, sub, color, small }) {
+  return (
+    <div style={{ background: 'white', borderRadius: 12, padding: small ? '14px 16px' : '18px 20px', border: '1px solid #E5E7EB' }}>
+      <div style={{ fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{label}</div>
+      <div style={{ fontSize: small ? 22 : 28, fontWeight: 700, marginTop: 4, color: color || '#1A1A2E' }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: '#9CA3AF', marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
 }
 
 export default function Admin() {
@@ -25,9 +55,12 @@ export default function Admin() {
   const [stats, setStats] = useState(null);
   const [clients, setClients] = useState([]);
   const [deletions, setDeletions] = useState([]);
+  const [activity, setActivity] = useState(null);
+  const [health, setHealth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
+  const [filterStatus, setFilterStatus] = useState('all');
 
   const headers = { 'x-admin-key': key };
 
@@ -36,47 +69,37 @@ export default function Admin() {
     if (saved) { setKey(saved); setAuthed(true); }
   }, []);
 
-  useEffect(() => {
-    if (!authed) return;
-    loadAll();
-  }, [authed]);
+  useEffect(() => { if (authed) loadAll(); }, [authed]);
 
   async function login(e) {
     e.preventDefault();
-    setError('');
-    setLoading(true);
+    setError(''); setLoading(true);
     try {
       await axios.get(`${API}/api/admin/stats`, { headers: { 'x-admin-key': key } });
       localStorage.setItem('waibo_admin_key', key);
       setAuthed(true);
-    } catch {
-      setError('Clave incorrecta');
-    } finally {
-      setLoading(false);
-    }
+    } catch { setError('Clave incorrecta'); }
+    finally { setLoading(false); }
   }
 
   async function loadAll() {
     setLoading(true);
     try {
-      const [s, c, d] = await Promise.all([
+      const [s, c, d, a, h] = await Promise.all([
         axios.get(`${API}/api/admin/stats`, { headers }),
         axios.get(`${API}/api/admin/clients`, { headers }),
         axios.get(`${API}/api/admin/deletion-requests`, { headers }),
+        axios.get(`${API}/api/admin/activity`, { headers }),
+        axios.get(`${API}/api/admin/health`, { headers }),
       ]);
-      setStats(s.data);
-      setClients(c.data);
-      setDeletions(d.data);
-    } catch (err) {
-      setError('Error cargando datos');
-    } finally {
-      setLoading(false);
-    }
+      setStats(s.data); setClients(c.data); setDeletions(d.data);
+      setActivity(a.data); setHealth(h.data);
+    } catch { setError('Error cargando datos'); }
+    finally { setLoading(false); }
   }
 
   async function toggleClient(id, active) {
-    const action = active ? 'suspend' : 'activate';
-    await axios.post(`${API}/api/admin/clients/${id}/${action}`, {}, { headers });
+    await axios.post(`${API}/api/admin/clients/${id}/${active ? 'suspend' : 'activate'}`, {}, { headers });
     setClients(cs => cs.map(c => c.id === id ? { ...c, active: !active, billing_status: active ? 'suspended' : 'active' } : c));
   }
 
@@ -85,41 +108,40 @@ export default function Admin() {
     setDeletions(ds => ds.map(d => d.id === id ? { ...d, status: 'processed' } : d));
   }
 
-  function logout() {
-    localStorage.removeItem('waibo_admin_key');
-    setAuthed(false);
-    setKey('');
-  }
+  const filtered = clients.filter(c => {
+    const matchSearch = !search || [c.name, c.email, c.business_name].some(f => f?.toLowerCase().includes(search.toLowerCase()));
+    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' && c.active) || (filterStatus === 'suspended' && !c.active);
+    return matchSearch && matchStatus;
+  });
 
-  const filtered = clients.filter(c =>
-    !search || [c.name, c.email, c.business_name].some(f => f?.toLowerCase().includes(search.toLowerCase()))
-  );
+  const pendingDeletions = deletions.filter(d => d.status === 'pending').length;
+  const healthIssues = health ? (health.no_channels.length + health.no_activity_7d.length + health.no_bot_config.length) : 0;
 
-  const pendingDeletions = deletions.filter(d => d.status === 'pending');
+  const TABS = [
+    { key: 'clients', label: `👥 Clientes (${clients.length})` },
+    { key: 'activity', label: '📡 Actividad' },
+    { key: 'health', label: `🏥 Salud${healthIssues ? ` (${healthIssues})` : ''}` },
+    { key: 'stats', label: '📊 Métricas' },
+    { key: 'deletions', label: `🗑 Bajas${pendingDeletions ? ` (${pendingDeletions})` : ''}` },
+  ];
 
+  // LOGIN
   if (!authed) {
     return (
-      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg, #F5F3FF, #EDE9FE)' }}>
+      <div style={{ minHeight: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'linear-gradient(135deg,#F5F3FF,#EDE9FE)', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
         <div style={{ background: 'white', borderRadius: 20, padding: 48, width: 380, boxShadow: '0 20px 60px rgba(0,0,0,0.1)' }}>
           <div style={{ textAlign: 'center', marginBottom: 32 }}>
             <Image src="/waibo-logo.png" alt="Waibo" width={64} height={64} style={{ borderRadius: 16, marginBottom: 12 }} />
-            <h1 style={{ fontSize: 22, fontWeight: 700 }}>Panel Admin</h1>
+            <h1 style={{ fontSize: 22, fontWeight: 700, margin: 0 }}>Panel Admin</h1>
             <p style={{ color: '#6B7280', fontSize: 14, marginTop: 4 }}>Solo para el equipo de Waibo</p>
           </div>
           {error && <div style={{ background: '#FEF2F2', color: '#DC2626', padding: '10px 14px', borderRadius: 8, fontSize: 13, marginBottom: 16 }}>{error}</div>}
           <form onSubmit={login}>
-            <div style={{ marginBottom: 16 }}>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Clave de administrador</label>
-              <input
-                type="password"
-                value={key}
-                onChange={e => setKey(e.target.value)}
-                placeholder="••••••••••••"
-                required
-                style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #E5E7EB', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-            <button type="submit" disabled={loading} style={{ width: '100%', padding: 13, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: 'pointer' }}>
+            <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Clave de administrador</label>
+            <input type="password" value={key} onChange={e => setKey(e.target.value)} placeholder="••••••••••••" required
+              style={{ width: '100%', padding: '11px 14px', border: '1.5px solid #E5E7EB', borderRadius: 10, fontSize: 14, outline: 'none', boxSizing: 'border-box', marginBottom: 16 }} />
+            <button type="submit" disabled={loading}
+              style={{ width: '100%', padding: 13, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 500, cursor: 'pointer' }}>
               {loading ? 'Verificando...' : 'Ingresar'}
             </button>
           </form>
@@ -128,200 +150,397 @@ export default function Admin() {
     );
   }
 
-  const TABS = [
-    { key: 'clients', label: `Clientes (${clients.length})` },
-    { key: 'stats', label: 'Métricas' },
-    { key: 'deletions', label: `Bajas${pendingDeletions.length ? ` (${pendingDeletions.length} pendientes)` : ''}` },
-  ];
-
   return (
-    <div style={{ minHeight: '100vh', background: '#F7F8FA', fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif' }}>
+    <div style={{ minHeight: '100vh', background: '#F7F8FA', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif', color: '#1A1A2E' }}>
 
       {/* Header */}
-      <div style={{ background: 'white', borderBottom: '1px solid #E5E7EB', padding: '0 32px', display: 'flex', alignItems: 'center', gap: 16, height: 60 }}>
-        <Image src="/waibo-logo.png" alt="Waibo" width={28} height={28} style={{ borderRadius: 8 }} />
+      <div style={{ background: 'white', borderBottom: '1px solid #E5E7EB', padding: '0 28px', display: 'flex', alignItems: 'center', gap: 14, height: 58, position: 'sticky', top: 0, zIndex: 100 }}>
+        <Image src="/waibo-logo.png" alt="Waibo" width={26} height={26} style={{ borderRadius: 7 }} />
         <span style={{ fontWeight: 700, fontSize: 16 }}>Waibo Admin</span>
+        {loading && <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>Cargando...</span>}
         <div style={{ flex: 1 }} />
-        <button onClick={loadAll} style={{ background: 'none', border: '1px solid #E5E7EB', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer' }}>↻ Actualizar</button>
-        <button onClick={logout} style={{ background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer' }}>Salir</button>
+        <button onClick={loadAll} style={{ background: 'none', border: '1px solid #E5E7EB', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#6B7280' }}>↻ Actualizar</button>
+        <button onClick={() => { localStorage.removeItem('waibo_admin_key'); setAuthed(false); setKey(''); }}
+          style={{ background: 'none', border: 'none', color: '#9CA3AF', fontSize: 13, cursor: 'pointer' }}>Salir</button>
       </div>
 
-      <div style={{ maxWidth: 1200, margin: '0 auto', padding: '28px 24px' }}>
+      <div style={{ maxWidth: 1300, margin: '0 auto', padding: '24px 20px' }}>
 
-        {/* Stat cards rápidas */}
+        {/* Stat cards principales */}
         {stats && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 14, marginBottom: 28 }}>
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: 12, marginBottom: 12 }}>
+              <StatCard label="Clientes activos" value={fmt(stats.active_clients)} sub={`de ${fmt(stats.total_clients)} totales`} color="#7C3AED" />
+              <StatCard label="Nuevos esta semana" value={fmt(stats.new_clients_week)} sub={`${fmt(stats.new_clients_month)} este mes`} color="#7C3AED" />
+              <StatCard label="Churn rate" value={`${stats.churn_rate}%`} sub={`${fmt(stats.suspended_clients)} suspendidos`} color={stats.churn_rate > 20 ? '#DC2626' : '#1A1A2E'} />
+              <StatCard label="MRR estimado" value={fmtMoney(stats.monthly_revenue)} sub="ARS mensual" color="#059669" />
+              <StatCard label="Msgs hoy" value={fmt(stats.messages_today)} sub={`${fmt(stats.messages_week)} esta semana`} />
+              <StatCard label="Msgs este mes" value={fmt(stats.messages_month)} sub={`${fmt(stats.total_messages)} histórico`} />
+              <StatCard label="Convs hoy" value={fmt(stats.conversations_today)} sub={`${fmt(stats.conversations_week)} esta semana`} />
+              <StatCard label="Convs este mes" value={fmt(stats.conversations_month)} sub={`${fmt(stats.total_conversations)} históricas`} />
+            </div>
+
+            {/* Canal más usado */}
+            {stats.channel_distribution?.length > 0 && (
+              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: '16px 20px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 24, flexWrap: 'wrap' }}>
+                <span style={{ fontSize: 13, fontWeight: 600, color: '#6B7280' }}>Distribución de canales:</span>
+                {stats.channel_distribution.map(ch => {
+                  const total = stats.channel_distribution.reduce((a, b) => a + parseInt(b.count), 0);
+                  const pct = total > 0 ? Math.round(parseInt(ch.count) / total * 100) : 0;
+                  return (
+                    <div key={ch.channel} style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+                      <ChannelDot channel={ch.channel} active />
+                      <span style={{ fontSize: 13 }}>{ch.channel}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: '#5B21B6' }}>{pct}%</span>
+                      <span style={{ fontSize: 12, color: '#9CA3AF' }}>({fmt(ch.count)})</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 6, marginBottom: 18, flexWrap: 'wrap' }}>
+          {TABS.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)} style={{
+              padding: '8px 16px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 500,
+              background: tab === t.key ? '#7C3AED' : 'white',
+              color: tab === t.key ? 'white' : '#6B7280',
+              boxShadow: '0 1px 3px rgba(0,0,0,0.07)'
+            }}>{t.label}</button>
+          ))}
+        </div>
+
+        {/* ── TAB CLIENTES ── */}
+        {tab === 'clients' && (
+          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7EB', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+              <input placeholder="Buscar por nombre, email o negocio..."
+                value={search} onChange={e => setSearch(e.target.value)}
+                style={{ flex: 1, minWidth: 200, padding: '8px 12px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 13, outline: 'none' }} />
+              {['all', 'active', 'suspended'].map(f => (
+                <button key={f} onClick={() => setFilterStatus(f)} style={{
+                  padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
+                  background: filterStatus === f ? '#7C3AED' : '#F3F4F6',
+                  color: filterStatus === f ? 'white' : '#6B7280', fontWeight: 500
+                }}>{{ all: 'Todos', active: 'Activos', suspended: 'Suspendidos' }[f]}</button>
+              ))}
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                    {['Negocio', 'Email', 'Canales', 'Plan / Billing', 'Actividad', 'Msgs mes', 'Bot', 'Próx. venc.', 'Alertas', 'Registrado', ''].map(h => (
+                      <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {filtered.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #F3F4F6', background: c.active ? 'white' : '#FFFBFB' }}>
+                      <td style={{ padding: '11px 14px' }}>
+                        <div style={{ fontWeight: 600, fontSize: 13 }}>{c.business_name || c.name}</div>
+                        <div style={{ color: '#9CA3AF', fontSize: 11 }}>{c.phone_number || '—'}</div>
+                      </td>
+                      <td style={{ padding: '11px 14px', color: '#6B7280', fontSize: 12 }}>{c.email}</td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap' }}>
+                          <ChannelDot channel="whatsapp" active={!!(c.has_whatsapp_qr || c.whatsapp_api_key)} />
+                          <ChannelDot channel="instagram" active={c.has_instagram} />
+                          <ChannelDot channel="facebook" active={c.has_facebook} />
+                          <ChannelDot channel="mercadolibre" active={c.has_ml} />
+                          <ChannelDot channel="tiendanube" active={c.has_tiendanube} />
+                        </div>
+                      </td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <div>
+                          <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>{c.plan || 'básico'}</span>
+                        </div>
+                        <div style={{ marginTop: 4 }}>
+                          <span style={{
+                            fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+                            background: c.active ? '#D1FAE5' : '#FEE2E2',
+                            color: c.active ? '#065F46' : '#DC2626'
+                          }}>{c.billing_status || (c.active ? 'activo' : 'suspendido')}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '11px 14px', color: '#6B7280', fontSize: 12 }}>
+                        <div>{fmt(c.total_conversations)} convs</div>
+                        <div style={{ color: '#9CA3AF' }}>{timeAgo(c.last_activity)}</div>
+                      </td>
+                      <td style={{ padding: '11px 14px', fontWeight: 600, color: parseInt(c.msgs_this_month) > 0 ? '#5B21B6' : '#9CA3AF' }}>
+                        {fmt(c.msgs_this_month)}
+                      </td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <div style={{ fontSize: 11, display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span>{c.bot_configured ? '✅ Prompt' : '⚠️ Sin prompt'}</span>
+                          <span style={{ color: '#9CA3AF' }}>{fmt(c.knowledge_entries)} docs</span>
+                          <span style={{ color: '#9CA3AF' }}>{c.has_tested_bot ? '✅ Probado' : '—'}</span>
+                        </div>
+                      </td>
+                      <td style={{ padding: '11px 14px', fontSize: 12, color: c.next_due && new Date(c.next_due) < new Date() ? '#DC2626' : '#6B7280' }}>
+                        {fmtDate(c.next_due)}
+                        {c.last_payment && <div style={{ color: '#9CA3AF' }}>Últ. pago: {fmtDate(c.last_payment)}</div>}
+                      </td>
+                      <td style={{ padding: '11px 14px' }}>
+                        {parseInt(c.open_alerts) > 0
+                          ? <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '2px 8px', fontSize: 11, fontWeight: 700 }}>🔔 {c.open_alerts}</span>
+                          : <span style={{ color: '#9CA3AF', fontSize: 12 }}>—</span>}
+                      </td>
+                      <td style={{ padding: '11px 14px', color: '#9CA3AF', fontSize: 12, whiteSpace: 'nowrap' }}>{fmtDate(c.created_at)}</td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <button onClick={() => toggleClient(c.id, c.active)} style={{
+                          padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, whiteSpace: 'nowrap',
+                          background: c.active ? '#FEE2E2' : '#EDE9FE',
+                          color: c.active ? '#DC2626' : '#5B21B6'
+                        }}>{c.active ? 'Suspender' : 'Activar'}</button>
+                      </td>
+                    </tr>
+                  ))}
+                  {filtered.length === 0 && (
+                    <tr><td colSpan={11} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>No hay clientes{search ? ' que coincidan' : ''}.</td></tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB ACTIVIDAD ── */}
+        {tab === 'activity' && activity && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 340px', gap: 16, alignItems: 'start' }}>
+            {/* Conversaciones recientes */}
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7EB', fontWeight: 600, fontSize: 14 }}>📡 Últimas 30 conversaciones — toda la plataforma</div>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                    {['Canal', 'Cliente final', 'Negocio', 'Estado', 'Mensajes', 'Última actividad'].map(h => (
+                      <th key={h} style={{ padding: '8px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {activity.recent_conversations.map(cv => (
+                    <tr key={cv.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                      <td style={{ padding: '10px 14px' }}><ChannelDot channel={cv.channel} active /></td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <div style={{ fontWeight: 500 }}>{cv.customer_name || cv.customer_phone}</div>
+                        <div style={{ fontSize: 11, color: '#9CA3AF' }}>{cv.customer_phone}</div>
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#6B7280' }}>{cv.business_name || cv.client_name}</td>
+                      <td style={{ padding: '10px 14px' }}>
+                        <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600, background: cv.status === 'bot' ? '#EDE9FE' : '#FEF3C7', color: cv.status === 'bot' ? '#5B21B6' : '#92400E' }}>
+                          {cv.status === 'bot' ? '🤖 Bot' : '👤 Humano'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '10px 14px', color: '#6B7280' }}>{fmt(cv.message_count)}</td>
+                      <td style={{ padding: '10px 14px', color: '#9CA3AF', fontSize: 12 }}>{timeAgo(cv.updated_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Nuevos registros */}
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+              <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7EB', fontWeight: 600, fontSize: 14 }}>🆕 Últimos registros</div>
+              {activity.recent_registrations.map(c => (
+                <div key={c.id} style={{ padding: '12px 18px', borderBottom: '1px solid #F3F4F6' }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{c.business_name || c.name}</div>
+                  <div style={{ fontSize: 12, color: '#6B7280' }}>{c.email}</div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>{c.plan || 'básico'}</span>
+                    <span style={{ fontSize: 11, color: '#9CA3AF' }}>{timeAgo(c.created_at)}</span>
+                  </div>
+                </div>
+              ))}
+              {activity.recent_registrations.length === 0 && (
+                <div style={{ padding: 24, textAlign: 'center', color: '#9CA3AF', fontSize: 13 }}>Sin registros recientes.</div>
+              )}
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB SALUD ── */}
+        {tab === 'health' && health && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             {[
-              { label: 'Clientes totales', value: fmt(stats.total_clients) },
-              { label: 'Clientes activos', value: fmt(stats.active_clients), highlight: true },
-              { label: 'Conversaciones', value: fmt(stats.total_conversations) },
-              { label: 'Mensajes procesados', value: fmt(stats.total_messages) },
-              { label: 'Solicitudes de baja', value: fmt(stats.pending_deletion_requests), warn: stats.pending_deletion_requests > 0 },
-              { label: 'MRR estimado', value: `$${fmt(stats.monthly_revenue)}` },
-            ].map(s => (
-              <div key={s.label} style={{ background: 'white', borderRadius: 12, padding: '18px 20px', border: '1px solid #E5E7EB' }}>
-                <div style={{ fontSize: 11, color: '#6B7280', textTransform: 'uppercase', letterSpacing: '0.05em', fontWeight: 500 }}>{s.label}</div>
-                <div style={{ fontSize: 28, fontWeight: 700, marginTop: 4, color: s.highlight ? '#7C3AED' : s.warn ? '#DC2626' : '#1A1A2E' }}>{s.value}</div>
+              {
+                icon: '📡', title: `Sin canal conectado (${health.no_channels.length})`,
+                desc: 'Clientes activos que nunca conectaron ningún canal. Pueden necesitar ayuda para arrancar.',
+                list: health.no_channels, color: '#DC2626', bg: '#FEF2F2',
+              },
+              {
+                icon: '😴', title: `Sin actividad en +7 días (${health.no_activity_7d.length})`,
+                desc: 'Clientes activos sin conversaciones recientes. Alto riesgo de cancelación.',
+                list: health.no_activity_7d, color: '#D97706', bg: '#FFFBEB',
+                extra: c => c.last_activity ? `Última actividad: ${timeAgo(c.last_activity)}` : 'Nunca tuvieron actividad',
+              },
+              {
+                icon: '🤖', title: `Bot sin configurar (${health.no_bot_config.length})`,
+                desc: 'Clientes que nunca cargaron un prompt útil para el bot.',
+                list: health.no_bot_config, color: '#7C3AED', bg: '#F5F3FF',
+              },
+            ].map(section => (
+              <div key={section.title} style={{ background: 'white', borderRadius: 12, border: `1px solid #E5E7EB`, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 20px', background: section.bg, borderBottom: '1px solid #E5E7EB' }}>
+                  <div style={{ fontWeight: 700, fontSize: 15, color: section.color }}>{section.icon} {section.title}</div>
+                  <div style={{ fontSize: 13, color: '#6B7280', marginTop: 2 }}>{section.desc}</div>
+                </div>
+                {section.list.length === 0 ? (
+                  <div style={{ padding: '20px 20px', color: '#6B7280', fontSize: 13 }}>✅ Ningún cliente en esta categoría.</div>
+                ) : (
+                  <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                    <thead>
+                      <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                        {['Negocio', 'Email', 'Info', 'Registrado'].map(h => (
+                          <th key={h} style={{ padding: '8px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {section.list.map(c => (
+                        <tr key={c.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
+                          <td style={{ padding: '10px 14px', fontWeight: 600 }}>{c.business_name || c.name}</td>
+                          <td style={{ padding: '10px 14px', color: '#6B7280' }}>{c.email}</td>
+                          <td style={{ padding: '10px 14px', color: '#9CA3AF', fontSize: 12 }}>
+                            {section.extra ? section.extra(c) : '—'}
+                          </td>
+                          <td style={{ padding: '10px 14px', color: '#9CA3AF', fontSize: 12 }}>{fmtDate(c.created_at)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
               </div>
             ))}
           </div>
         )}
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
-          {TABS.map(t => (
-            <button key={t.key} onClick={() => setTab(t.key)} style={{
-              padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 14, fontWeight: 500,
-              background: tab === t.key ? '#7C3AED' : 'white',
-              color: tab === t.key ? 'white' : '#6B7280',
-              boxShadow: '0 1px 3px rgba(0,0,0,0.08)'
-            }}>{t.label}</button>
-          ))}
-        </div>
-
-        {/* Tab: Clientes */}
-        {tab === 'clients' && (
-          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid #E5E7EB' }}>
-              <input
-                placeholder="Buscar por nombre, email o negocio..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-                style={{ width: '100%', padding: '9px 14px', border: '1.5px solid #E5E7EB', borderRadius: 9, fontSize: 14, outline: 'none', boxSizing: 'border-box' }}
-              />
-            </div>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-              <thead>
-                <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                  {['Negocio', 'Email', 'Plan', 'Facturación', 'Conversaciones', 'Último acceso', 'Registrado', 'Acción'].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em' }}>{h}</th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(c => (
-                  <tr key={c.id} style={{ borderBottom: '1px solid #F3F4F6' }}>
-                    <td style={{ padding: '12px 16px' }}>
-                      <div style={{ fontWeight: 600 }}>{c.business_name || c.name}</div>
-                      <div style={{ color: '#9CA3AF', fontSize: 11 }}>{c.phone_number || '—'}</div>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: '#6B7280' }}>{c.email}</td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{ fontSize: 11, padding: '3px 9px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
-                        {c.plan || 'básico'}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <span style={{
-                        fontSize: 11, padding: '3px 9px', borderRadius: 20, fontWeight: 600,
-                        background: c.active ? '#EDE9FE' : '#FEE2E2',
-                        color: c.active ? '#5B21B6' : '#DC2626'
-                      }}>
-                        {c.billing_status || (c.active ? 'activo' : 'suspendido')}
-                      </span>
-                    </td>
-                    <td style={{ padding: '12px 16px', color: '#6B7280' }}>{fmt(c.total_conversations)}</td>
-                    <td style={{ padding: '12px 16px', color: '#6B7280' }}>{timeAgo(c.last_activity)}</td>
-                    <td style={{ padding: '12px 16px', color: '#9CA3AF', fontSize: 12 }}>
-                      {c.created_at ? new Date(c.created_at).toLocaleDateString('es-AR') : '—'}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
-                      <button
-                        onClick={() => toggleClient(c.id, c.active)}
-                        style={{
-                          padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500,
-                          background: c.active ? '#FEE2E2' : '#EDE9FE',
-                          color: c.active ? '#DC2626' : '#5B21B6'
-                        }}
-                      >
-                        {c.active ? 'Suspender' : 'Activar'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-                {filtered.length === 0 && (
-                  <tr><td colSpan={8} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>No hay clientes{search ? ' que coincidan' : ''}.</td></tr>
-                )}
-              </tbody>
-            </table>
-          </div>
-        )}
-
-        {/* Tab: Métricas */}
+        {/* ── TAB MÉTRICAS ── */}
         {tab === 'stats' && stats && (
-          <div style={{ display: 'grid', gap: 16 }}>
-            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 28 }}>
-              <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 20 }}>Resumen global</h2>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                {[
-                  ['Clientes registrados', fmt(stats.total_clients)],
-                  ['Clientes activos', fmt(stats.active_clients)],
-                  ['Tasa de activación', `${stats.total_clients > 0 ? Math.round(stats.active_clients / stats.total_clients * 100) : 0}%`],
-                  ['Total conversaciones', fmt(stats.total_conversations)],
-                  ['Total mensajes procesados', fmt(stats.total_messages)],
-                  ['Prom. msgs por conversación', stats.total_conversations > 0 ? fmt(Math.round(stats.total_messages / stats.total_conversations)) : '—'],
-                  ['MRR estimado (ARS)', `$${fmt(stats.monthly_revenue)}`],
-                  ['Solicitudes de baja pendientes', fmt(stats.pending_deletion_requests)],
-                ].map(([label, value]) => (
-                  <div key={label} style={{ padding: '14px 18px', background: '#F9FAFB', borderRadius: 10 }}>
-                    <div style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>{label}</div>
-                    <div style={{ fontSize: 22, fontWeight: 700 }}>{value}</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>👥 Clientes</div>
+              {[
+                ['Total registrados', fmt(stats.total_clients)],
+                ['Activos', fmt(stats.active_clients)],
+                ['Suspendidos', fmt(stats.suspended_clients)],
+                ['Nuevos esta semana', fmt(stats.new_clients_week)],
+                ['Nuevos este mes', fmt(stats.new_clients_month)],
+                ['Churn rate', `${stats.churn_rate}%`],
+                ['Tasa de activación', `${stats.total_clients > 0 ? Math.round(stats.active_clients / stats.total_clients * 100) : 0}%`],
+              ].map(([l, v]) => (
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F3F4F6', fontSize: 14 }}>
+                  <span style={{ color: '#6B7280' }}>{l}</span>
+                  <span style={{ fontWeight: 700 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>💬 Mensajes y conversaciones</div>
+              {[
+                ['Conversaciones hoy', fmt(stats.conversations_today)],
+                ['Conversaciones esta semana', fmt(stats.conversations_week)],
+                ['Conversaciones este mes', fmt(stats.conversations_month)],
+                ['Total histórico', fmt(stats.total_conversations)],
+                ['Mensajes hoy', fmt(stats.messages_today)],
+                ['Mensajes esta semana', fmt(stats.messages_week)],
+                ['Mensajes este mes', fmt(stats.messages_month)],
+                ['Total mensajes histórico', fmt(stats.total_messages)],
+                ['Prom. msgs/conversación', stats.total_conversations > 0 ? fmt(Math.round(stats.total_messages / stats.total_conversations)) : '—'],
+              ].map(([l, v]) => (
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F3F4F6', fontSize: 14 }}>
+                  <span style={{ color: '#6B7280' }}>{l}</span>
+                  <span style={{ fontWeight: 700 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>💰 Facturación</div>
+              {[
+                ['MRR estimado (ARS)', fmtMoney(stats.monthly_revenue)],
+                ['Solicitudes de baja pendientes', fmt(stats.pending_deletion_requests)],
+              ].map(([l, v]) => (
+                <div key={l} style={{ display: 'flex', justifyContent: 'space-between', padding: '10px 0', borderBottom: '1px solid #F3F4F6', fontSize: 14 }}>
+                  <span style={{ color: '#6B7280' }}>{l}</span>
+                  <span style={{ fontWeight: 700 }}>{v}</span>
+                </div>
+              ))}
+            </div>
+            <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>📡 Canales más usados</div>
+              {stats.channel_distribution.map(ch => {
+                const total = stats.channel_distribution.reduce((a, b) => a + parseInt(b.count), 0);
+                const pct = total > 0 ? Math.round(parseInt(ch.count) / total * 100) : 0;
+                return (
+                  <div key={ch.channel} style={{ marginBottom: 12 }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, marginBottom: 4 }}>
+                      <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <ChannelDot channel={ch.channel} active />{ch.channel}
+                      </span>
+                      <span style={{ fontWeight: 700 }}>{pct}% <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({fmt(ch.count)})</span></span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 4, background: '#F3F4F6', overflow: 'hidden' }}>
+                      <div style={{ height: '100%', width: `${pct}%`, background: CHANNEL_COLORS[ch.channel] || '#7C3AED', borderRadius: 4 }} />
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           </div>
         )}
 
-        {/* Tab: Solicitudes de baja */}
+        {/* ── TAB BAJAS ── */}
         {tab === 'deletions' && (
           <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>Solicitudes de eliminación de datos (Ley 25.326)</span>
+              {pendingDeletions > 0 && <span style={{ background: '#FEE2E2', color: '#DC2626', borderRadius: 20, padding: '4px 12px', fontSize: 12, fontWeight: 700 }}>{pendingDeletions} pendientes</span>}
+            </div>
             <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
               <thead>
                 <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                  {['Teléfono', 'Nombre', 'Motivo', 'Fecha', 'Estado', 'Acción'].map(h => (
-                    <th key={h} style={{ padding: '10px 16px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 11, textTransform: 'uppercase' }}>{h}</th>
+                  {['Teléfono', 'Nombre', 'Motivo', 'Fecha solicitud', 'Estado', 'Procesada el', ''].map(h => (
+                    <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase' }}>{h}</th>
                   ))}
                 </tr>
               </thead>
               <tbody>
                 {deletions.map(d => (
                   <tr key={d.id} style={{ borderBottom: '1px solid #F3F4F6', opacity: d.status === 'processed' ? 0.5 : 1 }}>
-                    <td style={{ padding: '12px 16px', fontWeight: 600 }}>{d.phone}</td>
-                    <td style={{ padding: '12px 16px' }}>{d.name}</td>
-                    <td style={{ padding: '12px 16px', color: '#6B7280', maxWidth: 200 }}>{d.reason || '—'}</td>
-                    <td style={{ padding: '12px 16px', color: '#9CA3AF', fontSize: 12 }}>
-                      {new Date(d.requested_at).toLocaleDateString('es-AR')}
-                    </td>
-                    <td style={{ padding: '12px 16px' }}>
+                    <td style={{ padding: '11px 14px', fontWeight: 600 }}>{d.phone}</td>
+                    <td style={{ padding: '11px 14px' }}>{d.name}</td>
+                    <td style={{ padding: '11px 14px', color: '#6B7280', maxWidth: 220 }}>{d.reason || '—'}</td>
+                    <td style={{ padding: '11px 14px', color: '#9CA3AF', fontSize: 12 }}>{fmtDate(d.requested_at)}</td>
+                    <td style={{ padding: '11px 14px' }}>
                       <span style={{
                         fontSize: 11, padding: '3px 9px', borderRadius: 20, fontWeight: 600,
                         background: d.status === 'pending' ? '#FEF3C7' : '#EDE9FE',
                         color: d.status === 'pending' ? '#92400E' : '#5B21B6'
-                      }}>
-                        {d.status === 'pending' ? 'Pendiente' : 'Procesada'}
-                      </span>
+                      }}>{d.status === 'pending' ? '⏳ Pendiente' : '✅ Procesada'}</span>
                     </td>
-                    <td style={{ padding: '12px 16px' }}>
+                    <td style={{ padding: '11px 14px', color: '#9CA3AF', fontSize: 12 }}>{fmtDate(d.processed_at)}</td>
+                    <td style={{ padding: '11px 14px' }}>
                       {d.status === 'pending' && (
-                        <button
-                          onClick={() => resolveDeletion(d.id)}
-                          style={{ padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: '#EDE9FE', color: '#5B21B6' }}
-                        >
-                          Marcar procesada
-                        </button>
+                        <button onClick={() => resolveDeletion(d.id)} style={{
+                          padding: '5px 11px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500,
+                          background: '#EDE9FE', color: '#5B21B6'
+                        }}>Marcar procesada</button>
                       )}
                     </td>
                   </tr>
                 ))}
                 {deletions.length === 0 && (
-                  <tr><td colSpan={6} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>No hay solicitudes de baja.</td></tr>
+                  <tr><td colSpan={7} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>No hay solicitudes de baja.</td></tr>
                 )}
               </tbody>
             </table>
           </div>
         )}
-
       </div>
     </div>
   );

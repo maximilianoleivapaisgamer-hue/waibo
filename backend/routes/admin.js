@@ -10,41 +10,93 @@ function checkAdmin(req, res, next) {
   next();
 }
 
-// GET /api/admin/stats — métricas globales
+// GET /api/admin/stats
 router.get('/stats', checkAdmin, async (req, res) => {
   try {
-    const [clients, activeClients, totalConvs, totalMsgs, pendingBajas, revenue] = await Promise.all([
+    const [
+      clients, activeClients, suspendedClients,
+      newThisWeek, newThisMonth,
+      totalConvs, convsToday, convsThisWeek, convsThisMonth,
+      totalMsgs, msgsToday, msgsThisWeek, msgsThisMonth,
+      pendingBajas, revenue,
+      channelDist
+    ] = await Promise.all([
       pool.query('SELECT COUNT(*) FROM clients'),
       pool.query("SELECT COUNT(*) FROM clients WHERE active = true"),
+      pool.query("SELECT COUNT(*) FROM clients WHERE active = false"),
+      pool.query("SELECT COUNT(*) FROM clients WHERE created_at >= date_trunc('week', NOW())"),
+      pool.query("SELECT COUNT(*) FROM clients WHERE created_at >= date_trunc('month', NOW())"),
       pool.query('SELECT COUNT(*) FROM conversations'),
+      pool.query("SELECT COUNT(*) FROM conversations WHERE created_at >= CURRENT_DATE"),
+      pool.query("SELECT COUNT(*) FROM conversations WHERE created_at >= date_trunc('week', NOW())"),
+      pool.query("SELECT COUNT(*) FROM conversations WHERE created_at >= date_trunc('month', NOW())"),
       pool.query('SELECT COUNT(*) FROM messages'),
+      pool.query("SELECT COUNT(*) FROM messages WHERE timestamp >= CURRENT_DATE"),
+      pool.query("SELECT COUNT(*) FROM messages WHERE timestamp >= date_trunc('week', NOW())"),
+      pool.query("SELECT COUNT(*) FROM messages WHERE timestamp >= date_trunc('month', NOW())"),
       pool.query("SELECT COUNT(*) FROM data_deletion_requests WHERE status = 'pending'"),
       pool.query("SELECT COALESCE(SUM(amount), 0) as total FROM billing WHERE status = 'active'"),
+      pool.query("SELECT channel, COUNT(*) as count FROM conversations GROUP BY channel ORDER BY count DESC"),
     ]);
+
+    const tc = parseInt(clients.rows[0].count);
+    const ac = parseInt(activeClients.rows[0].count);
+
     res.json({
-      total_clients: parseInt(clients.rows[0].count),
-      active_clients: parseInt(activeClients.rows[0].count),
+      total_clients: tc,
+      active_clients: ac,
+      suspended_clients: parseInt(suspendedClients.rows[0].count),
+      new_clients_week: parseInt(newThisWeek.rows[0].count),
+      new_clients_month: parseInt(newThisMonth.rows[0].count),
+      churn_rate: tc > 0 ? Math.round((tc - ac) / tc * 100) : 0,
       total_conversations: parseInt(totalConvs.rows[0].count),
+      conversations_today: parseInt(convsToday.rows[0].count),
+      conversations_week: parseInt(convsThisWeek.rows[0].count),
+      conversations_month: parseInt(convsThisMonth.rows[0].count),
       total_messages: parseInt(totalMsgs.rows[0].count),
+      messages_today: parseInt(msgsToday.rows[0].count),
+      messages_week: parseInt(msgsThisWeek.rows[0].count),
+      messages_month: parseInt(msgsThisMonth.rows[0].count),
       pending_deletion_requests: parseInt(pendingBajas.rows[0].count),
       monthly_revenue: parseFloat(revenue.rows[0].total),
+      channel_distribution: channelDist.rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// GET /api/admin/clients — lista de todos los clientes
+// GET /api/admin/clients — lista completa con canales, actividad y salud
 router.get('/clients', checkAdmin, async (req, res) => {
   try {
     const result = await pool.query(`
       SELECT
         c.id, c.name, c.email, c.business_name, c.phone_number,
-        c.whatsapp_mode, c.whatsapp_provider, c.active, c.plan, c.created_at,
+        c.whatsapp_mode, c.whatsapp_provider, c.whatsapp_api_key,
+        c.active, c.plan, c.created_at,
         b.status as billing_status, b.amount, b.last_payment, b.next_due, b.suspended_at,
+
+        -- canales conectados
+        EXISTS(SELECT 1 FROM instagram_tokens it WHERE it.client_id = c.id) as has_instagram,
+        EXISTS(SELECT 1 FROM facebook_tokens ft WHERE ft.client_id = c.id) as has_facebook,
+        EXISTS(SELECT 1 FROM mercadolibre_tokens mt WHERE mt.client_id = c.id) as has_ml,
+        EXISTS(SELECT 1 FROM tiendanube_tokens tt WHERE tt.client_id = c.id) as has_tiendanube,
+        EXISTS(SELECT 1 FROM whatsapp_qr_sessions wqs WHERE wqs.client_id = c.id::text AND wqs.status = 'connected') as has_whatsapp_qr,
+
+        -- actividad
         (SELECT COUNT(*) FROM conversations cv WHERE cv.client_id = c.id) as total_conversations,
-        (SELECT COUNT(*) FROM messages m JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.client_id = c.id) as total_messages,
-        (SELECT MAX(cv.updated_at) FROM conversations cv WHERE cv.client_id = c.id) as last_activity
+        (SELECT COUNT(*) FROM conversations cv WHERE cv.client_id = c.id AND cv.created_at >= date_trunc('month', NOW())) as convs_this_month,
+        (SELECT COUNT(*) FROM messages m JOIN conversations cv ON cv.id = m.conversation_id WHERE cv.client_id = c.id AND m.timestamp >= date_trunc('month', NOW())) as msgs_this_month,
+        (SELECT MAX(cv.updated_at) FROM conversations cv WHERE cv.client_id = c.id) as last_activity,
+
+        -- salud del bot
+        (SELECT LENGTH(COALESCE(bc.system_prompt, '')) > 100 FROM bot_configs bc WHERE bc.client_id = c.id) as bot_configured,
+        (SELECT COUNT(*) FROM knowledge_base kb WHERE kb.client_id = c.id) as knowledge_entries,
+        (SELECT bc.has_tested_bot FROM bot_configs bc WHERE bc.client_id = c.id) as has_tested_bot,
+
+        -- alertas abiertas
+        (SELECT COUNT(*) FROM alerts a WHERE a.client_id = c.id AND a.resolved = false) as open_alerts
+
       FROM clients c
       LEFT JOIN billing b ON b.client_id = c.id
       ORDER BY c.created_at DESC
@@ -77,14 +129,93 @@ router.post('/clients/:id/activate', checkAdmin, async (req, res) => {
   }
 });
 
-// GET /api/admin/deletion-requests — solicitudes de baja pendientes
+// GET /api/admin/activity — feed de actividad reciente de toda la plataforma
+router.get('/activity', checkAdmin, async (req, res) => {
+  try {
+    const [recentConvs, recentClients] = await Promise.all([
+      pool.query(`
+        SELECT cv.id, cv.customer_name, cv.customer_phone, cv.channel,
+               cv.status, cv.updated_at, cv.message_count,
+               c.business_name, c.name as client_name
+        FROM conversations cv
+        JOIN clients c ON c.id = cv.client_id
+        ORDER BY cv.updated_at DESC
+        LIMIT 30
+      `),
+      pool.query(`
+        SELECT id, name, email, business_name, plan, created_at
+        FROM clients
+        ORDER BY created_at DESC
+        LIMIT 10
+      `),
+    ]);
+    res.json({
+      recent_conversations: recentConvs.rows,
+      recent_registrations: recentClients.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/health — clientes en riesgo de churn
+router.get('/health', checkAdmin, async (req, res) => {
+  try {
+    const [noChannels, noActivity, noBotConfig] = await Promise.all([
+      // Activos sin ningún canal conectado
+      pool.query(`
+        SELECT c.id, c.name, c.email, c.business_name, c.created_at
+        FROM clients c
+        WHERE c.active = true
+          AND NOT EXISTS(SELECT 1 FROM instagram_tokens it WHERE it.client_id = c.id)
+          AND NOT EXISTS(SELECT 1 FROM facebook_tokens ft WHERE ft.client_id = c.id)
+          AND NOT EXISTS(SELECT 1 FROM mercadolibre_tokens mt WHERE mt.client_id = c.id)
+          AND NOT EXISTS(SELECT 1 FROM whatsapp_qr_sessions wqs WHERE wqs.client_id = c.id::text AND wqs.status = 'connected')
+          AND (c.whatsapp_api_key IS NULL OR c.whatsapp_api_key = '')
+        ORDER BY c.created_at DESC
+      `),
+      // Activos sin actividad en los últimos 7 días
+      pool.query(`
+        SELECT c.id, c.name, c.email, c.business_name,
+               MAX(cv.updated_at) as last_activity
+        FROM clients c
+        LEFT JOIN conversations cv ON cv.client_id = c.id
+        WHERE c.active = true
+        GROUP BY c.id, c.name, c.email, c.business_name
+        HAVING MAX(cv.updated_at) < NOW() - INTERVAL '7 days'
+           OR MAX(cv.updated_at) IS NULL
+        ORDER BY last_activity ASC NULLS FIRST
+      `),
+      // Activos con bot sin configurar
+      pool.query(`
+        SELECT c.id, c.name, c.email, c.business_name, c.created_at
+        FROM clients c
+        JOIN bot_configs bc ON bc.client_id = c.id
+        WHERE c.active = true
+          AND (
+            bc.system_prompt IS NULL
+            OR LENGTH(bc.system_prompt) < 100
+            OR bc.system_prompt = 'Sos un asistente útil.'
+          )
+        ORDER BY c.created_at DESC
+      `),
+    ]);
+    res.json({
+      no_channels: noChannels.rows,
+      no_activity_7d: noActivity.rows,
+      no_bot_config: noBotConfig.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/deletion-requests
 router.get('/deletion-requests', checkAdmin, async (req, res) => {
   try {
-    const result = await pool.query(`
-      SELECT * FROM data_deletion_requests
-      ORDER BY requested_at DESC
-      LIMIT 100
-    `);
+    const result = await pool.query(
+      'SELECT * FROM data_deletion_requests ORDER BY requested_at DESC LIMIT 100'
+    );
     res.json(result.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
