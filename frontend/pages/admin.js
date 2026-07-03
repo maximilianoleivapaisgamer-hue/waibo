@@ -84,18 +84,22 @@ export default function Admin() {
 
   async function loadAll() {
     setLoading(true);
-    try {
-      const [s, c, d, a, h] = await Promise.all([
-        axios.get(`${API}/api/admin/stats`, { headers }),
-        axios.get(`${API}/api/admin/clients`, { headers }),
-        axios.get(`${API}/api/admin/deletion-requests`, { headers }),
-        axios.get(`${API}/api/admin/activity`, { headers }),
-        axios.get(`${API}/api/admin/health`, { headers }),
-      ]);
-      setStats(s.data); setClients(c.data); setDeletions(d.data);
-      setActivity(a.data); setHealth(h.data);
-    } catch { setError('Error cargando datos'); }
-    finally { setLoading(false); }
+    setError('');
+    const h = { 'x-admin-key': key || localStorage.getItem('waibo_admin_key') };
+    const safe = async (fn) => { try { return await fn(); } catch(e) { return null; } };
+    const [s, c, d, a, hl] = await Promise.all([
+      safe(() => axios.get(`${API}/api/admin/stats`, { headers: h })),
+      safe(() => axios.get(`${API}/api/admin/clients`, { headers: h })),
+      safe(() => axios.get(`${API}/api/admin/deletion-requests`, { headers: h })),
+      safe(() => axios.get(`${API}/api/admin/activity`, { headers: h })),
+      safe(() => axios.get(`${API}/api/admin/health`, { headers: h })),
+    ]);
+    if (s) setStats(s.data); else setError('Error cargando stats');
+    if (c) setClients(c.data); else setError(e => e || 'Error cargando clientes');
+    if (d) setDeletions(d.data);
+    if (a) setActivity(a.data);
+    if (hl) setHealth(hl.data);
+    setLoading(false);
   }
 
   async function toggleClient(id, active) {
@@ -158,6 +162,7 @@ export default function Admin() {
         <Image src="/waibo-logo.png" alt="Waibo" width={26} height={26} style={{ borderRadius: 7 }} />
         <span style={{ fontWeight: 700, fontSize: 16 }}>Waibo Admin</span>
         {loading && <span style={{ fontSize: 12, color: '#9CA3AF', marginLeft: 8 }}>Cargando...</span>}
+        {error && <span style={{ fontSize: 12, color: '#DC2626', marginLeft: 8 }}>⚠️ {error}</span>}
         <div style={{ flex: 1 }} />
         <button onClick={loadAll} style={{ background: 'none', border: '1px solid #E5E7EB', borderRadius: 8, padding: '6px 14px', fontSize: 13, cursor: 'pointer', color: '#6B7280' }}>↻ Actualizar</button>
         <button onClick={() => { localStorage.removeItem('waibo_admin_key'); setAuthed(false); setKey(''); }}
