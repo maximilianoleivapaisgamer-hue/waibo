@@ -5,9 +5,9 @@
 }
 
 :root {
-  --green: #25D366;
-  --green-dark: #128C7E;
-  --green-light: #DCF8C6;
+  --green: #7C3AED;
+  --green-dark: #5B21B6;
+  --green-light: #EDE9FE;
   --bg: #F7F8FA;
   --card: #FFFFFF;
   --text: #1A1A2E;
@@ -36,7 +36,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 100%);
+  background: linear-gradient(135deg, #F5F3FF 0%, #EDE9FE 100%);
 }
 
 .auth-card {
@@ -246,7 +246,7 @@ body {
 }
 
 .nav-item.active {
-  background: #F0FDF4;
+  background: #F5F3FF;
   color: var(--green-dark);
   font-weight: 500;
 }
@@ -388,7 +388,7 @@ body {
   font-weight: 500;
 }
 
-.badge-bot { background: #DCFCE7; color: #15803D; }
+.badge-bot { background: #EDE9FE; color: #5B21B6; }
 .badge-human { background: #FEF3C7; color: #92400E; }
 
 .status-dot {
@@ -407,8 +407,8 @@ body {
 }
 
 .success-msg {
-  background: #F0FDF4;
-  color: #15803D;
+  background: #F5F3FF;
+  color: #5B21B6;
   padding: 10px 14px;
   border-radius: 8px;
   font-size: 13px;
