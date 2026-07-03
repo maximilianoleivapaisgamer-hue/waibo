@@ -264,6 +264,38 @@ Cada cliente tiene `whatsapp_provider` (`cloud_api` | `360dialog`) y `whatsapp_m
 
 ---
 
+## Workflow de Git
+
+### Estado del repo
+Git inicializado, sin remote configurado. Deploy se hace directo con CLIs:
+- **Backend:** `cd backend && railway up --detach`
+- **Frontend:** `cd frontend && vercel --prod --yes`
+
+### Reglas de commit (Claude las aplica automáticamente)
+- **Cuándo:** cada vez que se completa algo funcional — feature, corrección, decisión implementada
+- **Sin preguntar:** los commits se hacen como parte del flujo normal, sin pedir confirmación
+- **Idioma:** español
+- **Formato:** `tipo: descripción clara de qué se hizo y por qué`
+  - `feat:` — nueva funcionalidad
+  - `fix:` — corrección de bug
+  - `rebrand:` — cambios de nombre/marca
+  - `docs:` — actualización de CLAUDE.md u otra documentación
+  - `compliance:` — cambios legales/privacidad
+  - `refactor:` — cambios internos sin impacto en comportamiento
+
+### Antes de tocar algo riesgoso — OBLIGATORIO avisar primero
+Los siguientes cambios requieren confirmación explícita antes de ejecutar, y el último commit debe estar hecho para poder hacer rollback:
+- Cambiar `WEBHOOK_VERIFY_TOKEN` (`whabot2024`) — puede cortar el App Review de Meta
+- Migrar cifrado de columnas en la DB — afecta todas las queries existentes
+- Modificar cómo se autentica la Cloud API de Meta
+- Cambios en el schema de la DB que impliquen DROP o ALTER de columnas con datos
+- Forzar desconexión de sesiones QR activas
+
+### CLAUDE.md y commits en sintonía
+Cada vez que se actualiza el CLAUDE.md por un avance importante, ese mismo commit incluye el avance que lo motivó. No hay actualizaciones del CLAUDE.md sin su commit correspondiente.
+
+---
+
 ## Convenciones de código
 
 - **Sin comentarios** salvo que el WHY sea no obvio (constraint oculta, workaround de un bug)
