@@ -34,7 +34,7 @@ export default function Register() {
       <div className="auth-card">
         <div className="auth-logo">
           <div className="logo-icon">💬</div>
-          <h1>WhaBot</h1>
+          <h1>Waibo</h1>
           <p>Creá tu cuenta gratis</p>
         </div>
 

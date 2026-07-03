@@ -32,7 +32,7 @@ export default function Login() {
       <div className="auth-card">
         <div className="auth-logo">
           <div className="logo-icon">💬</div>
-          <h1>WhaBot</h1>
+          <h1>Waibo</h1>
           <p>Iniciá sesión en tu panel</p>
         </div>
 

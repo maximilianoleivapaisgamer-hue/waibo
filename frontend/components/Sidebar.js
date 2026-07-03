@@ -49,7 +49,7 @@ export default function Sidebar({ active }) {
   return (
     <div className="sidebar">
       <div className="sidebar-logo">
-        <span>💬 WhaBot</span>
+        <span>💬 Waibo</span>
         <small>v1.0.0 — Panel de control</small>
       </div>
       <nav>

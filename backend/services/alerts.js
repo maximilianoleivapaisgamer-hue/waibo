@@ -30,7 +30,7 @@ async function notifyOwnerIfEnabled(clientId, message) {
     if (!cr?.whatsapp_api_key) return;
 
     const ownerPhone = normalizePhone(config.owner_notification_phone);
-    await sendWhatsAppMessage(ownerPhone, `🔔 *WhaBot*\n\n${message}`, cr.whatsapp_api_key, { provider: cr.whatsapp_provider || '360dialog', phoneNumberId: cr.whatsapp_phone_id });
+    await sendWhatsAppMessage(ownerPhone, `🔔 *Waibo*\n\n${message}`, cr.whatsapp_api_key, { provider: cr.whatsapp_provider || '360dialog', phoneNumberId: cr.whatsapp_phone_id });
   } catch (err) {
     console.error('Error notificando al dueño por WhatsApp:', err.message);
   }

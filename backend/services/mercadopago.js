@@ -6,7 +6,7 @@ async function createSubscription(clientId, clientEmail, plan) {
   const response = await axios.post(
     `${MP_API}/preapproval`,
     {
-      reason: `WhaBot — Plan ${plan.name}`,
+      reason: `Waibo — Plan ${plan.name}`,
       external_reference: clientId,
       payer_email: clientEmail,
       auto_recurring: {
@@ -34,7 +34,7 @@ async function createOneTimePayment(clientId, clientEmail, plan) {
     {
       items: [
         {
-          title: `WhaBot — Plan ${plan.name} (pago único, 1 mes)`,
+          title: `Waibo — Plan ${plan.name} (pago único, 1 mes)`,
           quantity: 1,
           unit_price: parseFloat(plan.price),
           currency_id: 'ARS'

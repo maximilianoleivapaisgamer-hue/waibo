@@ -105,7 +105,7 @@ export default function Knowledge() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `whabot-base-conocimiento-${dateStr}.json`;
+        link.download = `waibo-base-conocimiento-${dateStr}.json`;
         link.click();
         URL.revokeObjectURL(url);
       } else {
@@ -132,7 +132,7 @@ export default function Knowledge() {
         const url = URL.createObjectURL(blob);
         const link = document.createElement('a');
         link.href = url;
-        link.download = `whabot-base-conocimiento-${dateStr}.csv`;
+        link.download = `waibo-base-conocimiento-${dateStr}.csv`;
         link.click();
         URL.revokeObjectURL(url);
       }

@@ -148,7 +148,7 @@ export default function MercadoLibre() {
                 {[
                   'Hacés clic en "Conectar Mercado Libre"',
                   'ML te muestra su pantalla de login oficial — iniciás sesión con tu cuenta de vendedor',
-                  'ML pregunta si autorizás a WhaBot a leer preguntas y enviar mensajes en tu nombre — aceptás',
+                  'ML pregunta si autorizás a Waibo a leer preguntas y enviar mensajes en tu nombre — aceptás',
                   'Volvés al panel y ML queda conectado. El bot empieza a responder automáticamente',
                 ].map((step, i) => (
                   <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 12px', background: 'var(--bg)', borderRadius: 9, border: '1px solid var(--border)', marginBottom: 8 }}>

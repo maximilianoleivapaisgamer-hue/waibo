@@ -176,7 +176,7 @@ export default function Conversations() {
         { label: 'Cantidad de mensajes', get: c => c.message_count },
         { label: 'Última actividad', get: c => new Date(c.updated_at).toLocaleString('es-AR') },
       ],
-      `whabot-conversaciones-${new Date().toISOString().slice(0, 10)}.csv`
+      `waibo-conversaciones-${new Date().toISOString().slice(0, 10)}.csv`
     );
   };
 
@@ -193,7 +193,7 @@ export default function Conversations() {
           { label: 'Mensaje', get: m => m.content },
           { label: 'Fecha y hora', get: m => new Date(m.timestamp).toLocaleString('es-AR') },
         ],
-        `whabot-mensajes-completo-${new Date().toISOString().slice(0, 10)}.csv`
+        `waibo-mensajes-completo-${new Date().toISOString().slice(0, 10)}.csv`
       );
     } catch {
       alert('Error exportando los mensajes. Intentá de nuevo.');
