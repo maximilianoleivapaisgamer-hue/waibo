@@ -48,6 +48,7 @@ const whatsappQRRoutes = require('./routes/whatsappQR');
 const mercadopagoRoutes = require('./routes/mercadopago');
 const bankTransferRoutes = require('./routes/bankTransfer');
 const privacyRoutes = require('./routes/privacy');
+const adminRoutes = require('./routes/admin');
 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/clients', apiLimiter, clientRoutes);
@@ -66,6 +67,7 @@ app.use('/api/mercadopago', apiLimiter, mercadopagoRoutes);
 app.use('/api/bank-transfer', apiLimiter, bankTransferRoutes);
 app.use('/webhook', webhookLimiter, webhookRoutes);
 app.use('/api/privacy', privacyRoutes);
+app.use('/api/admin', adminRoutes);
 
 app.get('/', (req, res) => {
   res.json({ status: 'WhaBot API running', version: '1.0.0' });
