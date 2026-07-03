@@ -18,6 +18,17 @@ export default function Conversations() {
   const [messageInput, setMessageInput] = useState('');
   const [sendingMessage, setSendingMessage] = useState(false);
   const [contactVariables, setContactVariables] = useState([]);
+  const [funnelFilter, setFunnelFilter] = useState('');
+  const [savingFunnel, setSavingFunnel] = useState(false);
+
+  const FUNNEL_STAGES = [
+    { key: 'nuevo',           label: 'Nuevo',          bg: '#F3F4F6', color: '#6B7280' },
+    { key: 'interesado',      label: 'Interesado',     bg: '#DBEAFE', color: '#1D4ED8' },
+    { key: 'turno_agendado',  label: 'Turno/Pedido',   bg: '#EDE9FE', color: '#7C3AED' },
+    { key: 'cerrado',         label: 'Cerrado',        bg: '#DCFCE7', color: '#16A34A' },
+    { key: 'perdido',         label: 'Perdido',        bg: '#FEE2E2', color: '#DC2626' },
+  ];
+  const getFunnelStyle = (key) => FUNNEL_STAGES.find(s => s.key === key) || FUNNEL_STAGES[0];
 
   const SUGGESTED_TAGS = ['Lead Caliente', 'Falta Pago', 'Turno Agendado'];
   const TAG_COLORS = {
@@ -114,6 +125,24 @@ export default function Conversations() {
 
   const removeTag = (tag) => {
     saveTags((selected.tags || []).filter(t => t !== tag));
+  };
+
+  const changeFunnelStage = async (stage) => {
+    if (!selected) return;
+    setSavingFunnel(true);
+    try {
+      await axios.put(
+        `${API}/api/bot/conversations/${selected.id}/funnel`,
+        { stage },
+        { headers: getHeaders() }
+      );
+      setSelected(prev => ({ ...prev, funnel_stage: stage }));
+      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, funnel_stage: stage } : c));
+    } catch {
+      alert('Error actualizando la etapa. Intentá de nuevo.');
+    } finally {
+      setSavingFunnel(false);
+    }
   };
 
   const sendManualMessage = async () => {
@@ -222,8 +251,27 @@ export default function Conversations() {
 
         <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1.4fr' : '1fr', gap: 20 }}>
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 14 }}>
-              {conversations.length} conversaciones
+            <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
+              <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
+                {conversations.filter(c => !funnelFilter || c.funnel_stage === funnelFilter).length} conversaciones
+              </div>
+              <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                <button
+                  onClick={() => setFunnelFilter('')}
+                  style={{
+                    fontSize: 11, padding: '3px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 500,
+                    border: funnelFilter === '' ? '2px solid #7C3AED' : '1px solid var(--border)',
+                    background: funnelFilter === '' ? '#EDE9FE' : 'var(--bg)', color: funnelFilter === '' ? '#7C3AED' : 'var(--text-muted)'
+                  }}
+                >Todas</button>
+                {FUNNEL_STAGES.map(s => (
+                  <button key={s.key} onClick={() => setFunnelFilter(funnelFilter === s.key ? '' : s.key)} style={{
+                    fontSize: 11, padding: '3px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 500,
+                    border: funnelFilter === s.key ? `2px solid ${s.color}` : '1px solid var(--border)',
+                    background: funnelFilter === s.key ? s.bg : 'var(--bg)', color: funnelFilter === s.key ? s.color : 'var(--text-muted)'
+                  }}>{s.label}</button>
+                ))}
+              </div>
             </div>
             {loading ? (
               <p style={{ padding: 20, color: 'var(--text-muted)', fontSize: 14 }}>Cargando...</p>
@@ -233,7 +281,7 @@ export default function Conversations() {
               </p>
             ) : (
               <ul className="conv-list" style={{ padding: '0 16px' }}>
-                {conversations.map(conv => (
+                {conversations.filter(c => !funnelFilter || c.funnel_stage === funnelFilter).map(conv => (
                   <li
                     key={conv.id}
                     className="conv-item"
@@ -265,11 +313,19 @@ export default function Conversations() {
                         </div>
                       )}
                     </div>
-                    <div style={{ textAlign: 'right', flexShrink: 0 }}>
+                    <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                       <span className={`conv-badge ${conv.status === 'bot' ? 'badge-bot' : 'badge-human'}`}>
                         {conv.status === 'bot' ? '🤖' : '👤'}
                       </span>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                      {conv.funnel_stage && conv.funnel_stage !== 'nuevo' && (() => {
+                        const fs = getFunnelStyle(conv.funnel_stage);
+                        return (
+                          <span style={{ fontSize: 10, padding: '2px 7px', borderRadius: 10, fontWeight: 500, background: fs.bg, color: fs.color }}>
+                            {fs.label}
+                          </span>
+                        );
+                      })()}
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
                         {conv.message_count} msg
                       </div>
                     </div>
@@ -360,6 +416,31 @@ export default function Conversations() {
                     onKeyDown={e => { if (e.key === 'Enter') addTag(newTagInput); }}
                     style={{ fontSize: 12, padding: '4px 10px', borderRadius: 20, border: '1px solid var(--border)', width: 140, outline: 'none' }}
                   />
+                </div>
+
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    🎯 Etapa del embudo
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {FUNNEL_STAGES.map(s => {
+                      const isActive = (selected.funnel_stage || 'nuevo') === s.key;
+                      return (
+                        <button
+                          key={s.key}
+                          onClick={() => changeFunnelStage(s.key)}
+                          disabled={savingFunnel}
+                          style={{
+                            fontSize: 11, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: 600,
+                            border: isActive ? `2px solid ${s.color}` : '1px solid var(--border)',
+                            background: isActive ? s.bg : 'var(--bg)',
+                            color: isActive ? s.color : 'var(--text-muted)',
+                            opacity: savingFunnel ? 0.6 : 1
+                          }}
+                        >{s.label}</button>
+                      );
+                    })}
+                  </div>
                 </div>
 
                 {contactVariables.length > 0 && (
