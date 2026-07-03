@@ -25,6 +25,7 @@ export default function Sidebar({ active }) {
         { key: 'channels', label: 'WhatsApp', channel: 'whatsapp', href: '/channels' },
         { key: 'instagram', label: 'Instagram', channel: 'instagram', href: '/instagram' },
         { key: 'mercadolibre', label: 'Mercado Libre', channel: 'mercadolibre', href: '/mercadolibre' },
+        { key: 'webchat', label: 'Chat web', channel: 'webchat', href: '/webchat' },
       ]
     },
     {
