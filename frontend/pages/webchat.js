@@ -203,16 +203,16 @@ export default function Webchat() {
   ];
 
   if (loading) return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div className="dashboard">
       <Sidebar active="webchat" />
-      <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF' }}>Cargando...</div>
+      <div className="main-content" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#9CA3AF' }}>Cargando...</div>
     </div>
   );
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', background: '#F7F8FA', fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif' }}>
+    <div className="dashboard">
       <Sidebar active="webchat" />
-      <div style={{ flex: 1, padding: '32px 36px', maxWidth: 800 }}>
+      <div className="main-content" style={{ maxWidth: 860 }}>
 
         {/* Header */}
         <div style={{ marginBottom: 28 }}>
