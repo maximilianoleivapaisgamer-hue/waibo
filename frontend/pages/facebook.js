@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -104,7 +105,7 @@ export default function Facebook() {
       <Sidebar active="facebook" />
       <div className="main-content">
         <div className="page-header">
-          <h1>👍 Facebook</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="facebook" size={28} /> Facebook</h1>
           <p>Messenger + comentarios + reseñas de tu Página</p>
         </div>
 

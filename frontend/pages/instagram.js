@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -99,7 +100,7 @@ export default function Instagram() {
       <Sidebar active="instagram" />
       <div className="main-content">
         <div className="page-header">
-          <h1>📸 Instagram</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="instagram" size={28} /> Instagram</h1>
           <p>DMs automáticos + respuesta a comentarios con intención de compra</p>
         </div>
 

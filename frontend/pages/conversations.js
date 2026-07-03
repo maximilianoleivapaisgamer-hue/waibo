@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -248,7 +249,10 @@ export default function Conversations() {
                       {(conv.customer_name || conv.customer_phone)[0].toUpperCase()}
                     </div>
                     <div className="conv-info">
-                      <div className="conv-name">{conv.customer_name || conv.customer_phone}</div>
+                      <div className="conv-name" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                        <ChannelLogo channel={conv.channel} size={13} style={{ borderRadius: 3 }} />
+                        {conv.customer_name || conv.customer_phone}
+                      </div>
                       <div className="conv-last">{conv.last_message || '—'}</div>
                       {conv.tags?.length > 0 && (
                         <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>

@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -93,7 +94,7 @@ export default function MercadoLibre() {
       <Sidebar active="mercadolibre" />
       <div className="main-content">
         <div className="page-header">
-          <h1>🛒 Mercado Libre</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="mercadolibre" size={28} /> Mercado Libre</h1>
           <p>Respuesta automática a preguntas y mensajes post-venta</p>
         </div>
 

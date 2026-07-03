@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -136,7 +137,7 @@ export default function Channels() {
       <Sidebar active="channels" />
       <div className="main-content">
         <div className="page-header">
-          <h1>📱 Canales</h1>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="whatsapp" size={28} /> Canales</h1>
           <p>Conectá WhatsApp y Tiendanube — Instagram y Mercado Libre tienen su propia sección en el menú</p>
         </div>
 

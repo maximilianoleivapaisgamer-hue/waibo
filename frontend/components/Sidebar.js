@@ -1,5 +1,6 @@
 import { useRouter } from 'next/router';
 import Image from 'next/image';
+import ChannelLogo from './ChannelLogo';
 
 export default function Sidebar({ active }) {
   const router = useRouter();
@@ -21,10 +22,10 @@ export default function Sidebar({ active }) {
     {
       label: 'Integraciones',
       items: [
-        { key: 'instagram', label: 'Instagram', icon: '📸', href: '/instagram' },
-        { key: 'facebook', label: 'Facebook', icon: '👍', href: '/facebook' },
-        { key: 'mercadolibre', label: 'Mercado Libre', icon: '🛒', href: '/mercadolibre' },
-        { key: 'channels', label: 'Otros canales', icon: '📱', href: '/channels' },
+        { key: 'instagram', label: 'Instagram', channel: 'instagram', href: '/instagram' },
+        { key: 'facebook', label: 'Facebook', channel: 'facebook', href: '/facebook' },
+        { key: 'mercadolibre', label: 'Mercado Libre', channel: 'mercadolibre', href: '/mercadolibre' },
+        { key: 'channels', label: 'Otros canales', channel: 'whatsapp', href: '/channels' },
       ]
     },
     {
@@ -69,7 +70,9 @@ export default function Sidebar({ active }) {
                 className={`nav-item ${active === item.key ? 'active' : ''}`}
                 onClick={() => router.push(item.href)}
               >
-                <span className="nav-icon">{item.icon}</span>
+                {item.channel
+                ? <ChannelLogo channel={item.channel} size={18} style={{ borderRadius: 4 }} />
+                : <span className="nav-icon">{item.icon}</span>}
                 {item.label}
               </button>
             ))}

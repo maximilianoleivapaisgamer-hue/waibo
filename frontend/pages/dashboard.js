@@ -2,6 +2,7 @@
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -57,7 +58,7 @@ export default function Dashboard() {
   };
 
   const alertIcon = { human_requested: '👤', ai_failed: '⚠️', low_stock: '📦', new_order: '🍕', negative_review: '⭐', transfer_pending_review: '💰' };
-  const channelIcon = { whatsapp: '📱', instagram: '📸', tiktok: '🎵', mercadolibre: '🛒', facebook: '👍' };
+  const channelIcon = { whatsapp: 'whatsapp', instagram: 'instagram', tiktok: 'tiktok', mercadolibre: 'mercadolibre', facebook: 'facebook' };
 
   const timeAgo = (date) => {
     const mins = Math.floor((new Date() - new Date(date)) / 60000);
@@ -137,7 +138,7 @@ export default function Dashboard() {
                   <div style={{ flex: 1, minWidth: 0 }}>
                     <div style={{ fontSize: 13 }}>{a.message}</div>
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
-                      {channelIcon[a.channel] || ''} {timeAgo(a.created_at)}
+                      {channelIcon[a.channel] && <ChannelLogo channel={channelIcon[a.channel]} size={12} style={{ verticalAlign: 'middle', marginRight: 3 }} />}{timeAgo(a.created_at)}
                     </div>
                   </div>
                   <button
@@ -235,21 +236,22 @@ export default function Dashboard() {
         </div>
 
         <div className="card">
-          <div className="card-title">📱 Estado de canales</div>
+          <div className="card-title">Estado de canales</div>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
             {[
-              { label: 'WhatsApp', icon: '📱', href: '/channels' },
-              { label: 'Instagram', icon: '📸', href: '/instagram' },
-              { label: 'Facebook', icon: '👍', href: '/facebook' },
-              { label: 'Mercado Libre', icon: '🛒', href: '/mercadolibre' },
-              { label: 'Tiendanube', icon: '🏪', href: '/channels' },
+              { label: 'WhatsApp', channel: 'whatsapp', href: '/channels' },
+              { label: 'Instagram', channel: 'instagram', href: '/instagram' },
+              { label: 'Facebook', channel: 'facebook', href: '/facebook' },
+              { label: 'Mercado Libre', channel: 'mercadolibre', href: '/mercadolibre' },
+              { label: 'Tiendanube', channel: 'tiendanube', href: '/channels' },
             ].map(ch => (
               <div
                 key={ch.label}
                 onClick={() => router.push(ch.href)}
                 style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', background: 'var(--bg)', borderRadius: 10, border: '1px solid var(--border)', cursor: 'pointer', fontSize: 13 }}
               >
-                <span>{ch.icon}</span> {ch.label}
+                <ChannelLogo channel={ch.channel} size={20} />
+                {ch.label}
               </div>
             ))}
           </div>
