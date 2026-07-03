@@ -234,7 +234,9 @@ router.post('/clients/:id/notify-payment', checkAdmin, async (req, res) => {
     const amount = c.amount ? `$${Number(c.amount).toLocaleString('es-AR')} ARS` : 'según tu plan';
 
     const transporter = nodemailer.createTransport({
-      service: 'gmail',
+      host: 'smtp.hostinger.com',
+      port: 465,
+      secure: true,
       auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
     });
 
