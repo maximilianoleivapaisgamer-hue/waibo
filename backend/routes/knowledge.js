@@ -118,6 +118,27 @@ router.post('/file', authMiddleware, upload.single('file'), async (req, res) => 
   }
 });
 
+router.put('/url/:id', authMiddleware, async (req, res) => {
+  try {
+    const entry = await pool.query(
+      `SELECT * FROM knowledge_base WHERE id = $1 AND client_id = $2 AND type = 'url'`,
+      [req.params.id, req.client.id]
+    );
+    if (!entry.rows.length) return res.status(404).json({ error: 'Entrada no encontrada' });
+
+    const { source_url } = entry.rows[0];
+    const content = await scrapeURL(source_url);
+
+    const result = await pool.query(
+      `UPDATE knowledge_base SET content = $1, created_at = NOW() WHERE id = $2 RETURNING *`,
+      [content, req.params.id]
+    );
+    res.json({ ...result.rows[0], chars: content.length });
+  } catch (err) {
+    res.status(500).json({ error: err.message || 'Error actualizando URL' });
+  }
+});
+
 router.delete('/:id', authMiddleware, async (req, res) => {
   try {
     await pool.query(

@@ -94,6 +94,23 @@ export default function Knowledge() {
     loadEntries();
   };
 
+  const [refreshing, setRefreshing] = useState(null);
+
+  const handleRefreshURL = async (id) => {
+    setRefreshing(id);
+    setError(''); setSuccess('');
+    try {
+      const res = await axios.put(`${API}/api/knowledge/url/${id}`, {}, { headers: getHeaders() });
+      setSuccess(`✅ Contenido actualizado (${res.data.chars?.toLocaleString()} caracteres importados)`);
+      loadEntries();
+    } catch (err) {
+      setError(err.response?.data?.error || 'No se pudo actualizar la URL');
+    } finally {
+      setRefreshing(null);
+      setTimeout(() => setSuccess(''), 5000);
+    }
+  };
+
   const exportKnowledgeBase = async (format) => {
     try {
       const res = await axios.get(`${API}/api/knowledge/export`, { headers: getHeaders() });
@@ -280,11 +297,21 @@ export default function Knowledge() {
                       </a>
                     )}
                   </div>
-                  <button
-                    onClick={() => handleDelete(entry.id)}
-                    style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', fontSize: 18, padding: '0 4px', flexShrink: 0 }}
-                    title="Eliminar"
-                  >🗑</button>
+                  <div style={{ display: 'flex', gap: 4, flexShrink: 0 }}>
+                    {entry.type === 'url' && (
+                      <button
+                        onClick={() => handleRefreshURL(entry.id)}
+                        disabled={refreshing === entry.id}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 16, padding: '0 4px', color: '#7C3AED' }}
+                        title="Re-importar contenido de la web"
+                      >{refreshing === entry.id ? '⏳' : '🔄'}</button>
+                    )}
+                    <button
+                      onClick={() => handleDelete(entry.id)}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', fontSize: 18, padding: '0 4px' }}
+                      title="Eliminar"
+                    >🗑</button>
+                  </div>
                 </div>
               ))}
             </div>
