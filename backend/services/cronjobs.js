@@ -7,11 +7,11 @@ const { sendTikTokDM, getTikTokToken } = require('./tiktok');
 const { decrypt } = require('./crypto');
 const { getPendingFollowups, markFollowupSent } = require('./scheduledFollowups');
 
-// ── Recordatorios anti-plantón de turnos (cada 30 minutos) ─────────
-cron.schedule('*/30 * * * *', async () => {
+// ── Anti-plantón: primer recordatorio, segundo recordatorio y detección no-show ──
+cron.schedule('*/15 * * * *', async () => {
   try {
     const configsResult = await pool.query(
-      `SELECT bc.client_id, bc.reminder_hours_before, c.whatsapp_api_key, c.whatsapp_provider, c.whatsapp_phone_id
+      `SELECT bc.client_id, bc.reminder_hours_before, c.whatsapp_api_key, c.whatsapp_provider, c.whatsapp_phone_id, c.business_name
        FROM bot_configs bc JOIN clients c ON c.id = bc.client_id
        WHERE bc.agenda_enabled = true AND c.active = true`
     );
@@ -19,41 +19,102 @@ cron.schedule('*/30 * * * *', async () => {
     for (const cfg of configsResult.rows) {
       const hoursAhead = cfg.reminder_hours_before || 2;
 
-      const appointments = await pool.query(
+      // ── 1er recordatorio: X horas antes (ventana ±15 min) ──────────
+      const first = await pool.query(
         `SELECT * FROM appointments
          WHERE client_id = $1
            AND status = 'confirmed'
            AND reminder_sent = false
            AND start_time > NOW()
-           AND start_time <= NOW() + ($2 || ' hours')::INTERVAL + INTERVAL '30 minutes'
-           AND start_time >= NOW() + ($2 || ' hours')::INTERVAL - INTERVAL '30 minutes'`,
+           AND start_time <= NOW() + ($2 || ' hours')::INTERVAL + INTERVAL '15 minutes'
+           AND start_time >= NOW() + ($2 || ' hours')::INTERVAL - INTERVAL '15 minutes'`,
         [cfg.client_id, hoursAhead]
       );
 
-      for (const appt of appointments.rows) {
-        const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', {
-          hour: '2-digit', minute: '2-digit'
-        });
-
-        const reminderMsg =
+      for (const appt of first.rows) {
+        const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+        const msg =
           `⏰ *Recordatorio de turno*\n\n` +
           `Hola ${appt.customer_name || 'cliente'}, te recordamos que tenés un turno de ` +
           `*${appt.service_name}* hoy a las *${timeStr} hs*.\n\n` +
-          `Por favor confirmá tu asistencia respondiendo *SI* o avisanos si no podés venir respondiendo *CANCELAR*.`;
-
+          `✅ Respondé *SI* para confirmar tu asistencia\n❌ Respondé *CANCELAR* si no podés venir`;
         try {
           if (cfg.whatsapp_api_key) {
-            await sendWhatsAppMessage(appt.customer_phone, reminderMsg, cfg.whatsapp_api_key, { provider: cfg.whatsapp_provider || '360dialog', phoneNumberId: cfg.whatsapp_phone_id });
+            await sendWhatsAppMessage(appt.customer_phone, msg, cfg.whatsapp_api_key, { provider: cfg.whatsapp_provider || '360dialog', phoneNumberId: cfg.whatsapp_phone_id });
           }
           await pool.query('UPDATE appointments SET reminder_sent = true WHERE id = $1', [appt.id]);
-          console.log(`✅ Recordatorio enviado a ${appt.customer_phone} para ${appt.service_name} a las ${timeStr}`);
+          console.log(`✅ 1er recordatorio → ${appt.customer_phone} (${appt.service_name} ${timeStr})`);
         } catch (err) {
-          console.error(`❌ Error enviando recordatorio:`, err.message);
+          console.error(`❌ Error 1er recordatorio:`, err.message);
+        }
+      }
+
+      // ── 2do recordatorio: 30 min antes si no confirmó ──────────────
+      const second = await pool.query(
+        `SELECT * FROM appointments
+         WHERE client_id = $1
+           AND status = 'confirmed'
+           AND reminder_sent = true
+           AND second_reminder_sent = false
+           AND reminder_confirmed = false
+           AND start_time > NOW()
+           AND start_time <= NOW() + INTERVAL '30 minutes' + INTERVAL '15 minutes'
+           AND start_time >= NOW() + INTERVAL '30 minutes' - INTERVAL '15 minutes'`,
+        [cfg.client_id]
+      );
+
+      for (const appt of second.rows) {
+        const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+        const msg =
+          `⚠️ *Último aviso — turno en 30 minutos*\n\n` +
+          `${appt.customer_name || 'Hola'}, tu turno de *${appt.service_name}* es a las *${timeStr} hs*.\n\n` +
+          `¿Seguís viniendo? Respondé *SI* para confirmar o *CANCELAR* si no podés.`;
+        try {
+          if (cfg.whatsapp_api_key) {
+            await sendWhatsAppMessage(appt.customer_phone, msg, cfg.whatsapp_api_key, { provider: cfg.whatsapp_provider || '360dialog', phoneNumberId: cfg.whatsapp_phone_id });
+          }
+          await pool.query('UPDATE appointments SET second_reminder_sent = true WHERE id = $1', [appt.id]);
+          console.log(`✅ 2do recordatorio → ${appt.customer_phone} (${appt.service_name} ${timeStr})`);
+        } catch (err) {
+          console.error(`❌ Error 2do recordatorio:`, err.message);
+        }
+      }
+
+      // ── Detección de no-show: turno pasado sin confirmación ────────
+      const noshows = await pool.query(
+        `SELECT * FROM appointments
+         WHERE client_id = $1
+           AND status = 'confirmed'
+           AND no_show = false
+           AND reminder_sent = true
+           AND reminder_confirmed = false
+           AND end_time < NOW() - INTERVAL '10 minutes'`,
+        [cfg.client_id]
+      );
+
+      for (const appt of noshows.rows) {
+        try {
+          await pool.query(
+            `UPDATE appointments SET no_show = true, status = 'completed' WHERE id = $1`,
+            [appt.id]
+          );
+
+          const dateStr = new Date(appt.start_time).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+          const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+
+          const { createAlert } = require('./alerts');
+          await createAlert(cfg.client_id, null, 'no_show',
+            `🚫 Plantón detectado: *${appt.customer_name || appt.customer_phone}* no confirmó ni se presentó al turno de *${appt.service_name}* del ${dateStr} a las ${timeStr} hs`
+          ).catch(() => {});
+
+          console.log(`⚠️ No-show registrado: ${appt.customer_name || appt.customer_phone} — ${appt.service_name}`);
+        } catch (err) {
+          console.error(`❌ Error registrando no-show:`, err.message);
         }
       }
     }
   } catch (err) {
-    console.error('❌ Error en cronjob de recordatorios:', err.message);
+    console.error('❌ Error en cronjob anti-plantón:', err.message);
   }
 });
 

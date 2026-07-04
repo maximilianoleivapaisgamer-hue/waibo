@@ -115,6 +115,15 @@ export default function Agenda() {
   const statusColor = { confirmed: '#5B21B6', cancelled: '#DC2626', completed: '#6B7280' };
   const statusLabel = { confirmed: '✅ Confirmado', cancelled: '❌ Cancelado', completed: '✔ Completado' };
 
+  const getApptBadge = (appt) => {
+    if (appt.cancelled_by_client) return { label: '❌ Canceló el cliente', bg: '#FEE2E2', color: '#DC2626' };
+    if (appt.no_show) return { label: '🚫 Plantón', bg: '#FEF3C7', color: '#92400E' };
+    if (appt.reminder_confirmed) return { label: '✅ Confirmó asistencia', bg: '#DCFCE7', color: '#16A34A' };
+    if (appt.second_reminder_sent) return { label: '⚠️ 2do aviso enviado', bg: '#FEF3C7', color: '#92400E' };
+    if (appt.reminder_sent) return { label: '📨 Recordatorio enviado', bg: '#EFF6FF', color: '#1D4ED8' };
+    return null;
+  };
+
   return (
     <div className="dashboard">
       <Sidebar active="agenda" />
@@ -190,9 +199,16 @@ export default function Agenda() {
                         <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: appt.status === 'confirmed' ? '#EDE9FE' : '#F3F4F6', color: statusColor[appt.status] || '#6B7280', fontWeight: 500 }}>
                           {statusLabel[appt.status] || appt.status}
                         </span>
-                        <span style={{ fontSize: 11, color: appt.reminder_sent ? '#5B21B6' : '#9CA3AF' }}>
-                          {appt.reminder_sent ? '📩 Recordatorio enviado' : '⏳ Recordatorio pendiente'}
-                        </span>
+                        {(() => {
+                          const badge = getApptBadge(appt);
+                          return badge ? (
+                            <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, fontWeight: 500, background: badge.bg, color: badge.color }}>
+                              {badge.label}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: 11, color: '#9CA3AF' }}>⏳ Sin recordatorio aún</span>
+                          );
+                        })()}
                         {appt.status === 'confirmed' && (
                           <button onClick={() => cancelAppointment(appt.id)} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11, color: '#DC2626', padding: 0 }}>
                             Cancelar turno

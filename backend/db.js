@@ -435,6 +435,11 @@ async function initDB() {
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_stage VARCHAR(30) DEFAULT 'nuevo';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_updated_at TIMESTAMP;
 
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS reminder_confirmed BOOLEAN DEFAULT false;
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS second_reminder_sent BOOLEAN DEFAULT false;
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS no_show BOOLEAN DEFAULT false;
+      ALTER TABLE appointments ADD COLUMN IF NOT EXISTS cancelled_by_client BOOLEAN DEFAULT false;
+
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_ai_reply BOOLEAN DEFAULT true;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_reply_all BOOLEAN DEFAULT false;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_public_reply TEXT;

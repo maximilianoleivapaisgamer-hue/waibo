@@ -108,6 +108,26 @@ async function handleBookingFlow(clientId, customerPhone, customerName, message,
     }
   }
 
+  // Confirmación de recordatorio: "SI", "confirmo", etc.
+  const CONFIRM_REMINDER_KEYWORDS = ['si', 'sí', 'confirmo', 'voy', 'ahí estoy', 'ahi estoy', 'confirmed', 'ok', 'dale', 'perfecto'];
+  if (CONFIRM_REMINDER_KEYWORDS.some(k => lower === k || lower.startsWith(k + ' ') || lower.endsWith(' ' + k))) {
+    const upcoming = await pool.query(
+      `SELECT * FROM appointments WHERE client_id = $1 AND customer_phone = $2
+       AND start_time > NOW() AND status = 'confirmed' AND reminder_sent = true AND reminder_confirmed = false
+       ORDER BY start_time LIMIT 1`,
+      [clientId, customerPhone]
+    );
+    if (upcoming.rows.length) {
+      const appt = upcoming.rows[0];
+      await pool.query('UPDATE appointments SET reminder_confirmed = true WHERE id = $1', [appt.id]);
+      const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      return {
+        handled: true,
+        response: `✅ ¡Perfecto, ${customerName}! Te esperamos a las *${timeStr} hs* para tu turno de *${appt.service_name}*. ¡Hasta pronto! 🙌`
+      };
+    }
+  }
+
   if (CANCEL_KEYWORDS.some(k => lower.includes(k))) {
     const upcoming = await pool.query(
       `SELECT * FROM appointments WHERE client_id = $1 AND customer_phone = $2
@@ -116,11 +136,19 @@ async function handleBookingFlow(clientId, customerPhone, customerName, message,
     );
     if (upcoming.rows.length) {
       const appt = upcoming.rows[0];
-      await pool.query('UPDATE appointments SET status=$1 WHERE id=$2', ['cancelled', appt.id]);
-      const dateStr = new Date(appt.start_time).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+      await pool.query(
+        `UPDATE appointments SET status = 'cancelled', cancelled_by_client = true WHERE id = $1`,
+        [appt.id]
+      );
+      const { createAlert } = require('./alerts');
+      const dateStr = new Date(appt.start_time).toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+      const timeStr = new Date(appt.start_time).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+      await createAlert(clientId, null, 'appointment_cancelled',
+        `❌ ${customerName} canceló su turno de *${appt.service_name}* del ${dateStr} a las ${timeStr} hs`
+      ).catch(() => {});
       return {
         handled: true,
-        response: `✅ Cancelé tu turno de *${appt.service_name}* del ${dateStr}. ¡Cuando quieras podés sacar otro!`
+        response: `✅ Cancelé tu turno de *${appt.service_name}* del ${dateStr}. ¡Cuando quieras podés sacar otro! Si fue un error, escribinos y lo arreglamos 😊`
       };
     }
   }
