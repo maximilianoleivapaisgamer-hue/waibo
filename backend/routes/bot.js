@@ -33,7 +33,8 @@ router.put('/config', authMiddleware, async (req, res) => {
     followup_enabled, followup_wait_minutes, followup_max_attempts, followup_message,
     owner_notifications_enabled, owner_notification_phone,
     variables_enabled, smart_scheduling_enabled,
-    bot_tone, bot_tone_custom
+    bot_tone, bot_tone_custom,
+    instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply
   } = req.body;
 
   try {
@@ -60,6 +61,10 @@ router.put('/config', authMiddleware, async (req, res) => {
         smart_scheduling_enabled = COALESCE($19, smart_scheduling_enabled),
         bot_tone = COALESCE($20, bot_tone),
         bot_tone_custom = $21,
+        instagram_comment_keywords = COALESCE($23, instagram_comment_keywords),
+        ig_comment_ai_reply = COALESCE($24, ig_comment_ai_reply),
+        ig_comment_reply_all = COALESCE($25, ig_comment_reply_all),
+        ig_comment_public_reply = $26,
         updated_at = NOW()
        WHERE client_id = $22
        RETURNING *`,
@@ -70,7 +75,8 @@ router.put('/config', authMiddleware, async (req, res) => {
         owner_notifications_enabled, owner_notification_phone,
         variables_enabled, smart_scheduling_enabled,
         bot_tone, bot_tone_custom ?? null,
-        req.client.id
+        req.client.id,
+        instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply ?? null
       ]
     );
     res.json(result.rows[0]);
@@ -182,6 +188,23 @@ router.put('/conversations/:id/status', authMiddleware, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Error actualizando estado de la conversación' });
+  }
+});
+
+router.put('/conversations/:id/funnel', authMiddleware, async (req, res) => {
+  const VALID_STAGES = ['nuevo', 'interesado', 'turno_agendado', 'cerrado', 'perdido'];
+  const { stage } = req.body;
+  if (!VALID_STAGES.includes(stage)) return res.status(400).json({ error: 'Etapa inválida' });
+  try {
+    const result = await pool.query(
+      `UPDATE conversations SET funnel_stage = $1, funnel_updated_at = NOW(), updated_at = NOW()
+       WHERE id = $2 AND client_id = $3 RETURNING *`,
+      [stage, req.params.id, req.client.id]
+    );
+    if (!result.rows.length) return res.status(404).json({ error: 'Conversación no encontrada' });
+    res.json(result.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: 'Error actualizando etapa' });
   }
 });
 

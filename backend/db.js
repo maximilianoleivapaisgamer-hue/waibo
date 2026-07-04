@@ -435,6 +435,10 @@ async function initDB() {
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_stage VARCHAR(30) DEFAULT 'nuevo';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_updated_at TIMESTAMP;
 
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_ai_reply BOOLEAN DEFAULT true;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_reply_all BOOLEAN DEFAULT false;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS ig_comment_public_reply TEXT;
+
       CREATE TABLE IF NOT EXISTS campaigns (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         client_id UUID REFERENCES clients(id) ON DELETE CASCADE,

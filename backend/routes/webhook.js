@@ -100,7 +100,14 @@ router.post('/instagram/:clientId', async (req, res) => {
     const body = req.body;
 
     const clientResult = await pool.query(
-      'SELECT c.*, bc.system_prompt, bc.business_info, bc.welcome_message, bc.human_handoff_keyword, bc.bot_name, bc.bot_tone, bc.ai_model, bc.instagram_comment_keywords, it.access_token as ig_token FROM clients c JOIN bot_configs bc ON bc.client_id = c.id LEFT JOIN instagram_tokens it ON it.client_id = c.id WHERE c.id = $1 AND c.active = true',
+      `SELECT c.*, bc.system_prompt, bc.business_info, bc.welcome_message, bc.human_handoff_keyword,
+              bc.bot_name, bc.bot_tone, bc.ai_model, bc.instagram_comment_keywords,
+              bc.ig_comment_ai_reply, bc.ig_comment_reply_all, bc.ig_comment_public_reply,
+              bc.bot_tone_custom,
+              it.access_token as ig_token
+       FROM clients c JOIN bot_configs bc ON bc.client_id = c.id
+       LEFT JOIN instagram_tokens it ON it.client_id = c.id
+       WHERE c.id = $1 AND c.active = true`,
       [clientId]
     );
     if (!clientResult.rows.length) return;
@@ -197,20 +204,54 @@ router.post('/instagram/:clientId', async (req, res) => {
         const commentText = comment.text.toLowerCase();
         const keywords = (cfg.instagram_comment_keywords || 'precio,info,cuanto,quiero,disponible')
           .split(',').map(k => k.trim().toLowerCase());
-
         const hasKeyword = keywords.some(kw => commentText.includes(kw));
-        if (!hasKeyword) continue;
 
-        const publicReply = `¡Hola! Qué bueno que te interese 😊 Te mandamos toda la info al privado 🚀`;
+        const replyAll = cfg.ig_comment_reply_all === true;
+        if (!hasKeyword && !replyAll) continue;
+
+        const kbResult = await pool.query(
+          'SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 5',
+          [clientId]
+        );
+        const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
+
+        let publicReply;
+        let dmMessage;
+
+        if (cfg.ig_comment_ai_reply !== false) {
+          const postContext = comment.media?.caption ? `Post: "${comment.media.caption.substring(0, 200)}"` : '';
+          try {
+            publicReply = await getAIResponse(
+              [{ role: 'user', content: `Alguien comentó en Instagram: "${comment.text}". ${postContext} Respondé el comentario de forma muy breve (máximo 2 oraciones), amable, e invitalo a mandarte un mensaje privado para más info.` }],
+              cfg.system_prompt, cfg.business_info, knowledgeBase, cfg.bot_name, cfg.bot_tone, cfg.ai_model, cfg.bot_tone_custom
+            );
+            // Instagram limita respuestas públicas a ~1000 chars, cortamos en 500 por seguridad
+            if (publicReply.length > 500) publicReply = publicReply.substring(0, 497) + '...';
+          } catch {
+            publicReply = cfg.ig_comment_public_reply || `¡Hola! Qué bueno que te interese 😊 Te mandamos toda la info al privado 🚀`;
+          }
+
+          try {
+            dmMessage = await getAIResponse(
+              [{ role: 'user', content: comment.text }],
+              cfg.system_prompt, cfg.business_info, knowledgeBase, cfg.bot_name, cfg.bot_tone, cfg.ai_model, cfg.bot_tone_custom
+            );
+          } catch {
+            dmMessage = `¡Hola! Vi tu consulta en nuestro post 👋\n\nSoy ${cfg.bot_name || 'el asistente'} de *${cfg.business_name}*. ¿En qué puedo ayudarte?`;
+          }
+        } else {
+          publicReply = cfg.ig_comment_public_reply || `¡Hola! Qué bueno que te interese 😊 Te mandamos toda la info al privado 🚀`;
+          dmMessage = `¡Hola! Vi tu consulta en nuestro post 👋\n\nSoy ${cfg.bot_name || 'el asistente'} de *${cfg.business_name}*. ¿En qué puedo ayudarte?`;
+        }
+
         await replyToComment(comment.id, publicReply, igTokenDecrypted).catch(() => {});
-
-        const dmMessage = `¡Hola! Vi tu consulta en nuestro post 👋\n\nSoy ${cfg.bot_name || 'el asistente'} de *${cfg.business_name}*. ¿En qué puedo ayudarte?`;
         await sendInstagramDM(comment.from.id, dmMessage, igTokenDecrypted).catch(() => {});
 
         await pool.query(
           `INSERT INTO instagram_comments_log (client_id, commenter_username, comment_text, post_caption, public_reply, dm_sent)
            VALUES ($1, $2, $3, $4, $5, $6)`,
-          [clientId, comment.from?.username || comment.from?.id || 'Usuario', comment.text, comment.media?.caption?.substring(0, 200) || '', publicReply, dmMessage]
+          [clientId, comment.from?.username || comment.from?.id || 'Usuario', comment.text,
+           comment.media?.caption?.substring(0, 200) || '', publicReply, dmMessage]
         ).catch(err => console.error('Error guardando log de comentario IG:', err.message));
       }
     }

@@ -217,19 +217,93 @@ export default function Instagram() {
             )}
 
             {tab === 'igconfig' && config && (
-              <div className="card">
-                <div className="card-title">🔑 Palabras clave que activan el bot en comentarios</div>
-                <div className="form-group">
-                  <label>Si un comentario contiene alguna de estas palabras, el bot responde automáticamente</label>
-                  <input
-                    value={config.instagram_comment_keywords || ''}
-                    onChange={e => setConfig({ ...config, instagram_comment_keywords: e.target.value })}
-                    placeholder="precio,info,cuanto,quiero,disponible"
-                  />
-                  <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Separadas por coma, en minúsculas.</small>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <div className="card">
+                  <div className="card-title">🎯 Activación del auto-responder</div>
+
+                  <div className="form-group" style={{ marginBottom: 16 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                      <div>
+                        <div style={{ fontWeight: 600, fontSize: 14 }}>Responder todos los comentarios</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Si está apagado, solo responde comentarios con palabras clave</div>
+                      </div>
+                      <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0 }}>
+                        <input type="checkbox" checked={!!config.ig_comment_reply_all}
+                          onChange={e => setConfig({ ...config, ig_comment_reply_all: e.target.checked })}
+                          style={{ opacity: 0, width: 0, height: 0 }} />
+                        <span style={{
+                          position: 'absolute', cursor: 'pointer', inset: 0, borderRadius: 24,
+                          background: config.ig_comment_reply_all ? '#7C3AED' : '#D1D5DB',
+                          transition: '0.2s'
+                        }}>
+                          <span style={{
+                            position: 'absolute', height: 18, width: 18, left: config.ig_comment_reply_all ? 23 : 3,
+                            bottom: 3, background: '#fff', borderRadius: '50%', transition: '0.2s'
+                          }} />
+                        </span>
+                      </label>
+                    </div>
+
+                    {!config.ig_comment_reply_all && (
+                      <div style={{ marginTop: 8 }}>
+                        <label style={{ fontSize: 13, fontWeight: 600, display: 'block', marginBottom: 4 }}>Palabras clave que activan la respuesta</label>
+                        <input
+                          value={config.instagram_comment_keywords || ''}
+                          onChange={e => setConfig({ ...config, instagram_comment_keywords: e.target.value })}
+                          placeholder="precio,info,cuanto,quiero,disponible"
+                        />
+                        <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Separadas por coma, en minúsculas.</small>
+                      </div>
+                    )}
+                  </div>
                 </div>
+
+                <div className="card">
+                  <div className="card-title">🤖 Tipo de respuesta</div>
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+                    <div>
+                      <div style={{ fontWeight: 600, fontSize: 14 }}>Respuesta personalizada con IA</div>
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>El bot genera una respuesta contextual al comentario usando tu base de conocimiento</div>
+                    </div>
+                    <label style={{ position: 'relative', display: 'inline-block', width: 44, height: 24, flexShrink: 0 }}>
+                      <input type="checkbox" checked={config.ig_comment_ai_reply !== false}
+                        onChange={e => setConfig({ ...config, ig_comment_ai_reply: e.target.checked })}
+                        style={{ opacity: 0, width: 0, height: 0 }} />
+                      <span style={{
+                        position: 'absolute', cursor: 'pointer', inset: 0, borderRadius: 24,
+                        background: config.ig_comment_ai_reply !== false ? '#7C3AED' : '#D1D5DB',
+                        transition: '0.2s'
+                      }}>
+                        <span style={{
+                          position: 'absolute', height: 18, width: 18, left: config.ig_comment_ai_reply !== false ? 23 : 3,
+                          bottom: 3, background: '#fff', borderRadius: '50%', transition: '0.2s'
+                        }} />
+                      </span>
+                    </label>
+                  </div>
+
+                  {config.ig_comment_ai_reply === false && (
+                    <div className="form-group">
+                      <label>Respuesta pública fija (la misma para todos los comentarios)</label>
+                      <input
+                        value={config.ig_comment_public_reply || ''}
+                        onChange={e => setConfig({ ...config, ig_comment_public_reply: e.target.value })}
+                        placeholder="¡Hola! Qué bueno que te interese 😊 Te mandamos toda la info al privado 🚀"
+                      />
+                      <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Si lo dejás vacío se usa el texto por defecto.</small>
+                    </div>
+                  )}
+
+                  {config.ig_comment_ai_reply !== false && (
+                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 8, padding: '10px 14px', fontSize: 13, color: '#5B21B6' }}>
+                      ✨ Con IA activada: el comentario público resume la respuesta e invita al DM, y el primer mensaje privado ya responde la consulta del usuario usando tu sistema prompt y base de conocimiento.
+                    </div>
+                  )}
+                </div>
+
                 <button className="btn btn-primary" onClick={saveConfig} disabled={saving} style={{ width: 'auto', padding: '10px 24px' }}>
-                  {saving ? 'Guardando...' : '💾 Guardar'}
+                  {saving ? 'Guardando...' : '💾 Guardar configuración'}
                 </button>
               </div>
             )}
