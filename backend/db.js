@@ -432,6 +432,34 @@ async function initDB() {
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS bot_tone_custom TEXT;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS role VARCHAR(20) DEFAULT 'owner';
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES clients(id) ON DELETE CASCADE;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_stage VARCHAR(30) DEFAULT 'nuevo';
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS funnel_updated_at TIMESTAMP;
+
+      CREATE TABLE IF NOT EXISTS campaigns (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+        name VARCHAR(255) NOT NULL,
+        message TEXT NOT NULL,
+        status VARCHAR(50) DEFAULT 'draft',
+        total_recipients INTEGER DEFAULT 0,
+        sent_count INTEGER DEFAULT 0,
+        failed_count INTEGER DEFAULT 0,
+        scheduled_for TIMESTAMP,
+        started_at TIMESTAMP,
+        completed_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS campaign_recipients (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        campaign_id UUID REFERENCES campaigns(id) ON DELETE CASCADE,
+        customer_phone VARCHAR(50) NOT NULL,
+        customer_name VARCHAR(255),
+        channel VARCHAR(50) DEFAULT 'whatsapp',
+        status VARCHAR(50) DEFAULT 'pending',
+        error_message TEXT,
+        sent_at TIMESTAMP
+      );
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {

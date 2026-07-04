@@ -47,6 +47,7 @@ export default function Sidebar({ active }) {
       onlyOwner: false,
       items: [
         { key: 'reports', label: 'Reportes', icon: '📈', href: '/reports', onlyOwner: true },
+        { key: 'campaigns', label: 'Campañas masivas', icon: '📣', href: '/campaigns', onlyOwner: true },
         { key: 'orders', label: 'Pedidos', icon: '🍕', href: '/orders' },
         { key: 'agenda', label: 'Agenda', icon: '📅', href: '/agenda' },
         { key: 'knowledge', label: 'Base de conocimiento', icon: '🧠', href: '/knowledge', onlyOwner: true },
