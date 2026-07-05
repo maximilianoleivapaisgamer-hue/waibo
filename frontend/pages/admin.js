@@ -57,10 +57,18 @@ export default function Admin() {
   const [deletions, setDeletions] = useState([]);
   const [activity, setActivity] = useState(null);
   const [health, setHealth] = useState(null);
+  const [growth, setGrowth] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
+  const [planModal, setPlanModal] = useState(null); // { id, name, plan, amount, next_due }
+  const [savingPlan, setSavingPlan] = useState(false);
+
+  const PLANS = [
+    { key: 'estandar', label: 'Estándar', amount: 59999 },
+    { key: 'ecommerce_pro', label: 'E-Commerce Pro', amount: 129999 },
+  ];
 
   const headers = { 'x-admin-key': key };
 
@@ -87,18 +95,20 @@ export default function Admin() {
     setError('');
     const h = { 'x-admin-key': key || localStorage.getItem('waibo_admin_key') };
     const safe = async (fn) => { try { return await fn(); } catch(e) { return null; } };
-    const [s, c, d, a, hl] = await Promise.all([
+    const [s, c, d, a, hl, gr] = await Promise.all([
       safe(() => axios.get(`${API}/api/admin/stats`, { headers: h })),
       safe(() => axios.get(`${API}/api/admin/clients`, { headers: h })),
       safe(() => axios.get(`${API}/api/admin/deletion-requests`, { headers: h })),
       safe(() => axios.get(`${API}/api/admin/activity`, { headers: h })),
       safe(() => axios.get(`${API}/api/admin/health`, { headers: h })),
+      safe(() => axios.get(`${API}/api/admin/growth`, { headers: h })),
     ]);
     if (s) setStats(s.data); else setError('Error cargando stats');
     if (c) setClients(c.data); else setError(e => e || 'Error cargando clientes');
     if (d) setDeletions(d.data);
     if (a) setActivity(a.data);
     if (hl) setHealth(hl.data);
+    if (gr) setGrowth(gr.data);
     setLoading(false);
   }
 
@@ -114,6 +124,26 @@ export default function Admin() {
       alert(`✅ Aviso enviado a ${email}`);
     } catch (e) {
       alert('Error al enviar: ' + (e.response?.data?.error || e.message));
+    }
+  }
+
+  async function savePlan() {
+    if (!planModal) return;
+    setSavingPlan(true);
+    try {
+      await axios.put(`${API}/api/admin/clients/${planModal.id}/plan`, {
+        plan: planModal.plan,
+        amount: planModal.amount ? parseFloat(planModal.amount) : null,
+        next_due: planModal.next_due || null,
+      }, { headers });
+      setClients(cs => cs.map(c => c.id === planModal.id
+        ? { ...c, plan: planModal.plan, amount: planModal.amount, next_due: planModal.next_due }
+        : c));
+      setPlanModal(null);
+    } catch (e) {
+      alert('Error al guardar: ' + (e.response?.data?.error || e.message));
+    } finally {
+      setSavingPlan(false);
     }
   }
 
@@ -133,6 +163,7 @@ export default function Admin() {
 
   const TABS = [
     { key: 'clients', label: `👥 Clientes (${clients.length})` },
+    { key: 'plans', label: '💳 Planes' },
     { key: 'activity', label: '📡 Actividad' },
     { key: 'health', label: `🏥 Salud${healthIssues ? ` (${healthIssues})` : ''}` },
     { key: 'stats', label: '📊 Métricas' },
@@ -270,8 +301,10 @@ export default function Admin() {
                         </div>
                       </td>
                       <td style={{ padding: '11px 14px' }}>
-                        <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                           <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>{c.plan || 'básico'}</span>
+                          <button onClick={() => setPlanModal({ id: c.id, name: c.business_name || c.name, plan: c.plan || 'estandar', amount: c.amount || '', next_due: c.next_due ? c.next_due.slice(0,10) : '' })}
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 13, color: '#9CA3AF', padding: 0 }} title="Editar plan">✏️</button>
                         </div>
                         <div style={{ marginTop: 4 }}>
                           <span style={{
@@ -280,6 +313,7 @@ export default function Admin() {
                             color: c.active ? '#065F46' : '#DC2626'
                           }}>{c.billing_status || (c.active ? 'activo' : 'suspendido')}</span>
                         </div>
+                        {c.amount && <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{fmtMoney(c.amount)}/mes</div>}
                       </td>
                       <td style={{ padding: '11px 14px', color: '#6B7280', fontSize: 12 }}>
                         <div>{fmt(c.total_conversations)} convs</div>
@@ -323,6 +357,60 @@ export default function Admin() {
                   {filtered.length === 0 && (
                     <tr><td colSpan={11} style={{ padding: 32, textAlign: 'center', color: '#9CA3AF' }}>No hay clientes{search ? ' que coincidan' : ''}.</td></tr>
                   )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {/* ── TAB PLANES ── */}
+        {tab === 'plans' && (
+          <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 18px', borderBottom: '1px solid #E5E7EB', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <span style={{ fontWeight: 600, fontSize: 14 }}>💳 Gestión de planes por cliente</span>
+              <span style={{ fontSize: 12, color: '#9CA3AF' }}>Hacé clic en ✏️ para editar</span>
+            </div>
+            <div style={{ overflowX: 'auto' }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                <thead>
+                  <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
+                    {['Negocio', 'Email', 'Plan actual', 'Monto/mes', 'Estado billing', 'Próx. vencimiento', 'Últ. pago', ''].map(h => (
+                      <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: '#6B7280', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {clients.map(c => (
+                    <tr key={c.id} style={{ borderBottom: '1px solid #F3F4F6', background: c.active ? 'white' : '#FFFBFB' }}>
+                      <td style={{ padding: '11px 14px', fontWeight: 600 }}>{c.business_name || c.name}</td>
+                      <td style={{ padding: '11px 14px', color: '#6B7280', fontSize: 12 }}>{c.email}</td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <span style={{ fontSize: 12, padding: '3px 10px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
+                          {PLANS.find(p => p.key === c.plan)?.label || c.plan || 'básico'}
+                        </span>
+                      </td>
+                      <td style={{ padding: '11px 14px', fontWeight: 600, color: c.amount ? '#059669' : '#9CA3AF' }}>
+                        {c.amount ? fmtMoney(c.amount) : '—'}
+                      </td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <span style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+                          background: c.billing_status === 'active' ? '#D1FAE5' : c.billing_status === 'suspended' ? '#FEE2E2' : '#FEF3C7',
+                          color: c.billing_status === 'active' ? '#065F46' : c.billing_status === 'suspended' ? '#DC2626' : '#92400E',
+                        }}>{c.billing_status || '—'}</span>
+                      </td>
+                      <td style={{ padding: '11px 14px', fontSize: 12, color: c.next_due && new Date(c.next_due) < new Date() ? '#DC2626' : '#6B7280' }}>
+                        {fmtDate(c.next_due)}
+                      </td>
+                      <td style={{ padding: '11px 14px', fontSize: 12, color: '#9CA3AF' }}>{fmtDate(c.last_payment)}</td>
+                      <td style={{ padding: '11px 14px' }}>
+                        <button onClick={() => setPlanModal({ id: c.id, name: c.business_name || c.name, plan: c.plan || 'estandar', amount: c.amount || '', next_due: c.next_due ? c.next_due.slice(0,10) : '' })}
+                          style={{ padding: '5px 12px', borderRadius: 7, border: 'none', cursor: 'pointer', fontSize: 12, fontWeight: 500, background: '#EDE9FE', color: '#5B21B6' }}>
+                          ✏️ Editar plan
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
@@ -492,6 +580,56 @@ export default function Admin() {
                 </div>
               ))}
             </div>
+            {growth && (
+              <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24, gridColumn: '1 / -1' }}>
+                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 20 }}>📈 Crecimiento — últimos 6 meses</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 32 }}>
+                  {/* Nuevos clientes */}
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', marginBottom: 12 }}>Nuevos clientes por mes</div>
+                    {growth.client_growth.length === 0
+                      ? <p style={{ color: '#9CA3AF', fontSize: 13 }}>Sin datos aún</p>
+                      : (() => {
+                          const max = Math.max(...growth.client_growth.map(r => parseInt(r.new_clients)), 1);
+                          return growth.client_growth.map(r => (
+                            <div key={r.month} style={{ marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                                <span style={{ color: '#6B7280' }}>{r.month}</span>
+                                <span style={{ fontWeight: 700 }}>{r.new_clients} clientes</span>
+                              </div>
+                              <div style={{ height: 8, borderRadius: 4, background: '#F3F4F6' }}>
+                                <div style={{ height: '100%', width: `${Math.round(parseInt(r.new_clients) / max * 100)}%`, background: '#7C3AED', borderRadius: 4 }} />
+                              </div>
+                            </div>
+                          ));
+                        })()
+                    }
+                  </div>
+                  {/* Revenue por mes */}
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: '#6B7280', marginBottom: 12 }}>Revenue cobrado por mes (ARS)</div>
+                    {growth.revenue_by_month.length === 0
+                      ? <p style={{ color: '#9CA3AF', fontSize: 13 }}>Sin pagos registrados aún</p>
+                      : (() => {
+                          const max = Math.max(...growth.revenue_by_month.map(r => parseFloat(r.revenue)), 1);
+                          return growth.revenue_by_month.map(r => (
+                            <div key={r.month} style={{ marginBottom: 10 }}>
+                              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12, marginBottom: 4 }}>
+                                <span style={{ color: '#6B7280' }}>{r.month}</span>
+                                <span style={{ fontWeight: 700 }}>{fmtMoney(r.revenue)} <span style={{ color: '#9CA3AF', fontWeight: 400 }}>({r.paying_clients} clientes)</span></span>
+                              </div>
+                              <div style={{ height: 8, borderRadius: 4, background: '#F3F4F6' }}>
+                                <div style={{ height: '100%', width: `${Math.round(parseFloat(r.revenue) / max * 100)}%`, background: '#059669', borderRadius: 4 }} />
+                              </div>
+                            </div>
+                          ));
+                        })()
+                    }
+                  </div>
+                </div>
+              </div>
+            )}
+
             <div style={{ background: 'white', borderRadius: 12, border: '1px solid #E5E7EB', padding: 24 }}>
               <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 16 }}>📡 Canales más usados</div>
               {stats.channel_distribution.map(ch => {
@@ -563,6 +701,49 @@ export default function Admin() {
           </div>
         )}
       </div>
+
+      {/* ── MODAL EDITAR PLAN ── */}
+      {planModal && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div style={{ background: 'white', borderRadius: 16, padding: 32, width: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+            <h2 style={{ margin: '0 0 4px', fontSize: 18, fontWeight: 700 }}>✏️ Editar plan</h2>
+            <p style={{ margin: '0 0 24px', color: '#6B7280', fontSize: 14 }}>{planModal.name}</p>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Plan</label>
+              <select value={planModal.plan} onChange={e => {
+                const p = PLANS.find(pl => pl.key === e.target.value);
+                setPlanModal(m => ({ ...m, plan: e.target.value, amount: p ? p.amount : m.amount }));
+              }} style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 14 }}>
+                {PLANS.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                <option value="custom">Personalizado</option>
+              </select>
+            </div>
+
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Monto mensual (ARS)</label>
+              <input type="number" value={planModal.amount} onChange={e => setPlanModal(m => ({ ...m, amount: e.target.value }))}
+                placeholder="Ej: 59999"
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ marginBottom: 24 }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 500, marginBottom: 6 }}>Próximo vencimiento</label>
+              <input type="date" value={planModal.next_due} onChange={e => setPlanModal(m => ({ ...m, next_due: e.target.value }))}
+                style={{ width: '100%', padding: '10px 12px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 14, boxSizing: 'border-box' }} />
+            </div>
+
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button onClick={savePlan} disabled={savingPlan} style={{
+                flex: 1, padding: 12, background: '#7C3AED', color: 'white', border: 'none', borderRadius: 10, fontSize: 15, fontWeight: 600, cursor: 'pointer'
+              }}>{savingPlan ? 'Guardando...' : 'Guardar cambios'}</button>
+              <button onClick={() => setPlanModal(null)} style={{
+                padding: 12, background: '#F3F4F6', color: '#6B7280', border: 'none', borderRadius: 10, fontSize: 15, cursor: 'pointer'
+              }}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -269,6 +269,55 @@ router.post('/clients/:id/notify-payment', checkAdmin, async (req, res) => {
   }
 });
 
+// PUT /api/admin/clients/:id/plan — cambiar plan y monto de facturación
+router.put('/clients/:id/plan', checkAdmin, async (req, res) => {
+  const { plan, amount, next_due } = req.body;
+  if (!plan) return res.status(400).json({ error: 'plan requerido' });
+  try {
+    await pool.query('UPDATE clients SET plan = $1 WHERE id = $2', [plan, req.params.id]);
+    await pool.query(
+      'UPDATE billing SET plan = $1, amount = $2, next_due = $3 WHERE client_id = $4',
+      [plan, amount || null, next_due || null, req.params.id]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// GET /api/admin/growth — crecimiento mes a mes últimos 6 meses
+router.get('/growth', checkAdmin, async (req, res) => {
+  try {
+    const [clientGrowth, revenueGrowth] = await Promise.all([
+      pool.query(`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', created_at), 'YYYY-MM') as month,
+          COUNT(*) as new_clients
+        FROM clients
+        WHERE created_at >= NOW() - INTERVAL '6 months'
+        GROUP BY month
+        ORDER BY month ASC
+      `),
+      pool.query(`
+        SELECT
+          TO_CHAR(DATE_TRUNC('month', last_payment), 'YYYY-MM') as month,
+          COALESCE(SUM(amount), 0) as revenue,
+          COUNT(*) as paying_clients
+        FROM billing
+        WHERE last_payment IS NOT NULL AND last_payment >= NOW() - INTERVAL '6 months'
+        GROUP BY month
+        ORDER BY month ASC
+      `),
+    ]);
+    res.json({
+      client_growth: clientGrowth.rows,
+      revenue_by_month: revenueGrowth.rows,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // PUT /api/admin/deletion-requests/:id/resolve
 router.put('/deletion-requests/:id/resolve', checkAdmin, async (req, res) => {
   try {

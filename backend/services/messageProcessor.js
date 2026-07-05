@@ -5,6 +5,7 @@ const { handlePurchaseConfirmation, rememberShownProduct } = require('./checkout
 const { processMessageWithOrderDetection, saveConfirmedOrder } = require('./orders');
 const { getResponseWithVariableExtraction, saveContactVariables } = require('./contactVariables');
 const { getResponseWithScheduling, saveScheduledFollowup } = require('./scheduledFollowups');
+const { detectAndUpdateFunnelStage } = require('./funnelDetector');
 const { isWithinBusinessHours } = require('./businessHours');
 const { createAlert } = require('./alerts');
 const { normalizePhone } = require('./phone');
@@ -168,6 +169,11 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', aiResponse]);
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
     await sendFn(customerPhone, aiResponse);
+
+    // Detección de etapa de embudo (fire-and-forget, no bloquea la respuesta)
+    const currentStage = conversation.funnel_stage || 'nuevo';
+    const funnelHistory = [...history, { role: 'assistant', content: aiResponse }];
+    detectAndUpdateFunnelStage(conversation.id, clientId, funnelHistory, currentStage).catch(() => {});
   } finally {
     await pool.query('UPDATE conversations SET is_typing = false WHERE id = $1', [conversation.id]);
   }
