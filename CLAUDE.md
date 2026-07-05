@@ -620,16 +620,20 @@ SERVICE_SECRET=whabot_qr_secret_2024
 ## Pendientes
 
 ### Alta prioridad
-- [ ] **Tunnel nombrado permanente de Cloudflare** — hoy la URL del tunnel QR cambia en cada reinicio y hay que actualizar `QR_SERVICE_URL` en Railway a mano
-- [x] ~~Auto-restauración de sesiones QR al reiniciar~~ — resuelto: el microservicio restaura las sesiones guardadas en `/sessions/` automáticamente al arrancar
+- [ ] **Tunnel nombrado permanente de Cloudflare** — hoy la URL del tunnel QR cambia en cada reinicio y hay que actualizar `QR_SERVICE_URL` en Railway a mano (requiere intervención manual en cuenta de Cloudflare)
+- [x] ~~Auto-restauración de sesiones QR al reiniciar~~ — resuelto
 
 ### Media prioridad
-- [x] ~~Formulario web de baja de datos~~ — resuelto: `/solicitar-baja` en el frontend, guarda en `data_deletion_requests` + log en disco
-- [x] ~~Logs persistentes de solicitudes de baja~~ — resuelto: `backend/logs/compliance/` con timestamp, tanto desde el script como desde el endpoint web
+- [x] ~~Formulario web de baja de datos~~ — resuelto
+- [x] ~~Logs persistentes de solicitudes de baja~~ — resuelto
+- [x] ~~"Olvidé mi contraseña"~~ — resuelto: `/forgot-password` + `/reset-password?token=...`, tabla `password_reset_tokens`, email vía nodemailer, token de 1 hora
+- [x] ~~TikTok DMs~~ — ya estaba implementado: webhook en `/webhook/tiktok/:clientId`, servicio `sendTikTokDM()`, auto-responde con Claude
+- [x] ~~Tiendanube link dinámico al carrito~~ — ya estaba implementado: `buildCheckoutURL()` en `services/tiendanube.js`, usado por `handlePurchaseConfirmation()`
+- [x] ~~Panel admin — gestión de planes~~ — resuelto: tab Planes + modal edición + `PUT /api/admin/clients/:id/plan`
+- [x] ~~Panel admin — estadísticas de revenue~~ — resuelto: gráfico de crecimiento mes a mes en tab Métricas + endpoint `GET /api/admin/growth`
 - [ ] App de Meta propia para que clientes conecten WhatsApp Cloud API sin crear su propia app de Developer
 - [ ] App de Mercado Libre propia para OAuth de un clic
 
 ### Baja prioridad / futuro
-- [ ] TikTok DMs (Fase 4, webhook ya parcialmente implementado)
 - [ ] Embedded Signup de Meta (requiere aprobación como Tech Provider primero)
 - [ ] Cifrado de columnas sensibles (solo si Railway deja de cifrar en disco o hay requerimiento legal explícito)
