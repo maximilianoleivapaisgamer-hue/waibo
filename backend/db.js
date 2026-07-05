@@ -470,6 +470,10 @@ async function initDB() {
         sent_at TIMESTAMP
       );
 
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS trial_ends_at TIMESTAMP;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS trial_reminder_sent BOOLEAN DEFAULT false;
+      UPDATE clients SET trial_ends_at = created_at + INTERVAL '14 days' WHERE trial_ends_at IS NULL;
+
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         client_id UUID REFERENCES clients(id) ON DELETE CASCADE,

@@ -1,5 +1,6 @@
 const cron = require('node-cron');
 const pool = require('../db');
+const nodemailer = require('nodemailer');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { sendInstagramDM } = require('./instagram');
 const { sendMessengerMessage } = require('./facebook');
@@ -371,6 +372,92 @@ cron.schedule('0 3 * * 0', async () => {
     );
   } catch (err) {
     console.error('[Retención] Error en cron de retención de datos:', err.message);
+  }
+});
+
+// ── Notificaciones de prueba vencida / por vencer (diario a las 10am) ──
+cron.schedule('0 10 * * *', async () => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: '172.65.255.143', port: 587, secure: false, requireTLS: true,
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+      tls: { servername: 'smtp.hostinger.com' },
+    });
+
+    // Clientes con prueba que vence en exactamente 3 días (aviso previo)
+    const ending = await pool.query(`
+      SELECT c.id, c.name, c.email, c.business_name, c.trial_ends_at
+      FROM clients c
+      LEFT JOIN billing b ON b.client_id = c.id
+      WHERE c.trial_ends_at IS NOT NULL
+        AND c.trial_ends_at > NOW()
+        AND c.trial_ends_at <= NOW() + INTERVAL '3 days'
+        AND c.trial_reminder_sent = false
+        AND (b.status IS NULL OR b.status NOT IN ('active'))
+    `);
+
+    for (const c of ending.rows) {
+      const days = Math.ceil((new Date(c.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24));
+      try {
+        await transporter.sendMail({
+          from: `"Waibo" <${process.env.MAIL_USER}>`,
+          to: c.email,
+          subject: `Tu prueba gratuita vence en ${days} día${days !== 1 ? 's' : ''} — Waibo`,
+          html: `
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1A1A2E">
+              <img src="https://frontend-lac-nine-16.vercel.app/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:16px"/>
+              <h2 style="margin:0 0 8px">⏰ Tu prueba gratuita está por vencer</h2>
+              <p>Hola <strong>${c.business_name || c.name}</strong>,</p>
+              <p>Tu período de prueba gratuita de <strong>Waibo</strong> vence en <strong>${days} día${days !== 1 ? 's' : ''}</strong>.</p>
+              <p>Para seguir recibiendo y respondiendo mensajes automáticamente con IA, activá tu plan antes de que venza.</p>
+              <a href="https://frontend-lac-nine-16.vercel.app/billing" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Activar mi plan</a>
+              <p style="color:#6B7280;font-size:13px;margin-top:24px">¿Tenés dudas? Escribinos a <a href="mailto:hola@waibochat.com">hola@waibochat.com</a></p>
+            </div>
+          `,
+        });
+        await pool.query('UPDATE clients SET trial_reminder_sent = true WHERE id = $1', [c.id]);
+        console.log(`📧 Aviso de trial enviado a ${c.email} (${days} días restantes)`);
+      } catch (e) {
+        console.error(`❌ Error enviando aviso de trial a ${c.email}:`, e.message);
+      }
+    }
+
+    // Clientes con prueba vencida hoy (notificación de vencimiento)
+    const expired = await pool.query(`
+      SELECT c.id, c.name, c.email, c.business_name
+      FROM clients c
+      LEFT JOIN billing b ON b.client_id = c.id
+      WHERE c.trial_ends_at IS NOT NULL
+        AND c.trial_ends_at < NOW()
+        AND c.trial_ends_at > NOW() - INTERVAL '1 day'
+        AND (b.status IS NULL OR b.status NOT IN ('active'))
+    `);
+
+    for (const c of expired.rows) {
+      try {
+        await transporter.sendMail({
+          from: `"Waibo" <${process.env.MAIL_USER}>`,
+          to: c.email,
+          subject: 'Tu prueba gratuita venció — Waibo',
+          html: `
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1A1A2E">
+              <img src="https://frontend-lac-nine-16.vercel.app/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:16px"/>
+              <h2 style="margin:0 0 8px">Tu prueba gratuita venció</h2>
+              <p>Hola <strong>${c.business_name || c.name}</strong>,</p>
+              <p>Tu período de prueba gratuita de <strong>14 días</strong> en Waibo llegó a su fin.</p>
+              <p>Para continuar usando el bot con IA y no perder tus conversaciones y configuración, activá tu plan hoy.</p>
+              <a href="https://frontend-lac-nine-16.vercel.app/billing" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Activar mi plan ahora</a>
+              <p style="color:#6B7280;font-size:13px;margin-top:24px">¿Necesitás más tiempo o tenés dudas? Escribinos a <a href="mailto:hola@waibochat.com">hola@waibochat.com</a> y lo resolvemos.</p>
+            </div>
+          `,
+        });
+        console.log(`📧 Notificación de trial vencido enviada a ${c.email}`);
+      } catch (e) {
+        console.error(`❌ Error notificando trial vencido a ${c.email}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error en cronjob de trial:', err.message);
   }
 });
 

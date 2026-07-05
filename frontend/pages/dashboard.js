@@ -12,6 +12,7 @@ export default function Dashboard() {
   const [conversations, setConversations] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [onboarding, setOnboarding] = useState(null);
+  const [trial, setTrial] = useState(null);
   const [client, setClient] = useState(null);
   const [loading, setLoading] = useState(true);
 
@@ -28,9 +29,12 @@ export default function Dashboard() {
         axios.get(`${API}/api/bot/stats`, { headers: getHeaders() }),
         axios.get(`${API}/api/bot/conversations`, { headers: getHeaders() }),
         axios.get(`${API}/api/bot/alerts`, { headers: getHeaders() }),
-        ...(isInitial ? [axios.get(`${API}/api/bot/onboarding`, { headers: getHeaders() })] : [])
+        ...(isInitial ? [
+          axios.get(`${API}/api/bot/onboarding`, { headers: getHeaders() }),
+          axios.get(`${API}/api/bot/trial`, { headers: getHeaders() }),
+        ] : [])
       ];
-      Promise.allSettled(calls).then(([statsRes, convsRes, alertsRes, onboardingRes]) => {
+      Promise.allSettled(calls).then(([statsRes, convsRes, alertsRes, onboardingRes, trialRes]) => {
         if (statsRes.status === 'rejected' && statsRes.reason?.response?.status === 401) {
           router.push('/'); return;
         }
@@ -38,6 +42,7 @@ export default function Dashboard() {
         if (convsRes.status === 'fulfilled') setConversations(convsRes.value.data.slice(0, 5));
         if (alertsRes.status === 'fulfilled') setAlerts(alertsRes.value.data);
         if (onboardingRes?.status === 'fulfilled') setOnboarding(onboardingRes.value.data);
+        if (trialRes?.status === 'fulfilled') setTrial(trialRes.value.data);
       }).finally(() => {
         if (isInitial) setLoading(false);
       });
@@ -89,6 +94,41 @@ export default function Dashboard() {
             Tu bot está activo para <strong>{client?.business_name || 'tu negocio'}</strong>
           </p>
         </div>
+
+        {trial && trial.in_trial && (
+          <div style={{
+            marginBottom: 20, padding: '14px 20px', borderRadius: 12,
+            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+            background: trial.expired ? '#FEF2F2' : trial.ending_soon ? '#FFFBEB' : '#EFF6FF',
+            border: `1px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#BFDBFE'}`,
+          }}>
+            <span style={{ fontSize: 22 }}>{trial.expired ? '🔴' : trial.ending_soon ? '⚠️' : '🕐'}</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#1D4ED8' }}>
+                {trial.expired
+                  ? 'Tu período de prueba venció'
+                  : trial.ending_soon
+                    ? `Tu prueba vence en ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''}`
+                    : `Período de prueba gratuita — ${trial.days_left} días restantes`}
+              </div>
+              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+                {trial.expired
+                  ? 'Activá tu plan para seguir usando Waibo sin interrupciones.'
+                  : 'Activá tu plan antes de que venza para no perder ninguna conversación.'}
+              </div>
+            </div>
+            <button
+              onClick={() => router.push('/billing')}
+              style={{
+                padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
+                fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap',
+                background: trial.expired ? '#DC2626' : '#7C3AED', color: 'white',
+              }}
+            >
+              {trial.expired ? 'Activar ahora' : 'Ver planes'}
+            </button>
+          </div>
+        )}
 
         {onboarding && !onboarding.all_done && (
           <div className="card" style={{ borderLeft: '4px solid var(--green)', marginBottom: 20 }}>

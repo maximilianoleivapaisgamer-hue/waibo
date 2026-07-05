@@ -398,6 +398,33 @@ router.get('/onboarding', authMiddleware, async (req, res) => {
   }
 });
 
+router.get('/trial', authMiddleware, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT trial_ends_at, plan FROM clients WHERE id = $1',
+      [req.client.id]
+    );
+    const { trial_ends_at, plan } = result.rows[0] || {};
+    if (!trial_ends_at) return res.json({ in_trial: false });
+
+    const now = new Date();
+    const ends = new Date(trial_ends_at);
+    const daysLeft = Math.ceil((ends - now) / (1000 * 60 * 60 * 24));
+    const hasPaidPlan = plan && !['trial', 'basico', null].includes(plan) &&
+      (await pool.query("SELECT status FROM billing WHERE client_id = $1 AND status = 'active'", [req.client.id])).rows.length > 0;
+
+    res.json({
+      in_trial: !hasPaidPlan,
+      trial_ends_at,
+      days_left: Math.max(0, daysLeft),
+      expired: daysLeft <= 0,
+      ending_soon: daysLeft > 0 && daysLeft <= 5,
+    });
+  } catch (err) {
+    res.status(500).json({ error: 'Error obteniendo estado de prueba' });
+  }
+});
+
 router.get('/export/messages', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
