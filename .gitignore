@@ -24,3 +24,5 @@ Thumbs.db
 
 # Uploads
 backend/uploads/
+
+.vercel

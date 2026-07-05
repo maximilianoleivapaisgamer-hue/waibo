@@ -469,6 +469,15 @@ async function initDB() {
         error_message TEXT,
         sent_at TIMESTAMP
       );
+
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+        token TEXT NOT NULL UNIQUE,
+        expires_at TIMESTAMP NOT NULL,
+        used BOOLEAN DEFAULT false,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {

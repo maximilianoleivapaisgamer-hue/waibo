@@ -66,6 +66,9 @@ export default function Login() {
         </form>
 
         <div className="auth-link">
+          <Link href="/forgot-password">¿Olvidaste tu contraseña?</Link>
+        </div>
+        <div className="auth-link">
           ¿No tenés cuenta? <Link href="/register">Registrate gratis</Link>
         </div>
       </div>

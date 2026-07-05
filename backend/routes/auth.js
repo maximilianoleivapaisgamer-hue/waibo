@@ -2,8 +2,21 @@ const express = require('express');
 const router = express.Router();
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
+
+function getMailer() {
+  return nodemailer.createTransport({
+    host: '172.65.255.143',
+    port: 587,
+    secure: false,
+    requireTLS: true,
+    auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+    tls: { servername: 'smtp.hostinger.com' },
+  });
+}
 
 router.post('/register', async (req, res) => {
   const { name, email, password, business_name, phone_number } = req.body;
@@ -140,6 +153,99 @@ router.delete('/employees/:id', authMiddleware, async (req, res) => {
     res.json({ ok: true });
   } catch (err) {
     res.status(500).json({ error: 'Error eliminando empleado' });
+  }
+});
+
+// POST /api/auth/forgot-password
+router.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email requerido' });
+
+  // Siempre responder OK para no revelar si el email existe
+  res.json({ ok: true, message: 'Si ese email está registrado, vas a recibir un link para resetear tu contraseña.' });
+
+  try {
+    const result = await pool.query('SELECT id, name, business_name FROM clients WHERE email = $1 AND active = true', [email]);
+    if (!result.rows.length) return;
+
+    const client = result.rows[0];
+    const token = crypto.randomBytes(32).toString('hex');
+    const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hora
+
+    await pool.query(
+      'INSERT INTO password_reset_tokens (client_id, token, expires_at) VALUES ($1, $2, $3)',
+      [client.id, token, expiresAt]
+    );
+
+    const resetUrl = `${process.env.FRONTEND_URL}/reset-password?token=${token}`;
+    const nombre = client.business_name || client.name;
+
+    const mailer = getMailer();
+    await mailer.sendMail({
+      from: `"Waibo" <${process.env.MAIL_USER}>`,
+      to: email,
+      subject: 'Resetear tu contraseña — Waibo',
+      html: `
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1A1A2E">
+          <img src="https://frontend-lac-nine-16.vercel.app/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:16px"/>
+          <h2 style="margin:0 0 8px">Resetear contraseña</h2>
+          <p>Hola <strong>${nombre}</strong>,</p>
+          <p>Recibimos una solicitud para resetear la contraseña de tu cuenta en Waibo.</p>
+          <p>Hacé clic en el botón para crear una nueva contraseña. El link es válido por <strong>1 hora</strong>.</p>
+          <a href="${resetUrl}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Resetear contraseña</a>
+          <p style="color:#6B7280;font-size:13px;margin-top:16px">Si no pediste este reset, ignorá este email. Tu contraseña no va a cambiar.</p>
+          <p style="color:#6B7280;font-size:13px">Si el botón no funciona, copiá este link:<br/><a href="${resetUrl}" style="color:#7C3AED">${resetUrl}</a></p>
+        </div>
+      `,
+    });
+  } catch (err) {
+    console.error('[forgot-password]', err.message);
+  }
+});
+
+// POST /api/auth/reset-password
+router.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'Token y contraseña requeridos' });
+  if (password.length < 6) return res.status(400).json({ error: 'La contraseña debe tener al menos 6 caracteres' });
+
+  try {
+    const result = await pool.query(
+      `SELECT prt.*, c.email FROM password_reset_tokens prt
+       JOIN clients c ON c.id = prt.client_id
+       WHERE prt.token = $1 AND prt.used = false AND prt.expires_at > NOW()`,
+      [token]
+    );
+
+    if (!result.rows.length) {
+      return res.status(400).json({ error: 'El link expiró o ya fue usado. Solicitá uno nuevo.' });
+    }
+
+    const { client_id, id: tokenId } = result.rows[0];
+    const hashed = await bcrypt.hash(password, 10);
+
+    await pool.query('UPDATE clients SET password = $1 WHERE id = $2', [hashed, client_id]);
+    await pool.query('UPDATE password_reset_tokens SET used = true WHERE id = $1', [tokenId]);
+
+    res.json({ ok: true, message: 'Contraseña actualizada correctamente. Ya podés iniciar sesión.' });
+  } catch (err) {
+    console.error('[reset-password]', err.message);
+    res.status(500).json({ error: 'Error actualizando contraseña' });
+  }
+});
+
+// GET /api/auth/reset-password/validate — verifica si un token es válido
+router.get('/reset-password/validate', async (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ valid: false });
+  try {
+    const result = await pool.query(
+      'SELECT id FROM password_reset_tokens WHERE token = $1 AND used = false AND expires_at > NOW()',
+      [token]
+    );
+    res.json({ valid: result.rows.length > 0 });
+  } catch {
+    res.json({ valid: false });
   }
 });
 
