@@ -12,13 +12,22 @@ export default function Sidebar({ active }) {
     ? JSON.parse(localStorage.getItem('whabot_client') || '{}').role === 'employee'
     : false;
 
-  const cached = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('whabot_trial') || 'null') : null;
-  const [trial, setTrial] = useState(cached?.in_trial ? cached : null);
+  const [trial, setTrial] = useState(null);
 
   useEffect(() => {
+    // Mostrar desde cache inmediatamente (sin esperar la API)
+    const cached = localStorage.getItem('whabot_trial');
+    if (cached) {
+      try {
+        const data = JSON.parse(cached);
+        if (data?.in_trial) setTrial(data);
+      } catch {}
+    }
+
     if (isEmployee) return;
     const token = localStorage.getItem('whabot_token');
     if (!token) return;
+
     axios.get(`${API}/api/bot/trial`, { headers: { Authorization: `Bearer ${token}` } })
       .then(r => {
         if (r.data.in_trial) {
