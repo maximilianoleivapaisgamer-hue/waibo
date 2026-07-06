@@ -5,6 +5,7 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { createAlert } = require('../services/alerts');
 const { reactivateClient } = require('../services/cronjobs');
+const { sendConversionEmail } = require('../services/mailer');
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -84,13 +85,24 @@ router.get('/admin/receipt/:id', requireAdmin, async (req, res) => {
 router.post('/admin/:id/approve', requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      `UPDATE bank_transfer_payments SET status = 'approved', reviewed_at = NOW(), reviewed_by = 'admin' WHERE id = $1 RETURNING client_id`,
+      `UPDATE bank_transfer_payments SET status = 'approved', reviewed_at = NOW(), reviewed_by = 'admin' WHERE id = $1 RETURNING client_id, plan_id`,
       [req.params.id]
     );
     if (!result.rows.length) return res.status(404).json({ error: 'No encontrado' });
 
-    await reactivateClient(result.rows[0].client_id);
+    const { client_id, plan_id } = result.rows[0];
+    await reactivateClient(client_id);
     res.json({ success: true });
+
+    const clientData = await pool.query(
+      `SELECT c.name, c.email, c.business_name, p.name as plan_name
+       FROM clients c
+       LEFT JOIN plans p ON p.id = $2
+       WHERE c.id = $1`, [client_id, plan_id]
+    );
+    if (clientData.rows.length) {
+      sendConversionEmail(clientData.rows[0], clientData.rows[0].plan_name || 'Estándar').catch(e => console.error('[conversion-email]', e.message));
+    }
   } catch (err) {
     res.status(500).json({ error: 'Error aprobando el pago' });
   }
