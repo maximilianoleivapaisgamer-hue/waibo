@@ -22,6 +22,12 @@ export default function Sidebar({ active }) {
       .catch(() => {});
   }, []);
 
+  useEffect(() => {
+    const els = document.querySelectorAll('.main-content');
+    els.forEach(el => { el.style.paddingTop = trial ? '68px' : ''; });
+    return () => els.forEach(el => { el.style.paddingTop = ''; });
+  }, [trial]);
+
   const logout = () => {
     localStorage.removeItem('whabot_token');
     localStorage.removeItem('whabot_client');
@@ -87,6 +93,42 @@ export default function Sidebar({ active }) {
     .filter(s => s.items.length > 0);
 
   return (
+    <>
+    {trial && (
+      <div style={{
+        position: 'fixed', top: 0, left: 240, right: 0, zIndex: 200,
+        display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+        padding: '12px 28px',
+        background: trial.expired ? '#FEF2F2' : trial.ending_soon ? '#FFFBEB' : '#EFF6FF',
+        borderBottom: `2px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#BFDBFE'}`,
+      }}>
+        <span style={{ fontSize: 20 }}>{trial.expired ? '🔴' : trial.ending_soon ? '⚠️' : '🕐'}</span>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#1D4ED8' }}>
+            {trial.expired
+              ? 'Tu período de prueba venció'
+              : trial.ending_soon
+                ? `Tu prueba vence en ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''}`
+                : `Período de prueba gratuita — ${trial.days_left} días restantes`}
+          </div>
+          <div style={{ fontSize: 12, color: '#6B7280', marginTop: 1 }}>
+            {trial.expired
+              ? 'Activá tu plan para seguir usando Waibo sin interrupciones.'
+              : 'Activá tu plan antes de que venza para no perder ninguna conversación.'}
+          </div>
+        </div>
+        <button
+          onClick={() => router.push('/billing')}
+          style={{
+            padding: '7px 16px', borderRadius: 8, border: 'none', cursor: 'pointer',
+            fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap',
+            background: trial.expired ? '#DC2626' : '#7C3AED', color: 'white',
+          }}
+        >
+          {trial.expired ? 'Activar ahora' : 'Ver planes'}
+        </button>
+      </div>
+    )}
     <div className="sidebar">
       <div className="sidebar-logo">
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -117,23 +159,6 @@ export default function Sidebar({ active }) {
           </div>
         ))}
       </nav>
-      {trial && (
-        <div
-          onClick={() => router.push('/billing')}
-          style={{
-            margin: '8px 10px', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
-            background: trial.expired ? '#FEE2E2' : trial.ending_soon ? '#FEF3C7' : '#EDE9FE',
-            border: `1px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#DDD6FE'}`,
-          }}
-        >
-          <div style={{ fontSize: 11, fontWeight: 700, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#5B21B6', marginBottom: 3 }}>
-            {trial.expired ? '🔴 Prueba vencida' : `🕐 Prueba: ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''} restante${trial.days_left !== 1 ? 's' : ''}`}
-          </div>
-          <div style={{ fontSize: 10, color: trial.expired ? '#DC2626' : '#6B7280' }}>
-            {trial.expired ? 'Activá tu plan →' : 'Clic para ver planes →'}
-          </div>
-        </div>
-      )}
       <div className="sidebar-bottom">
         <button className="nav-item" onClick={logout}>
           <span className="nav-icon">🚪</span>
@@ -141,5 +166,6 @@ export default function Sidebar({ active }) {
         </button>
       </div>
     </div>
+    </>
   );
 }

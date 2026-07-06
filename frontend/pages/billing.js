@@ -141,30 +141,6 @@ export default function Billing() {
         {success && <div className="success-msg">{success}</div>}
         {error && <div className="error-msg">{error}</div>}
 
-        {trial && (
-          <div style={{
-            marginBottom: 24, padding: '18px 22px', borderRadius: 14,
-            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-            background: trial.expired ? '#FEF2F2' : trial.ending_soon ? '#FFFBEB' : '#F5F3FF',
-            border: `1px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#DDD6FE'}`,
-          }}>
-            <span style={{ fontSize: 28 }}>{trial.expired ? '🔴' : trial.ending_soon ? '⚠️' : '🎁'}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 15, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#5B21B6' }}>
-                {trial.expired
-                  ? 'Tu período de prueba venció'
-                  : trial.ending_soon
-                    ? `Tu prueba gratuita vence en ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''}`
-                    : `Estás en tu prueba gratuita — ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''} restante${trial.days_left !== 1 ? 's' : ''}`}
-              </div>
-              <div style={{ fontSize: 13, color: '#6B7280', marginTop: 4 }}>
-                {trial.expired
-                  ? 'Elegí un plan para seguir usando Waibo.'
-                  : 'Podés contratar un plan ahora o esperar a que termine tu prueba.'}
-              </div>
-            </div>
-          </div>
-        )}
 
         {billing?.status === 'suspended' && (
           <div style={{ background: '#FEF2F2', border: '2px solid #FCA5A5', borderRadius: 14, padding: '24px 28px', marginBottom: 24 }}>
