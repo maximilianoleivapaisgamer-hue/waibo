@@ -2,7 +2,7 @@
 
 > Fuente de verdad del proyecto para sesiones de Claude Code.
 > Se actualiza automáticamente en cada avance importante, decisión de arquitectura o resolución de pendiente.
-> Última actualización: 2026-07-02
+> Última actualización: 2026-07-06
 
 ---
 
@@ -306,6 +306,8 @@ Todas las tablas se crean en `backend/db.js` mediante `initDB()` con `CREATE TAB
 | PUT | `/api/bot/alerts/:id/resolve` | ✅ | Resolver alerta |
 | GET | `/api/bot/export/messages` | ✅ | Exportar mensajes (JSON) |
 | POST | `/api/bot/test-chat` | ✅ | Probar bot sin guardar |
+| POST | `/api/bot/onboarding-ai` | ✅ | Chat IA de onboarding (Claude Haiku, genera config JSON) |
+| POST | `/api/bot/onboarding-save` | ✅ | Guarda config del onboarding y marca onboarding_completed |
 
 ### Webhooks (`/webhook`)
 | Método | Ruta | Auth | Descripción |
@@ -631,6 +633,7 @@ SERVICE_SECRET=whabot_qr_secret_2024
 - [x] ~~Tiendanube link dinámico al carrito~~ — ya estaba implementado: `buildCheckoutURL()` en `services/tiendanube.js`, usado por `handlePurchaseConfirmation()`
 - [x] ~~Panel admin — gestión de planes~~ — resuelto: tab Planes + modal edición + `PUT /api/admin/clients/:id/plan`
 - [x] ~~Panel admin — estadísticas de revenue~~ — resuelto: gráfico de crecimiento mes a mes en tab Métricas + endpoint `GET /api/admin/growth`
+- [x] ~~Onboarding flow post-registro~~ — resuelto: `/onboarding.js` con elección modo IA o manual 6 pasos; endpoints `/api/bot/onboarding-ai` y `/api/bot/onboarding-save`; columnas `onboarding_completed` y `onboarding_platforms` en DB; registro redirige a `/onboarding`
 - [ ] App de Meta propia para que clientes conecten WhatsApp Cloud API sin crear su propia app de Developer
 - [ ] App de Mercado Libre propia para OAuth de un clic
 
