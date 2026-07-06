@@ -15,7 +15,7 @@ export default function Catalog() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     axios.get(`${API}/api/tiendanube/products`, { headers: getHeaders() })
       .then(res => setProducts(res.data))

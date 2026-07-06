@@ -20,7 +20,7 @@ export default function TiendanubePage() {
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   useEffect(() => {
-    if (!localStorage.getItem('whabot_token')) { router.push('/'); return; }
+    if (!localStorage.getItem('whabot_token')) { router.push('/login'); return; }
     load();
     if (router.query.tn_connected) setMsg('✅ Tiendanube conectada correctamente');
     if (router.query.tn_error) setMsg('❌ Error al conectar Tiendanube. Intentá de nuevo.');

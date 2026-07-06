@@ -6,11 +6,9 @@ import Image from 'next/image';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
-export default function Register() {
+export default function Login() {
   const router = useRouter();
-  const [form, setForm] = useState({
-    name: '', email: '', password: '', business_name: '', phone_number: ''
-  });
+  const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -19,12 +17,12 @@ export default function Register() {
     setError('');
     setLoading(true);
     try {
-      const { data } = await axios.post(`${API}/api/auth/register`, form);
+      const { data } = await axios.post(`${API}/api/auth/login`, form);
       localStorage.setItem('whabot_token', data.token);
       localStorage.setItem('whabot_client', JSON.stringify(data.client));
       router.push('/dashboard');
     } catch (err) {
-      setError(err.response?.data?.error || 'Error al registrarse');
+      setError(err.response?.data?.error || 'Error al iniciar sesión');
     } finally {
       setLoading(false);
     }
@@ -36,29 +34,12 @@ export default function Register() {
         <div className="auth-logo">
           <Image src="/waibo-logo.png" alt="Waibo" width={80} height={80} style={{ borderRadius: 20, marginBottom: 8 }} />
           <h1>Waibo</h1>
-          <p>Creá tu cuenta gratis</p>
+          <p>Iniciá sesión en tu panel</p>
         </div>
 
         {error && <div className="error-msg">{error}</div>}
 
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label>Tu nombre</label>
-            <input
-              placeholder="Juan García"
-              value={form.name}
-              onChange={e => setForm({ ...form, name: e.target.value })}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label>Nombre del negocio</label>
-            <input
-              placeholder="Pizzería El Buen Sabor"
-              value={form.business_name}
-              onChange={e => setForm({ ...form, business_name: e.target.value })}
-            />
-          </div>
           <div className="form-group">
             <label>Email</label>
             <input
@@ -73,20 +54,22 @@ export default function Register() {
             <label>Contraseña</label>
             <input
               type="password"
-              placeholder="Mínimo 6 caracteres"
+              placeholder="••••••••"
               value={form.password}
               onChange={e => setForm({ ...form, password: e.target.value })}
               required
-              minLength={6}
             />
           </div>
           <button className="btn btn-primary" type="submit" disabled={loading}>
-            {loading ? 'Creando cuenta...' : 'Crear cuenta gratis'}
+            {loading ? 'Ingresando...' : 'Ingresar'}
           </button>
         </form>
 
         <div className="auth-link">
-          ¿Ya tenés cuenta? <Link href="/login">Iniciá sesión</Link>
+          <Link href="/forgot-password">¿Olvidaste tu contraseña?</Link>
+        </div>
+        <div className="auth-link">
+          ¿No tenés cuenta? <Link href="/register">Registrate gratis</Link>
         </div>
       </div>
     </div>

@@ -21,7 +21,7 @@ export default function Dashboard() {
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
     const clientData = localStorage.getItem('whabot_client');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
     setClient(JSON.parse(clientData || '{}'));
 
     const loadDashboard = (isInitial) => {
@@ -36,7 +36,7 @@ export default function Dashboard() {
       ];
       Promise.allSettled(calls).then(([statsRes, convsRes, alertsRes, onboardingRes, trialRes]) => {
         if (statsRes.status === 'rejected' && statsRes.reason?.response?.status === 401) {
-          router.push('/'); return;
+          router.push('/login'); return;
         }
         if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
         if (convsRes.status === 'fulfilled') setConversations(convsRes.value.data.slice(0, 5));

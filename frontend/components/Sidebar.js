@@ -36,7 +36,7 @@ export default function Sidebar({ active }) {
   const logout = () => {
     localStorage.removeItem('whabot_token');
     localStorage.removeItem('whabot_client');
-    router.push('/');
+    router.push('/login');
   };
 
   const allSections = [

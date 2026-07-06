@@ -25,7 +25,7 @@ export default function Facebook() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('fb_connected')) showSuccess(`✅ Facebook conectado: ${params.get('page')}`);

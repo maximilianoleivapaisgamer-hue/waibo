@@ -25,7 +25,7 @@ export default function TikTokPage() {
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   useEffect(() => {
-    if (!localStorage.getItem('whabot_token')) { router.push('/'); return; }
+    if (!localStorage.getItem('whabot_token')) { router.push('/login'); return; }
     load();
     if (router.query.tt_connected) setMsg('✅ TikTok conectado correctamente');
     if (router.query.tt_error) setMsg('❌ Error al conectar TikTok. Intentá de nuevo.');

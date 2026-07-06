@@ -25,7 +25,7 @@ export default function Channels() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('tn_connected')) showSuccess(`✅ Tiendanube conectada: ${params.get('store')}`);
@@ -39,7 +39,7 @@ export default function Channels() {
         if (res.data.whatsapp_mode === 'qr') setWhatsappExpanded('qr');
         else if (res.data.whatsapp_provider === 'cloud_api') setWhatsappExpanded('cloud_api');
       })
-      .catch(err => { if (err.response?.status === 401) router.push('/'); });
+      .catch(err => { if (err.response?.status === 401) router.push('/login'); });
 
     axios.get(`${API}/api/tiendanube/status`, { headers: getHeaders() })
       .then(res => setTiendanube(res.data))

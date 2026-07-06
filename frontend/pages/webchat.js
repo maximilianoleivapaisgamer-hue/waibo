@@ -19,7 +19,7 @@ export default function Webchat() {
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
     const client = localStorage.getItem('whabot_client');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
     if (client) setClientId(JSON.parse(client).id);
     axios.get(`${API}/api/webchat/status`, { headers: headers() })
       .then(r => setConfig(r.data))

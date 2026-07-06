@@ -41,7 +41,7 @@ export default function ForgotPassword() {
             <p style={{ color: 'var(--text-muted)', fontSize: 14, lineHeight: 1.5 }}>
               Si <strong>{email}</strong> está registrado, te mandamos un link para resetear tu contraseña. Revisá también la carpeta de spam.
             </p>
-            <Link href="/" style={{ display: 'inline-block', marginTop: 20, color: 'var(--primary)', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>
+            <Link href="/login" style={{ display: 'inline-block', marginTop: 20, color: 'var(--primary)', fontSize: 14, textDecoration: 'none', fontWeight: 500 }}>
               ← Volver al login
             </Link>
           </div>
@@ -68,7 +68,7 @@ export default function ForgotPassword() {
               </button>
             </form>
             <div className="auth-link">
-              <Link href="/">← Volver al login</Link>
+              <Link href="/login">← Volver al login</Link>
             </div>
           </>
         )}

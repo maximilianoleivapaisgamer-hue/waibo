@@ -23,7 +23,7 @@ export default function MercadoLibre() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('ml_connected')) showSuccess(`✅ Mercado Libre conectado: @${params.get('seller')}`);

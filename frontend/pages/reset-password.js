@@ -77,7 +77,7 @@ export default function ResetPassword() {
             <div style={{ fontSize: 48, marginBottom: 12 }}>✅</div>
             <p style={{ fontWeight: 600, marginBottom: 8 }}>¡Contraseña actualizada!</p>
             <p style={{ color: 'var(--text-muted)', fontSize: 14 }}>Ya podés ingresar con tu nueva contraseña.</p>
-            <button className="btn btn-primary" onClick={() => router.push('/')} style={{ marginTop: 20 }}>
+            <button className="btn btn-primary" onClick={() => router.push('/login')} style={{ marginTop: 20 }}>
               Ir al login
             </button>
           </div>

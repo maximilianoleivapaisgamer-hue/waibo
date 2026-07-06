@@ -461,5 +461,226 @@ cron.schedule('0 10 * * *', async () => {
   }
 });
 
-console.log('✅ Cronjobs iniciados (recordatorios + morosidad + limpieza + seguimientos + retención)');
+// ── Onboarding email día 3 (diario a las 10:30am) ─────────────────
+cron.schedule('30 10 * * *', async () => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: '172.65.255.143', port: 587, secure: false, requireTLS: true,
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+      tls: { servername: 'smtp.hostinger.com' },
+    });
+
+    const clients = await pool.query(`
+      SELECT id, name, email, business_name, created_at
+      FROM clients
+      WHERE onboarding_day3_sent = false
+        AND created_at <= NOW() - INTERVAL '3 days'
+        AND created_at > NOW() - INTERVAL '4 days'
+        AND role = 'owner'
+    `);
+
+    for (const c of clients.rows) {
+      try {
+        await transporter.sendMail({
+          from: `"Waibo" <${process.env.MAIL_USER}>`,
+          to: c.email,
+          subject: `¿Cómo va todo con Waibo? 🤖`,
+          html: `
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
+              <div style="background:linear-gradient(135deg,#7C3AED,#5B21B6);padding:32px;text-align:center">
+                <img src="${process.env.FRONTEND_URL}/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:12px"/>
+                <h1 style="color:white;margin:0;font-size:22px">Ya llevas 3 días con Waibo 🎉</h1>
+              </div>
+              <div style="padding:32px;color:#1A1A2E">
+                <p>Hola <strong>${c.business_name || c.name}</strong>,</p>
+                <p>Queremos asegurarnos de que estés sacándole el máximo provecho a tu período de prueba.</p>
+                <p style="font-weight:700;margin-bottom:8px">¿Ya hiciste estos pasos?</p>
+                <div style="background:#F5F3FF;border-radius:12px;padding:20px;margin-bottom:20px">
+                  <p style="margin:6px 0">✅ <strong>Configurar el prompt de tu bot</strong> — contale a la IA quién sos y qué hacés</p>
+                  <p style="margin:6px 0">✅ <strong>Cargar tu base de conocimiento</strong> — precios, servicios, horarios</p>
+                  <p style="margin:6px 0">✅ <strong>Conectar WhatsApp o Instagram</strong> — para que el bot empiece a responder</p>
+                  <p style="margin:6px 0">✅ <strong>Probar el chat</strong> — enviarte un mensaje de prueba desde el panel</p>
+                </div>
+                <p>Si necesitás ayuda con algún paso, respondé este email y te ayudamos 🙌</p>
+                <a href="${process.env.FRONTEND_URL}/config" style="display:inline-block;margin:16px 0;padding:13px 28px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Configurar mi bot ahora →</a>
+                <p style="color:#6B7280;font-size:13px;margin-top:24px">¿Tenés dudas? Escribinos a <a href="mailto:hola@waibochat.com" style="color:#7C3AED">hola@waibochat.com</a></p>
+              </div>
+            </div>
+          `,
+        });
+        await pool.query('UPDATE clients SET onboarding_day3_sent = true WHERE id = $1', [c.id]);
+        console.log(`📧 Onboarding día 3 → ${c.email}`);
+      } catch (e) {
+        console.error(`❌ Error onboarding día 3 a ${c.email}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error en cron onboarding día 3:', err.message);
+  }
+});
+
+// ── Onboarding email día 7 (diario a las 11am) ────────────────────
+cron.schedule('0 11 * * *', async () => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: '172.65.255.143', port: 587, secure: false, requireTLS: true,
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+      tls: { servername: 'smtp.hostinger.com' },
+    });
+
+    const clients = await pool.query(`
+      SELECT id, name, email, business_name, created_at, trial_ends_at
+      FROM clients
+      WHERE onboarding_day7_sent = false
+        AND created_at <= NOW() - INTERVAL '7 days'
+        AND created_at > NOW() - INTERVAL '8 days'
+        AND role = 'owner'
+    `);
+
+    for (const c of clients.rows) {
+      const daysLeft = c.trial_ends_at ? Math.max(0, Math.ceil((new Date(c.trial_ends_at) - new Date()) / (1000 * 60 * 60 * 24))) : 7;
+      try {
+        await transporter.sendMail({
+          from: `"Waibo" <${process.env.MAIL_USER}>`,
+          to: c.email,
+          subject: `7 días con Waibo — ¿qué te falta para activar? 🚀`,
+          html: `
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
+              <div style="background:linear-gradient(135deg,#7C3AED,#5B21B6);padding:32px;text-align:center">
+                <img src="${process.env.FRONTEND_URL}/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:12px"/>
+                <h1 style="color:white;margin:0;font-size:22px">¡Una semana juntos! 🎊</h1>
+                <p style="color:#DDD6FE;margin:8px 0 0;font-size:15px">Te quedan <strong>${daysLeft} días</strong> de prueba gratuita</p>
+              </div>
+              <div style="padding:32px;color:#1A1A2E">
+                <p>Hola <strong>${c.business_name || c.name}</strong>,</p>
+                <p>Llevás una semana usando Waibo. Es el momento ideal para decidir si seguís con un plan pago.</p>
+                <div style="background:#FFF7ED;border:1px solid #FED7AA;border-radius:12px;padding:20px;margin:20px 0">
+                  <p style="margin:0;font-weight:700;font-size:15px">⏰ ¿Por qué activar ahora?</p>
+                  <p style="margin:10px 0 0;color:#78350F;font-size:14px">
+                    Al terminar la prueba, tu bot deja de responder automáticamente. Tus conversaciones y configuración se mantienen, pero tenés que activar un plan para seguir atendiendo.
+                  </p>
+                </div>
+                <p style="font-weight:700;margin-bottom:12px">Nuestros planes:</p>
+                <div style="display:flex;gap:12px;margin-bottom:20px;flex-wrap:wrap">
+                  <div style="flex:1;min-width:200px;border:2px solid #E5E7EB;border-radius:12px;padding:16px">
+                    <p style="margin:0;font-weight:700">Estándar</p>
+                    <p style="margin:4px 0;font-size:22px;font-weight:900;color:#7C3AED">$59.999<span style="font-size:13px;font-weight:400;color:#6B7280">/mes</span></p>
+                    <p style="margin:0;font-size:13px;color:#6B7280">WA + IG + FB + Agenda</p>
+                  </div>
+                  <div style="flex:1;min-width:200px;border:2px solid #7C3AED;border-radius:12px;padding:16px;background:#F5F3FF">
+                    <p style="margin:0;font-weight:700">E-Commerce Pro ⭐</p>
+                    <p style="margin:4px 0;font-size:22px;font-weight:900;color:#7C3AED">$129.999<span style="font-size:13px;font-weight:400;color:#6B7280">/mes</span></p>
+                    <p style="margin:0;font-size:13px;color:#6B7280">+ Mercado Libre + Tiendanube</p>
+                  </div>
+                </div>
+                <a href="${process.env.FRONTEND_URL}/billing" style="display:inline-block;margin:4px 0 16px;padding:13px 28px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Ver planes y activar →</a>
+                <p style="color:#6B7280;font-size:13px;margin-top:16px">¿Tenés dudas sobre qué plan elegir? Respondé este email y te ayudamos 😊</p>
+              </div>
+            </div>
+          `,
+        });
+        await pool.query('UPDATE clients SET onboarding_day7_sent = true WHERE id = $1', [c.id]);
+        console.log(`📧 Onboarding día 7 → ${c.email}`);
+      } catch (e) {
+        console.error(`❌ Error onboarding día 7 a ${c.email}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error en cron onboarding día 7:', err.message);
+  }
+});
+
+// ── Resumen semanal (lunes a las 8am) ─────────────────────────────
+cron.schedule('0 8 * * 1', async () => {
+  try {
+    const transporter = nodemailer.createTransport({
+      host: '172.65.255.143', port: 587, secure: false, requireTLS: true,
+      auth: { user: process.env.MAIL_USER, pass: process.env.MAIL_PASS },
+      tls: { servername: 'smtp.hostinger.com' },
+    });
+
+    const clients = await pool.query(`
+      SELECT c.id, c.name, c.email, c.business_name
+      FROM clients c
+      LEFT JOIN billing b ON b.client_id = c.id
+      WHERE c.active = true
+        AND c.role = 'owner'
+        AND (b.status = 'active' OR (c.trial_ends_at IS NOT NULL AND c.trial_ends_at > NOW()))
+    `);
+
+    for (const c of clients.rows) {
+      try {
+        const stats = await pool.query(`
+          SELECT
+            COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days') AS convs_week,
+            COUNT(*) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days') AS convs_month
+          FROM conversations WHERE client_id = $1
+        `, [c.id]);
+
+        const msgs = await pool.query(`
+          SELECT COUNT(*) AS total,
+                 COUNT(*) FILTER (WHERE role = 'assistant') AS bot_msgs
+          FROM messages m
+          JOIN conversations cv ON cv.id = m.conversation_id
+          WHERE cv.client_id = $1 AND m.timestamp >= NOW() - INTERVAL '7 days'
+        `, [c.id]);
+
+        const s = stats.rows[0];
+        const m = msgs.rows[0];
+        const convs = parseInt(s.convs_week) || 0;
+        const botMsgs = parseInt(m.bot_msgs) || 0;
+        const totalMsgs = parseInt(m.total) || 0;
+        const pct = totalMsgs > 0 ? Math.round((botMsgs / totalMsgs) * 100) : 0;
+
+        if (convs === 0) continue;
+
+        await transporter.sendMail({
+          from: `"Waibo" <${process.env.MAIL_USER}>`,
+          to: c.email,
+          subject: `Tu resumen semanal de Waibo 📊`,
+          html: `
+            <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 20px rgba(0,0,0,0.08)">
+              <div style="background:linear-gradient(135deg,#7C3AED,#5B21B6);padding:32px;text-align:center">
+                <img src="${process.env.FRONTEND_URL}/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:12px"/>
+                <h1 style="color:white;margin:0;font-size:22px">Tu resumen de la semana 📊</h1>
+                <p style="color:#DDD6FE;margin:6px 0 0;font-size:14px">${c.business_name || c.name}</p>
+              </div>
+              <div style="padding:32px;color:#1A1A2E">
+                <p>Esto fue lo que pasó en tu negocio los últimos 7 días:</p>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;margin:20px 0">
+                  <div style="background:#F5F3FF;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:28px;font-weight:900;color:#7C3AED">${convs}</div>
+                    <div style="font-size:12px;color:#6B7280;margin-top:4px">Conversaciones</div>
+                  </div>
+                  <div style="background:#F0FDF4;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:28px;font-weight:900;color:#059669">${botMsgs}</div>
+                    <div style="font-size:12px;color:#6B7280;margin-top:4px">Respondidos por IA</div>
+                  </div>
+                  <div style="background:#FFF7ED;border-radius:12px;padding:16px;text-align:center">
+                    <div style="font-size:28px;font-weight:900;color:#D97706">${pct}%</div>
+                    <div style="font-size:12px;color:#6B7280;margin-top:4px">Automatizado</div>
+                  </div>
+                </div>
+                ${pct >= 80 ? `<div style="background:#F0FDF4;border:1px solid #A7F3D0;border-radius:10px;padding:14px;margin-bottom:20px;font-size:14px">
+                  🏆 <strong>¡Excelente semana!</strong> Tu bot está resolviendo el ${pct}% de las consultas solo.
+                </div>` : pct > 0 ? `<div style="background:#EFF6FF;border:1px solid #BFDBFE;border-radius:10px;padding:14px;margin-bottom:20px;font-size:14px">
+                  💡 <strong>Tip:</strong> Podés mejorar la automatización enriqueciendo tu base de conocimiento con más preguntas frecuentes.
+                </div>` : ''}
+                <a href="${process.env.FRONTEND_URL}/dashboard" style="display:inline-block;margin:4px 0 16px;padding:13px 28px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Ver panel completo →</a>
+                <p style="color:#9CA3AF;font-size:12px;margin-top:20px">Recibís este email todos los lunes. Para dejar de recibirlo, escribinos a <a href="mailto:hola@waibochat.com" style="color:#7C3AED">hola@waibochat.com</a></p>
+              </div>
+            </div>
+          `,
+        });
+        console.log(`📧 Resumen semanal → ${c.email} (${convs} convs, ${pct}% automatizado)`);
+      } catch (e) {
+        console.error(`❌ Error resumen semanal a ${c.email}:`, e.message);
+      }
+    }
+  } catch (err) {
+    console.error('❌ Error en cron resumen semanal:', err.message);
+  }
+});
+
+console.log('✅ Cronjobs iniciados (recordatorios + morosidad + limpieza + seguimientos + retención + onboarding + resumen semanal)');
 module.exports = { reactivateClient };

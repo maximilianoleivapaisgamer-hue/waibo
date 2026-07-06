@@ -31,7 +31,7 @@ export default function Campaigns() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
     loadData();
   }, []);
 

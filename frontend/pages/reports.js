@@ -56,7 +56,7 @@ export default function Reports() {
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   useEffect(() => {
-    if (!localStorage.getItem('whabot_token')) { router.push('/'); return; }
+    if (!localStorage.getItem('whabot_token')) { router.push('/login'); return; }
     load();
   }, [period]);
 

@@ -29,7 +29,7 @@ export default function Billing() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     const params = new URLSearchParams(window.location.search);
     if (params.get('mp_return')) showSuccess('✅ Volviste de MercadoPago — verificando el estado de tu suscripción...');

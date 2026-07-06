@@ -15,14 +15,14 @@ export default function Config() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
 
     axios.get(`${API}/api/bot/config`, {
       headers: { Authorization: `Bearer ${token}` }
     }).then(res => {
       setConfig(res.data);
     }).catch(err => {
-      if (err.response?.status === 401) router.push('/');
+      if (err.response?.status === 401) router.push('/login');
       else setError('Error al cargar la configuración. Recargá la página.');
     }).finally(() => setLoading(false));
   }, []);

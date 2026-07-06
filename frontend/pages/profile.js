@@ -20,10 +20,10 @@ export default function Profile() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
     axios.get(`${API}/api/clients/me`, { headers: getHeaders() })
       .then(res => setProfile(res.data))
-      .catch(err => { if (err.response?.status === 401) router.push('/'); });
+      .catch(err => { if (err.response?.status === 401) router.push('/login'); });
   }, []);
 
   const handleSave = async (e) => {

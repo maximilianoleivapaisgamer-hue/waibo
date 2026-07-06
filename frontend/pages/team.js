@@ -18,7 +18,7 @@ export default function Team() {
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
-    if (!token) { router.push('/'); return; }
+    if (!token) { router.push('/login'); return; }
     // Empleados no pueden entrar a esta página
     const client = JSON.parse(localStorage.getItem('whabot_client') || '{}');
     if (client.role === 'employee') { router.push('/conversations'); return; }
