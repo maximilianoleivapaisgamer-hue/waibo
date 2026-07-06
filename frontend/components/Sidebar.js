@@ -1,44 +1,28 @@
 import { useRouter } from 'next/router';
 import { useEffect, useState } from 'react';
 import Image from 'next/image';
-import axios from 'axios';
 import ChannelLogo from './ChannelLogo';
-
-const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Sidebar({ active }) {
   const router = useRouter();
-  const isEmployee = typeof window !== 'undefined'
-    ? JSON.parse(localStorage.getItem('whabot_client') || '{}').role === 'employee'
-    : false;
-
   const [trial, setTrial] = useState(null);
 
   useEffect(() => {
-    // Mostrar desde cache inmediatamente (sin esperar la API)
-    const cached = localStorage.getItem('whabot_trial');
-    if (cached) {
-      try {
-        const data = JSON.parse(cached);
-        if (data?.in_trial) setTrial(data);
-      } catch {}
-    }
-
-    if (isEmployee) return;
-    const token = localStorage.getItem('whabot_token');
-    if (!token) return;
-
-    axios.get(`${API}/api/bot/trial`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => {
-        if (r.data.in_trial) {
-          localStorage.setItem('whabot_trial', JSON.stringify(r.data));
-          setTrial(r.data);
-        } else {
-          localStorage.removeItem('whabot_trial');
-          setTrial(null);
-        }
-      })
-      .catch(() => {});
+    try {
+      const client = JSON.parse(localStorage.getItem('whabot_client') || '{}');
+      if (client.role === 'employee' || !client.trial_ends_at) return;
+      const now = new Date();
+      const ends = new Date(client.trial_ends_at);
+      const daysLeft = Math.ceil((ends - now) / (1000 * 60 * 60 * 24));
+      const hasPlan = client.plan && !['trial', 'basico', null, undefined].includes(client.plan);
+      if (hasPlan) return;
+      setTrial({
+        in_trial: true,
+        days_left: Math.max(0, daysLeft),
+        expired: daysLeft <= 0,
+        ending_soon: daysLeft > 0 && daysLeft <= 5,
+      });
+    } catch {}
   }, []);
 
   useEffect(() => {
