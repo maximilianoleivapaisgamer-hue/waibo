@@ -8,17 +8,27 @@ const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Sidebar({ active }) {
   const router = useRouter();
-  const [trial, setTrial] = useState(null);
   const isEmployee = typeof window !== 'undefined'
     ? JSON.parse(localStorage.getItem('whabot_client') || '{}').role === 'employee'
     : false;
+
+  const cached = typeof window !== 'undefined' ? JSON.parse(localStorage.getItem('whabot_trial') || 'null') : null;
+  const [trial, setTrial] = useState(cached?.in_trial ? cached : null);
 
   useEffect(() => {
     if (isEmployee) return;
     const token = localStorage.getItem('whabot_token');
     if (!token) return;
     axios.get(`${API}/api/bot/trial`, { headers: { Authorization: `Bearer ${token}` } })
-      .then(r => { if (r.data.in_trial) setTrial(r.data); })
+      .then(r => {
+        if (r.data.in_trial) {
+          localStorage.setItem('whabot_trial', JSON.stringify(r.data));
+          setTrial(r.data);
+        } else {
+          localStorage.removeItem('whabot_trial');
+          setTrial(null);
+        }
+      })
       .catch(() => {});
   }, []);
 
