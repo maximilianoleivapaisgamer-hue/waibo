@@ -22,7 +22,7 @@ export default function Register() {
       const { data } = await axios.post(`${API}/api/auth/register`, form);
       localStorage.setItem('whabot_token', data.token);
       localStorage.setItem('whabot_client', JSON.stringify(data.client));
-      router.push('/dashboard');
+      router.push('/onboarding');
     } catch (err) {
       setError(err.response?.data?.error || 'Error al registrarse');
     } finally {

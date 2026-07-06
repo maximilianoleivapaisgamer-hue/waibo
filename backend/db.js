@@ -476,6 +476,8 @@ async function initDB() {
 
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_day3_sent BOOLEAN DEFAULT false;
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_day7_sent BOOLEAN DEFAULT false;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_completed BOOLEAN DEFAULT false;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS onboarding_platforms TEXT[] DEFAULT '{}';
 
       CREATE TABLE IF NOT EXISTS password_reset_tokens (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

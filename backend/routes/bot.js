@@ -398,6 +398,91 @@ router.get('/onboarding', authMiddleware, async (req, res) => {
   }
 });
 
+// ─── Onboarding IA ────────────────────────────────────────────────────────────
+const Anthropic = require('@anthropic-ai/sdk');
+const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+
+const ONBOARDING_AI_SYSTEM = `Sos el asistente de configuración de Waibo, una plataforma de chatbots de IA para negocios argentinos (PyMEs).
+
+Tu objetivo es configurar el bot del cliente haciéndole preguntas conversacionales, de a una por vez. Seguí este orden natural:
+1. Saludá y preguntá a qué se dedica su negocio y cómo se llama
+2. Preguntá qué querés que haga el bot: responder consultas, agendar turnos, tomar pedidos, ayudar a vender (puede ser varias)
+3. Preguntá en qué plataformas le escriben sus clientes: WhatsApp, Instagram, TikTok, Mercado Libre, Tiendanube, Google Calendar
+4. Preguntá cómo quiere que hable el bot: formal, amigable o como vendedor activo
+5. Preguntá si atiende en horarios específicos y cuáles son
+
+Cuando tengas toda esa información, generá la configuración con este bloque exacto al final de tu mensaje:
+
+<CONFIG>
+{"business_name":"nombre","rubro":"gastronomia|salud|comercio|servicios|educacion|inmobiliaria|otro","business_description":"2-3 oraciones sobre el negocio","bot_tasks":["consultas","turnos","pedidos","ventas"],"platforms":["whatsapp","instagram","tiktok","mercadolibre","tiendanube","google"],"bot_tone":"formal|amigable|vendedor","business_hours_enabled":true,"business_hours_start":"09:00","business_hours_end":"18:00","business_hours_days":["lunes","martes","miercoles","jueves","viernes"],"system_prompt":"Sos el asistente virtual de [nombre]. [descripción]. Respondés consultas de manera [tono]. [instrucciones específicas para el rubro y tareas]."}
+</CONFIG>
+
+Antes del bloque CONFIG escribí un mensaje amigable de 2-3 líneas resumiendo lo que configuraste.
+
+Reglas: español rioplatense, una sola pregunta a la vez, conciso, cercano. Si el cliente da info extra, incorporála al system_prompt final.`;
+
+router.post('/onboarding-ai', authMiddleware, async (req, res) => {
+  try {
+    const { messages } = req.body;
+    if (!Array.isArray(messages) || !messages.length) return res.status(400).json({ error: 'messages requerido' });
+
+    const response = await anthropic.messages.create({
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 1024,
+      system: ONBOARDING_AI_SYSTEM,
+      messages,
+    });
+
+    const text = response.content[0].text;
+    const configMatch = text.match(/<CONFIG>([\s\S]*?)<\/CONFIG>/);
+    let config = null;
+    let message = text.replace(/<CONFIG>[\s\S]*?<\/CONFIG>/, '').trim();
+
+    if (configMatch) {
+      try { config = JSON.parse(configMatch[1].trim()); } catch(e) {}
+    }
+
+    res.json({ message, config });
+  } catch (err) {
+    console.error('[onboarding-ai]', err.message);
+    res.status(500).json({ error: 'Error generando configuración' });
+  }
+});
+
+router.post('/onboarding-save', authMiddleware, async (req, res) => {
+  try {
+    const {
+      business_name, business_description, bot_tasks = [], platforms = [],
+      bot_tone, business_hours_enabled, business_hours_start, business_hours_end,
+      business_hours_days = [], system_prompt
+    } = req.body;
+    const clientId = req.client.id;
+
+    await pool.query('UPDATE clients SET business_name = $1, onboarding_completed = true, onboarding_platforms = $2 WHERE id = $3',
+      [business_name, platforms, clientId]);
+
+    await pool.query(`UPDATE bot_configs SET
+        business_info = $1, system_prompt = $2, bot_tone = $3,
+        agenda_enabled = $4, orders_enabled = $5,
+        business_hours_enabled = $6, business_hours_start = $7,
+        business_hours_end = $8, business_hours_days = $9
+      WHERE client_id = $10`,
+      [
+        business_description, system_prompt, bot_tone || 'amigable',
+        bot_tasks.includes('turnos'), bot_tasks.includes('pedidos'),
+        business_hours_enabled || false,
+        business_hours_start || '09:00', business_hours_end || '18:00',
+        business_hours_days, clientId
+      ]
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[onboarding-save]', err.message);
+    res.status(500).json({ error: 'Error guardando configuración' });
+  }
+});
+
 router.get('/trial', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
