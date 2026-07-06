@@ -6,10 +6,12 @@ import ChannelLogo from './ChannelLogo';
 export default function Sidebar({ active }) {
   const router = useRouter();
   const [trial, setTrial] = useState(null);
+  const [isEmployee, setIsEmployee] = useState(false);
 
   useEffect(() => {
     try {
       const client = JSON.parse(localStorage.getItem('whabot_client') || '{}');
+      if (client.role === 'employee') setIsEmployee(true);
       if (client.role === 'employee' || !client.trial_ends_at) return;
       const now = new Date();
       const ends = new Date(client.trial_ends_at);
