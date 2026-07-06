@@ -18,8 +18,8 @@ export default function ForgotPassword() {
     try {
       await axios.post(`${API}/api/auth/forgot-password`, { email });
       setSent(true);
-    } catch {
-      setError('Ocurrió un error. Intentá de nuevo.');
+    } catch (err) {
+      setError(err.response?.data?.error || 'Ocurrió un error. Intentá de nuevo.');
     } finally {
       setLoading(false);
     }

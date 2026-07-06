@@ -1,12 +1,26 @@
 import { useRouter } from 'next/router';
+import { useEffect, useState } from 'react';
 import Image from 'next/image';
+import axios from 'axios';
 import ChannelLogo from './ChannelLogo';
+
+const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Sidebar({ active }) {
   const router = useRouter();
+  const [trial, setTrial] = useState(null);
   const isEmployee = typeof window !== 'undefined'
     ? JSON.parse(localStorage.getItem('whabot_client') || '{}').role === 'employee'
     : false;
+
+  useEffect(() => {
+    if (isEmployee) return;
+    const token = localStorage.getItem('whabot_token');
+    if (!token) return;
+    axios.get(`${API}/api/bot/trial`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => { if (r.data.in_trial) setTrial(r.data); })
+      .catch(() => {});
+  }, []);
 
   const logout = () => {
     localStorage.removeItem('whabot_token');
@@ -103,6 +117,23 @@ export default function Sidebar({ active }) {
           </div>
         ))}
       </nav>
+      {trial && (
+        <div
+          onClick={() => router.push('/billing')}
+          style={{
+            margin: '8px 10px', padding: '10px 12px', borderRadius: 10, cursor: 'pointer',
+            background: trial.expired ? '#FEE2E2' : trial.ending_soon ? '#FEF3C7' : '#EDE9FE',
+            border: `1px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#DDD6FE'}`,
+          }}
+        >
+          <div style={{ fontSize: 11, fontWeight: 700, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#5B21B6', marginBottom: 3 }}>
+            {trial.expired ? '🔴 Prueba vencida' : `🕐 Prueba: ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''} restante${trial.days_left !== 1 ? 's' : ''}`}
+          </div>
+          <div style={{ fontSize: 10, color: trial.expired ? '#DC2626' : '#6B7280' }}>
+            {trial.expired ? 'Activá tu plan →' : 'Clic para ver planes →'}
+          </div>
+        </div>
+      )}
       <div className="sidebar-bottom">
         <button className="nav-item" onClick={logout}>
           <span className="nav-icon">🚪</span>

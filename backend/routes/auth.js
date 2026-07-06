@@ -161,12 +161,9 @@ router.post('/forgot-password', async (req, res) => {
   const { email } = req.body;
   if (!email) return res.status(400).json({ error: 'Email requerido' });
 
-  // Siempre responder OK para no revelar si el email existe
-  res.json({ ok: true, message: 'Si ese email está registrado, vas a recibir un link para resetear tu contraseña.' });
-
   try {
     const result = await pool.query('SELECT id, name, business_name FROM clients WHERE email = $1 AND active = true', [email]);
-    if (!result.rows.length) return;
+    if (!result.rows.length) return res.status(404).json({ error: 'No encontramos ninguna cuenta con ese email.' });
 
     const client = result.rows[0];
     const token = crypto.randomBytes(32).toString('hex');
@@ -198,8 +195,11 @@ router.post('/forgot-password', async (req, res) => {
         </div>
       `,
     });
+
+    res.json({ ok: true, message: 'Te mandamos un link para resetear tu contraseña. Revisá también el spam.' });
   } catch (err) {
     console.error('[forgot-password]', err.message);
+    res.status(500).json({ error: 'Ocurrió un error. Intentá de nuevo.' });
   }
 });
 
