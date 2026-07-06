@@ -57,6 +57,45 @@ router.post('/register', async (req, res) => {
     });
 
     res.status(201).json({ token, client });
+
+    // Email de bienvenida (async, no bloquea la respuesta)
+    try {
+      const mailer = getMailer();
+      const nombre = business_name || name;
+      await mailer.sendMail({
+        from: `"Waibo" <${process.env.MAIL_USER}>`,
+        to: email,
+        subject: `¡Bienvenido a Waibo, ${nombre}! 🎉`,
+        html: `
+          <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB">
+            <div style="background:linear-gradient(135deg,#7C3AED,#5B21B6);padding:32px;text-align:center">
+              <div style="background:white;display:inline-block;border-radius:16px;padding:12px 20px;margin-bottom:16px">
+                <span style="font-weight:900;font-size:22px;color:#7C3AED">Waibo</span>
+              </div>
+              <h1 style="color:white;margin:0;font-size:24px">¡Bienvenido, ${nombre}! 🎉</h1>
+              <p style="color:#DDD6FE;margin:8px 0 0;font-size:14px">Tu cuenta está lista. Tenés 14 días de prueba gratuita.</p>
+            </div>
+            <div style="padding:32px">
+              <p style="color:#374151;font-size:15px;line-height:1.6">Hola <strong>${name}</strong>, gracias por registrarte en Waibo. Tu asistente de IA ya está listo para empezar a atender clientes.</p>
+              <div style="background:#F5F3FF;border-radius:12px;padding:20px;margin:20px 0">
+                <div style="font-weight:700;color:#5B21B6;margin-bottom:12px;font-size:14px">🚀 Primeros pasos recomendados:</div>
+                <div style="display:flex;flex-direction:column;gap:8px">
+                  <div style="font-size:13px;color:#374151">✅ Contale a tu bot sobre tu negocio en <strong>Configurar bot</strong></div>
+                  <div style="font-size:13px;color:#374151">📚 Agregá información en la <strong>Base de conocimiento</strong></div>
+                  <div style="font-size:13px;color:#374151">🧪 Probalo en <strong>Modo prueba</strong> antes de conectarlo</div>
+                  <div style="font-size:13px;color:#374151">📱 Conectá tu <strong>WhatsApp</strong> cuando estés listo</div>
+                </div>
+              </div>
+              <div style="text-align:center;margin:24px 0">
+                <a href="${process.env.FRONTEND_URL}/dashboard" style="display:inline-block;padding:14px 32px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">Ir a mi panel →</a>
+              </div>
+              <p style="color:#6B7280;font-size:12px;text-align:center;margin-top:24px">Si tenés alguna pregunta, respondé este email y te ayudamos.</p>
+            </div>
+          </div>`,
+      });
+    } catch (mailErr) {
+      console.error('[welcome-email]', mailErr.message);
+    }
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Error al registrar cliente' });
@@ -183,17 +222,23 @@ router.post('/forgot-password', async (req, res) => {
       to: email,
       subject: 'Resetear tu contraseña — Waibo',
       html: `
-        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;padding:32px;color:#1A1A2E">
-          <img src="https://frontend-lac-nine-16.vercel.app/waibo-logo.png" width="48" style="border-radius:12px;margin-bottom:16px"/>
-          <h2 style="margin:0 0 8px">Resetear contraseña</h2>
-          <p>Hola <strong>${nombre}</strong>,</p>
-          <p>Recibimos una solicitud para resetear la contraseña de tu cuenta en Waibo.</p>
-          <p>Hacé clic en el botón para crear una nueva contraseña. El link es válido por <strong>1 hora</strong>.</p>
-          <a href="${resetUrl}" style="display:inline-block;margin:16px 0;padding:12px 24px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:600">Resetear contraseña</a>
-          <p style="color:#6B7280;font-size:13px;margin-top:16px">Si no pediste este reset, ignorá este email. Tu contraseña no va a cambiar.</p>
-          <p style="color:#6B7280;font-size:13px">Si el botón no funciona, copiá este link:<br/><a href="${resetUrl}" style="color:#7C3AED">${resetUrl}</a></p>
-        </div>
-      `,
+        <div style="font-family:sans-serif;max-width:560px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;border:1px solid #E5E7EB">
+          <div style="background:linear-gradient(135deg,#7C3AED,#5B21B6);padding:28px;text-align:center">
+            <div style="background:white;display:inline-block;border-radius:12px;padding:10px 18px;margin-bottom:12px">
+              <span style="font-weight:900;font-size:20px;color:#7C3AED">Waibo</span>
+            </div>
+            <h1 style="color:white;margin:0;font-size:20px">Resetear contraseña</h1>
+          </div>
+          <div style="padding:32px">
+            <p style="color:#374151;font-size:15px">Hola <strong>${nombre}</strong>,</p>
+            <p style="color:#374151;font-size:14px;line-height:1.6">Recibimos una solicitud para resetear la contraseña de tu cuenta. El link es válido por <strong>1 hora</strong>.</p>
+            <div style="text-align:center;margin:28px 0">
+              <a href="${resetUrl}" style="display:inline-block;padding:14px 32px;background:#7C3AED;color:white;border-radius:10px;text-decoration:none;font-weight:700;font-size:15px">Crear nueva contraseña →</a>
+            </div>
+            <p style="color:#9CA3AF;font-size:12px;text-align:center">Si no pediste este reset, ignorá este email. Tu contraseña no cambia.</p>
+            <p style="color:#9CA3AF;font-size:11px;text-align:center;margin-top:12px">Si el botón no funciona:<br/><a href="${resetUrl}" style="color:#7C3AED;word-break:break-all">${resetUrl}</a></p>
+          </div>
+        </div>`,
     });
 
     res.json({ ok: true, message: 'Te mandamos un link para resetear tu contraseña. Revisá también el spam.' });

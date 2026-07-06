@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const bcrypt = require('bcryptjs');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
@@ -39,6 +40,22 @@ router.put('/me', authMiddleware, async (req, res) => {
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Error al actualizar perfil' });
+  }
+});
+
+router.put('/me/password', authMiddleware, async (req, res) => {
+  const { current_password, new_password } = req.body;
+  if (!current_password || !new_password) return res.status(400).json({ error: 'Campos requeridos' });
+  if (new_password.length < 6) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 6 caracteres' });
+  try {
+    const result = await pool.query('SELECT password FROM clients WHERE id = $1', [req.client.id]);
+    const valid = await bcrypt.compare(current_password, result.rows[0].password);
+    if (!valid) return res.status(400).json({ error: 'La contraseña actual es incorrecta' });
+    const hashed = await bcrypt.hash(new_password, 10);
+    await pool.query('UPDATE clients SET password = $1 WHERE id = $2', [hashed, req.client.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Error al cambiar la contraseña' });
   }
 });
 

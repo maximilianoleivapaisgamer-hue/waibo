@@ -74,7 +74,7 @@ router.get('/clients', checkAdmin, async (req, res) => {
       SELECT
         c.id, c.name, c.email, c.business_name, c.phone_number,
         c.whatsapp_mode, c.whatsapp_provider, c.whatsapp_api_key,
-        c.active, c.plan, c.created_at,
+        c.active, c.plan, c.created_at, c.trial_ends_at,
         b.status as billing_status, b.amount, b.last_payment, b.next_due, b.suspended_at,
 
         -- canales conectados

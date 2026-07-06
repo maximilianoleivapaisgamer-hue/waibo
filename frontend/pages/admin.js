@@ -154,7 +154,11 @@ export default function Admin() {
 
   const filtered = clients.filter(c => {
     const matchSearch = !search || [c.name, c.email, c.business_name].some(f => f?.toLowerCase().includes(search.toLowerCase()));
-    const matchStatus = filterStatus === 'all' || (filterStatus === 'active' && c.active) || (filterStatus === 'suspended' && !c.active);
+    const inTrial = c.trial_ends_at && new Date(c.trial_ends_at) > new Date() && !['estandar','ecommerce_pro'].includes(c.plan);
+    const matchStatus = filterStatus === 'all'
+      || (filterStatus === 'active' && c.active)
+      || (filterStatus === 'suspended' && !c.active)
+      || (filterStatus === 'trial' && inTrial);
     return matchSearch && matchStatus;
   });
 
@@ -266,19 +270,19 @@ export default function Admin() {
               <input placeholder="Buscar por nombre, email o negocio..."
                 value={search} onChange={e => setSearch(e.target.value)}
                 style={{ flex: 1, minWidth: 200, padding: '8px 12px', border: '1.5px solid #E5E7EB', borderRadius: 8, fontSize: 13, outline: 'none' }} />
-              {['all', 'active', 'suspended'].map(f => (
+              {['all', 'active', 'trial', 'suspended'].map(f => (
                 <button key={f} onClick={() => setFilterStatus(f)} style={{
                   padding: '8px 14px', borderRadius: 8, border: 'none', cursor: 'pointer', fontSize: 13,
                   background: filterStatus === f ? '#7C3AED' : '#F3F4F6',
                   color: filterStatus === f ? 'white' : '#6B7280', fontWeight: 500
-                }}>{{ all: 'Todos', active: 'Activos', suspended: 'Suspendidos' }[f]}</button>
+                }}>{{ all: 'Todos', active: 'Activos', trial: '🕐 En prueba', suspended: 'Suspendidos' }[f]}</button>
               ))}
             </div>
             <div style={{ overflowX: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#F9FAFB', borderBottom: '1px solid #E5E7EB' }}>
-                    {['Negocio', 'Email', 'Canales', 'Plan / Billing', 'Actividad', 'Msgs mes', 'Bot', 'Próx. venc.', 'Alertas', 'Registrado', ''].map(h => (
+                    {['Negocio', 'Email', 'Canales', 'Plan / Billing', 'Trial', 'Actividad', 'Msgs mes', 'Bot', 'Próx. venc.', 'Alertas', 'Registrado', ''].map(h => (
                       <th key={h} style={{ padding: '9px 14px', textAlign: 'left', fontWeight: 600, color: '#6B7280', fontSize: 11, textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                     ))}
                   </tr>
@@ -314,6 +318,19 @@ export default function Admin() {
                           }}>{c.billing_status || (c.active ? 'activo' : 'suspendido')}</span>
                         </div>
                         {c.amount && <div style={{ fontSize: 11, color: '#6B7280', marginTop: 2 }}>{fmtMoney(c.amount)}/mes</div>}
+                      </td>
+                      <td style={{ padding: '11px 14px', fontSize: 11 }}>
+                        {c.trial_ends_at ? (() => {
+                          const days = Math.ceil((new Date(c.trial_ends_at) - new Date()) / 86400000);
+                          const expired = days <= 0;
+                          return (
+                            <span style={{ padding: '2px 8px', borderRadius: 20, fontWeight: 600,
+                              background: expired ? '#FEE2E2' : days <= 3 ? '#FEF3C7' : '#EDE9FE',
+                              color: expired ? '#DC2626' : days <= 3 ? '#92400E' : '#5B21B6' }}>
+                              {expired ? 'Venció' : `${days}d`}
+                            </span>
+                          );
+                        })() : <span style={{ color: '#9CA3AF' }}>—</span>}
                       </td>
                       <td style={{ padding: '11px 14px', color: '#6B7280', fontSize: 12 }}>
                         <div>{fmt(c.total_conversations)} convs</div>
