@@ -469,6 +469,13 @@ router.post('/onboarding-save', authMiddleware, async (req, res) => {
     await pool.query('UPDATE clients SET business_name = $1, onboarding_completed = true, onboarding_platforms = $2 WHERE id = $3',
       [business_name, platforms, clientId]);
 
+    const toHour = (val, def) => {
+      if (!val) return def;
+      if (typeof val === 'number') return val;
+      const parts = String(val).split(':');
+      return parseInt(parts[0], 10) || def;
+    };
+
     await pool.query(`UPDATE bot_configs SET
         business_info = $1, system_prompt = $2, bot_tone = $3,
         agenda_enabled = $4, orders_enabled = $5,
@@ -479,7 +486,7 @@ router.post('/onboarding-save', authMiddleware, async (req, res) => {
         business_description, system_prompt, bot_tone || 'amigable',
         bot_tasks.includes('turnos'), bot_tasks.includes('pedidos'),
         business_hours_enabled || false,
-        business_hours_start || '09:00', business_hours_end || '18:00',
+        toHour(business_hours_start, 9), toHour(business_hours_end, 18),
         business_hours_days, clientId
       ]
     );
