@@ -193,7 +193,7 @@ export default function Onboarding() {
               <label style={s.label}>Tono del bot</label>
               <div style={{ display:'flex', gap:10 }}>
                 {['formal','amigable','vendedor'].map(t => (
-                  <button key={t} style={{ ...s.pill, ...(cfg.bot_tone === t ? s.pillActive : {}) }} onClick={() => setAiConfig({...cfg, bot_tone: t})}>{t}</button>
+                  <button key={t} style={{ ...s.pill, ...(cfg.bot_tone === t ? s.pillActive : {}) }} onClick={() => setAiConfig({...cfg, bot_tone: t})}>{t.charAt(0).toUpperCase() + t.slice(1)}</button>
                 ))}
               </div>
             </div>
