@@ -95,40 +95,31 @@ export default function Dashboard() {
           </p>
         </div>
 
-        {trial && trial.in_trial && (
-          <div style={{
-            marginBottom: 20, padding: '14px 20px', borderRadius: 12,
-            display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
-            background: trial.expired ? '#FEF2F2' : trial.ending_soon ? '#FFFBEB' : '#EFF6FF',
-            border: `1px solid ${trial.expired ? '#FECACA' : trial.ending_soon ? '#FDE68A' : '#BFDBFE'}`,
-          }}>
-            <span style={{ fontSize: 22 }}>{trial.expired ? '🔴' : trial.ending_soon ? '⚠️' : '🕐'}</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: trial.expired ? '#DC2626' : trial.ending_soon ? '#92400E' : '#1D4ED8' }}>
-                {trial.expired
-                  ? 'Tu período de prueba venció'
-                  : trial.ending_soon
-                    ? `Tu prueba vence en ${trial.days_left} día${trial.days_left !== 1 ? 's' : ''}`
-                    : `Período de prueba gratuita — ${trial.days_left} días restantes`}
-              </div>
-              <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
-                {trial.expired
-                  ? 'Activá tu plan para seguir usando Waibo sin interrupciones.'
-                  : 'Activá tu plan antes de que venza para no perder ninguna conversación.'}
-              </div>
+        <div style={{
+          marginBottom: 20, padding: '14px 20px', borderRadius: 12,
+          display: 'flex', alignItems: 'center', gap: 14, flexWrap: 'wrap',
+          background: '#EFF6FF', border: '1px solid #BFDBFE',
+        }}>
+          <span style={{ fontSize: 22 }}>🕐</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 700, fontSize: 14, color: '#1D4ED8' }}>
+              Estás en período de prueba gratuita
             </div>
-            <button
-              onClick={() => router.push('/billing')}
-              style={{
-                padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
-                fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap',
-                background: trial.expired ? '#DC2626' : '#7C3AED', color: 'white',
-              }}
-            >
-              {trial.expired ? 'Activar ahora' : 'Ver planes'}
-            </button>
+            <div style={{ fontSize: 12, color: '#6B7280', marginTop: 2 }}>
+              Explorá todas las funciones de Waibo sin costo. Activá tu plan cuando estés listo.
+            </div>
           </div>
-        )}
+          <button
+            onClick={() => router.push('/billing')}
+            style={{
+              padding: '8px 18px', borderRadius: 8, border: 'none', cursor: 'pointer',
+              fontWeight: 600, fontSize: 13, whiteSpace: 'nowrap',
+              background: '#7C3AED', color: 'white',
+            }}
+          >
+            Ver planes
+          </button>
+        </div>
 
         {onboarding && !onboarding.all_done && (
           <div className="card" style={{ borderLeft: '4px solid var(--green)', marginBottom: 20 }}>
