@@ -64,6 +64,7 @@ export default function Onboarding() {
   const chatEndRef = useRef(null);
 
   const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState('');
   const token = typeof window !== 'undefined' ? localStorage.getItem('whabot_token') : null;
   const clientName = typeof window !== 'undefined'
     ? (() => { try { return JSON.parse(localStorage.getItem('whabot_client'))?.name?.split(' ')[0] || ''; } catch { return ''; } })()
@@ -80,12 +81,16 @@ export default function Onboarding() {
   // ── Guardar y terminar ─────────────────────────────────────
   async function save(data) {
     setSaving(true);
+    setSaveError('');
     try {
       await axios.post(`${API}/api/bot/onboarding-save`, data, {
         headers: { Authorization: `Bearer ${token}` }
       });
       router.push('/dashboard');
-    } catch { setSaving(false); }
+    } catch (err) {
+      setSaveError(err.response?.data?.error || 'Error al guardar. Intentá de nuevo.');
+      setSaving(false);
+    }
   }
 
   // ── AI chat ────────────────────────────────────────────────
@@ -219,6 +224,7 @@ export default function Onboarding() {
               <textarea style={{ ...s.input, height:120, resize:'vertical', fontSize:13 }} value={cfg.system_prompt || ''} onChange={e => setAiConfig({...cfg, system_prompt: e.target.value})} />
             </div>
 
+            {saveError && <div style={{ background:'#FEE2E2', color:'#DC2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginTop:8 }}>{saveError}</div>}
             <div style={{ display:'flex', gap:12, marginTop:8 }}>
               <button style={s.btnSecondary} onClick={() => { setAiReview(false); setAiConfig(null); }}>← Volver al chat</button>
               <button style={{ ...s.btnPrimary, flex:1 }} disabled={saving} onClick={() => save({
@@ -480,6 +486,7 @@ export default function Onboarding() {
         </>}
 
         {/* Nav buttons */}
+        {saveError && <div style={{ background:'#FEE2E2', color:'#DC2626', borderRadius:10, padding:'10px 14px', fontSize:13, marginTop:16 }}>{saveError}</div>}
         <div style={{ display:'flex', gap:12, marginTop:28 }}>
           {step > 1
             ? <button style={s.btnSecondary} onClick={() => setStep(s => s - 1)}>← Volver</button>
