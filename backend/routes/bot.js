@@ -501,21 +501,27 @@ router.post('/onboarding-save', authMiddleware, async (req, res) => {
 router.get('/trial', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT trial_ends_at, plan FROM clients WHERE id = $1',
+      'SELECT trial_ends_at, plan, created_at FROM clients WHERE id = $1',
       [req.client.id]
     );
-    const { trial_ends_at, plan } = result.rows[0] || {};
-    if (!trial_ends_at) return res.json({ in_trial: false });
+    const { trial_ends_at, plan, created_at } = result.rows[0] || {};
 
-    const now = new Date();
-    const ends = new Date(trial_ends_at);
-    const daysLeft = Math.ceil((ends - now) / (1000 * 60 * 60 * 24));
     const hasPaidPlan = plan && !['trial', 'basico', null].includes(plan) &&
       (await pool.query("SELECT status FROM billing WHERE client_id = $1 AND status = 'active'", [req.client.id])).rows.length > 0;
 
+    if (hasPaidPlan) return res.json({ in_trial: false });
+
+    const now = new Date();
+    // Si no tiene trial_ends_at, calculamos 14 días desde created_at
+    const ends = trial_ends_at
+      ? new Date(trial_ends_at)
+      : new Date(new Date(created_at).getTime() + 14 * 24 * 60 * 60 * 1000);
+
+    const daysLeft = Math.ceil((ends - now) / (1000 * 60 * 60 * 24));
+
     res.json({
-      in_trial: !hasPaidPlan,
-      trial_ends_at,
+      in_trial: true,
+      trial_ends_at: ends.toISOString(),
       days_left: Math.max(0, daysLeft),
       expired: daysLeft <= 0,
       ending_soon: daysLeft > 0 && daysLeft <= 5,
