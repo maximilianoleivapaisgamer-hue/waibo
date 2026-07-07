@@ -65,6 +65,9 @@ export default function Onboarding() {
 
   const [saving, setSaving] = useState(false);
   const token = typeof window !== 'undefined' ? localStorage.getItem('whabot_token') : null;
+  const clientName = typeof window !== 'undefined'
+    ? (() => { try { return JSON.parse(localStorage.getItem('whabot_client'))?.name?.split(' ')[0] || ''; } catch { return ''; } })()
+    : '';
 
   useEffect(() => {
     if (!token) { router.replace('/login'); }
@@ -135,13 +138,13 @@ export default function Onboarding() {
     <div style={s.page}>
       <Logo />
       <div style={s.card}>
-        <div style={s.eyebrow}>✨ Bienvenido a Waibo</div>
+        <div style={s.eyebrow}>✨ Bienvenido a Waibo{clientName ? `, ${clientName}` : ''}</div>
         <h1 style={s.h1}>¿Cómo querés configurar tu bot?</h1>
         <p style={s.sub}>Elegí el método que mejor se adapte a vos. En cualquier caso vas a poder editar todo después.</p>
         <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:16, marginTop:28 }}>
           <button style={s.modeCard} onClick={() => {
             setMode('ai');
-            setTimeout(() => sendMessage('Hola, quiero configurar mi Waibo'), 100);
+            setTimeout(() => sendMessage(`Hola, me llamo ${clientName || 'nuevo cliente'} y quiero configurar mi Waibo`), 100);
           }}>
             <div style={{ fontSize:36, marginBottom:12 }}>🤖</div>
             <div style={s.modeTitle}>Configurar con IA</div>
