@@ -487,6 +487,12 @@ async function initDB() {
         used BOOLEAN DEFAULT false,
         created_at TIMESTAMP DEFAULT NOW()
       );
+
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_alias VARCHAR(255);
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_cbu VARCHAR(255);
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_mp_link TEXT;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_holder VARCHAR(255);
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {

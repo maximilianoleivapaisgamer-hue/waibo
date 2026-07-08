@@ -103,13 +103,26 @@ router.get('/stats', authMiddleware, async (req, res) => {
   }
 });
 
-router.post('/webhook/:clientId', async (req, res) => {
+router.post('/webhook/:clientId?', async (req, res) => {
   res.sendStatus(200);
 
-  const clientId = req.params.clientId;
-  const { topic, resource } = req.body;
+  const { topic, resource, user_id } = req.body;
+  if (!topic || !resource) return;
 
   try {
+    const mlUserId = String(user_id || '');
+    let clientId = req.params.clientId;
+
+    if (!clientId || clientId === '0') {
+      if (!mlUserId) return;
+      const lookup = await pool.query(
+        'SELECT client_id FROM mercadolibre_tokens WHERE ml_user_id = $1 AND active = true',
+        [mlUserId]
+      );
+      if (!lookup.rows.length) return;
+      clientId = lookup.rows[0].client_id;
+    }
+
     const accessToken = await getMLToken(clientId);
     if (!accessToken) return;
 

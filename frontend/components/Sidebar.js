@@ -86,6 +86,7 @@ export default function Sidebar({ active }) {
       items: [
         { key: 'team', label: 'Mi equipo', icon: '👥', href: '/team' },
         { key: 'config', label: 'Configurar bot', icon: '⚙️', href: '/config' },
+        { key: 'pagos', label: 'Cobros por el bot', icon: '💰', href: '/pagos' },
         { key: 'billing', label: 'Mi plan', icon: '💳', href: '/billing' },
         { key: 'profile', label: 'Mi cuenta', icon: '👤', href: '/profile' },
       ]

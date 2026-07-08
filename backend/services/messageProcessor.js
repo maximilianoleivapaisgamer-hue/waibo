@@ -115,6 +115,14 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
 
     let productContext = '';
+    if (config.payment_enabled) {
+      const parts = [];
+      if (config.payment_alias) parts.push(`Alias: ${config.payment_alias}`);
+      if (config.payment_cbu) parts.push(`CBU: ${config.payment_cbu}`);
+      if (config.payment_holder) parts.push(`Titular: ${config.payment_holder}`);
+      if (config.payment_mp_link) parts.push(`Link de pago MercadoPago: ${config.payment_mp_link}`);
+      if (parts.length) productContext += `\nDATOS DE PAGO:\n${parts.join('\n')}\nCuando el cliente quiera pagar, compartí estos datos claramente.`;
+    }
     const tnConnected = await getTNToken(clientId);
     if (tnConnected) {
       const keywords = customerMessage.toLowerCase().match(/\\b\\w{4,}\\b/g) || [];

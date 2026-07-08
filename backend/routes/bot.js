@@ -34,7 +34,8 @@ router.put('/config', authMiddleware, async (req, res) => {
     owner_notifications_enabled, owner_notification_phone,
     variables_enabled, smart_scheduling_enabled,
     bot_tone, bot_tone_custom,
-    instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply
+    instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply,
+    payment_enabled, payment_alias, payment_cbu, payment_mp_link, payment_holder
   } = req.body;
 
   try {
@@ -65,6 +66,11 @@ router.put('/config', authMiddleware, async (req, res) => {
         ig_comment_ai_reply = COALESCE($24, ig_comment_ai_reply),
         ig_comment_reply_all = COALESCE($25, ig_comment_reply_all),
         ig_comment_public_reply = $26,
+        payment_enabled = COALESCE($27, payment_enabled),
+        payment_alias = $28,
+        payment_cbu = $29,
+        payment_mp_link = $30,
+        payment_holder = $31,
         updated_at = NOW()
        WHERE client_id = $22
        RETURNING *`,
@@ -76,7 +82,8 @@ router.put('/config', authMiddleware, async (req, res) => {
         variables_enabled, smart_scheduling_enabled,
         bot_tone, bot_tone_custom ?? null,
         req.client.id,
-        instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply ?? null
+        instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply ?? null,
+        payment_enabled, payment_alias ?? null, payment_cbu ?? null, payment_mp_link ?? null, payment_holder ?? null
       ]
     );
     res.json(result.rows[0]);

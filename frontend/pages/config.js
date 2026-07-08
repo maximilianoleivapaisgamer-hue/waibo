@@ -388,6 +388,56 @@ export default function Config() {
             </div>
           </div>
 
+          <div className="card">
+            <div className="card-title">💳 Datos de pago</div>
+            <div style={{ marginBottom: 14 }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={config.payment_enabled || false}
+                  onChange={e => setConfig({ ...config, payment_enabled: e.target.checked })}
+                />
+                <span style={{ fontSize: 14 }}>Activar: el bot comparte estos datos cuando el cliente quiere pagar</span>
+              </label>
+            </div>
+            {config.payment_enabled && (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                <div className="form-group">
+                  <label>Alias</label>
+                  <input
+                    placeholder="mi.negocio.mp"
+                    value={config.payment_alias || ''}
+                    onChange={e => setConfig({ ...config, payment_alias: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>CBU</label>
+                  <input
+                    placeholder="0000003100012345678901"
+                    value={config.payment_cbu || ''}
+                    onChange={e => setConfig({ ...config, payment_cbu: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Titular de la cuenta</label>
+                  <input
+                    placeholder="Juan Pérez"
+                    value={config.payment_holder || ''}
+                    onChange={e => setConfig({ ...config, payment_holder: e.target.value })}
+                  />
+                </div>
+                <div className="form-group">
+                  <label>Link de MercadoPago (opcional)</label>
+                  <input
+                    placeholder="https://mpago.la/..."
+                    value={config.payment_mp_link || ''}
+                    onChange={e => setConfig({ ...config, payment_mp_link: e.target.value })}
+                  />
+                </div>
+              </div>
+            )}
+          </div>
+
           <button className="btn btn-primary" type="submit" disabled={saving} style={{ width: 'auto', padding: '12px 32px' }}>
             {saving ? 'Guardando...' : '💾 Guardar configuración'}
           </button>
