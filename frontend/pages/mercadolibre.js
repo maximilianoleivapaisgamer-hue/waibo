@@ -62,9 +62,13 @@ export default function MercadoLibre() {
 
   const disconnectML = async () => {
     if (!confirm('¿Desconectar Mercado Libre?')) return;
-    await axios.delete(`${API}/api/mercadolibre/disconnect`, { headers: getHeaders() });
-    setStatus({ connected: false });
-    showSuccess('Mercado Libre desconectado');
+    try {
+      await axios.delete(`${API}/api/mercadolibre/disconnect`, { headers: getHeaders() });
+      setStatus({ connected: false });
+      showSuccess('Mercado Libre desconectado');
+    } catch {
+      showError('Error al desconectar. Intentá de nuevo.');
+    }
   };
 
   const timeAgo = (date) => {

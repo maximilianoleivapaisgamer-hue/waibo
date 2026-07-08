@@ -48,9 +48,13 @@ export default function TiendanubePage() {
 
   async function disconnect() {
     if (!confirm('¿Desconectar Tiendanube?')) return;
-    await axios.delete(`${API}/api/tiendanube/disconnect`, { headers: headers() });
-    setStatus(null); setProducts([]);
-    setMsg('Tiendanube desconectada.');
+    try {
+      await axios.delete(`${API}/api/tiendanube/disconnect`, { headers: headers() });
+      setStatus(null); setProducts([]);
+      setMsg('Tiendanube desconectada.');
+    } catch {
+      setMsg('❌ Error al desconectar. Intentá de nuevo.');
+    }
   }
 
   async function sync() {

@@ -70,9 +70,13 @@ export default function Channels() {
 
   const disconnectChannel = async (channel, setter) => {
     if (!confirm(`¿Desconectar ${channel}?`)) return;
-    await axios.delete(`${API}/api/${channel}/disconnect`, { headers: getHeaders() });
-    setter({ connected: false });
-    showSuccess(`${channel} desconectado`);
+    try {
+      await axios.delete(`${API}/api/${channel}/disconnect`, { headers: getHeaders() });
+      setter({ connected: false });
+      showSuccess(`${channel} desconectado`);
+    } catch {
+      showError(`Error al desconectar ${channel}. Intentá de nuevo.`);
+    }
   };
 
   const startQR = async () => {
