@@ -83,7 +83,7 @@ export default function Channels() {
   const launchEmbeddedSignup = () => {
     if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
     wabaDataRef.current = {};
-    window.FB.login(async (response) => {
+    window.FB.login(function(response) {
       if (!response.authResponse?.code) return;
       const { phone_number_id, waba_id } = wabaDataRef.current;
       if (!phone_number_id || !waba_id) {
@@ -91,20 +91,20 @@ export default function Channels() {
         return;
       }
       setEmbeddedSignupLoading(true);
-      try {
-        await axios.post(`${API}/api/whatsapp/embedded-signup`, {
-          code: response.authResponse.code,
-          phone_number_id,
-          waba_id
-        }, { headers: getHeaders() });
-        const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
-        setProfile(meRes.data);
-        showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
-      } catch (err) {
-        showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
-      } finally {
-        setEmbeddedSignupLoading(false);
-      }
+      axios.post(`${API}/api/whatsapp/embedded-signup`, {
+        code: response.authResponse.code,
+        phone_number_id,
+        waba_id
+      }, { headers: getHeaders() })
+        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+        .then(meRes => {
+          setProfile(meRes.data);
+          showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
+        })
+        .catch(err => {
+          showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
+        })
+        .finally(() => setEmbeddedSignupLoading(false));
     }, {
       config_id: META_CONFIG_ID,
       response_type: 'code',
