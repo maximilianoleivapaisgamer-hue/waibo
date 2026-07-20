@@ -108,7 +108,8 @@ export default function Channels() {
     }, {
       config_id: META_CONFIG_ID,
       response_type: 'code',
-      override_default_response_type: true
+      override_default_response_type: true,
+      extras: { version: 'v4' }
     });
   };
 
