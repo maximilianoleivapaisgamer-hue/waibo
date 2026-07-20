@@ -84,7 +84,7 @@ export default function Channels() {
     if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
     wabaDataRef.current = {};
 
-    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: 2 }));
+    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
     const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
 
     const width = 600, height = 700;
