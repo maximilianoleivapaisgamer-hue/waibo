@@ -81,8 +81,12 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
 
     res.json({ ok: true, phone_number_id, waba_id });
   } catch (err) {
-    console.error('Embedded signup error:', err.response?.data || err.message);
-    res.status(500).json({ error: 'Error conectando WhatsApp. Verificá que el proceso se completó correctamente.' });
+    const metaError = err.response?.data;
+    console.error('Embedded signup error:', metaError || err.message);
+    res.status(500).json({
+      error: metaError?.error?.message || metaError?.error_description || err.message || 'Error conectando WhatsApp.',
+      meta_error: metaError
+    });
   }
 });
 
