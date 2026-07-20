@@ -85,7 +85,7 @@ export default function Channels() {
     wabaDataRef.current = {};
 
     const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: 2 }));
-    const url = `https://www.facebook.com/dialog/oauth?client_id=${FB_APP_ID}&display=popup&response_type=token&redirect_uri=https%3A%2F%2Fstaticxx.facebook.com%2Fx%2Fconnect%2Fxd_arbiter%2F%3Fversion%3D46%23cb%3Df0&config_id=${META_CONFIG_ID}&extras=${extras}`;
+    const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
 
     const width = 600, height = 700;
     const left = window.screenX + (window.outerWidth - width) / 2;
