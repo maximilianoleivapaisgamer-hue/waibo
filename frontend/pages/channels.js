@@ -81,34 +81,61 @@ export default function Channels() {
   }, []);
 
   const launchEmbeddedSignup = () => {
-    if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
+    if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
     wabaDataRef.current = {};
-    window.FB.login(function(response) {
-      if (!response.authResponse?.accessToken) return;
-      const { phone_number_id, waba_id } = wabaDataRef.current;
-      if (!phone_number_id || !waba_id) {
-        showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
-        return;
+
+    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: 2 }));
+    const url = `https://www.facebook.com/dialog/oauth?client_id=${FB_APP_ID}&display=popup&response_type=token&redirect_uri=https%3A%2F%2Fstaticxx.facebook.com%2Fx%2Fconnect%2Fxd_arbiter%2F%3Fversion%3D46%23cb%3Df0&config_id=${META_CONFIG_ID}&extras=${extras}`;
+
+    const width = 600, height = 700;
+    const left = window.screenX + (window.outerWidth - width) / 2;
+    const top = window.screenY + (window.outerHeight - height) / 2;
+    const popup = window.open(url, 'EmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
+
+    const onMessage = (event) => {
+      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (event.data.event === 'FINISH') {
+        const { phone_number_id, waba_id } = event.data.data || {};
+        wabaDataRef.current = { phone_number_id, waba_id };
       }
-      setEmbeddedSignupLoading(true);
-      axios.post(`${API}/api/whatsapp/embedded-signup`, {
-        access_token: response.authResponse.accessToken,
-        phone_number_id,
-        waba_id
-      }, { headers: getHeaders() })
-        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-        .then(meRes => {
-          setProfile(meRes.data);
-          showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
-        })
-        .catch(err => {
-          showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
-        })
-        .finally(() => setEmbeddedSignupLoading(false));
-    }, {
-      config_id: META_CONFIG_ID,
-      extras: { version: 'v4', sessionInfoVersion: 3 }
-    });
+      if (event.data.event === 'FINISH' || event.data.event === 'CANCEL') {
+        window.removeEventListener('message', onMessage);
+        if (popup && !popup.closed) popup.close();
+        if (event.data.event !== 'FINISH') return;
+        const { phone_number_id, waba_id } = wabaDataRef.current;
+        if (!phone_number_id || !waba_id) {
+          showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
+          return;
+        }
+        setEmbeddedSignupLoading(true);
+        // Get access token from FB SDK after popup completes
+        if (window.FB) {
+          window.FB.getLoginStatus(function(statusResponse) {
+            const accessToken = statusResponse?.authResponse?.accessToken;
+            if (!accessToken) {
+              showError('No se pudo obtener el token de acceso. Intentá de nuevo.');
+              setEmbeddedSignupLoading(false);
+              return;
+            }
+            axios.post(`${API}/api/whatsapp/embedded-signup`, {
+              access_token: accessToken,
+              phone_number_id,
+              waba_id
+            }, { headers: getHeaders() })
+              .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+              .then(meRes => {
+                setProfile(meRes.data);
+                showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
+              })
+              .catch(err => {
+                showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
+              })
+              .finally(() => setEmbeddedSignupLoading(false));
+          });
+        }
+      }
+    };
+    window.addEventListener('message', onMessage);
   };
 
   const disconnectCloudAPI = async () => {
