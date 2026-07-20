@@ -5,8 +5,8 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { code, waba_id, phone_number_id } = req.body;
-  if (!code || !waba_id || !phone_number_id) {
+  const { code, waba_id: bodyWabaId, phone_number_id: bodyPhoneId } = req.body;
+  if (!code) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos' });
   }
 
@@ -30,6 +30,36 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
       }
     });
     const longLivedToken = llRes.data.access_token;
+
+    // Si no vienen los IDs, buscarlos en Meta
+    let waba_id = bodyWabaId;
+    let phone_number_id = bodyPhoneId;
+
+    if (!waba_id || !phone_number_id) {
+      const wabasRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+        headers: { Authorization: `Bearer ${longLivedToken}` }
+      });
+      const businesses = wabasRes.data?.data || [];
+      for (const biz of businesses) {
+        const waRes = await axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
+          headers: { Authorization: `Bearer ${longLivedToken}` }
+        }).catch(() => null);
+        const wabas = waRes?.data?.data || [];
+        if (wabas.length > 0) {
+          waba_id = wabas[0].id;
+          const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba_id}/phone_numbers`, {
+            headers: { Authorization: `Bearer ${longLivedToken}` }
+          }).catch(() => null);
+          const phones = phoneRes?.data?.data || [];
+          if (phones.length > 0) phone_number_id = phones[0].id;
+          break;
+        }
+      }
+    }
+
+    if (!waba_id || !phone_number_id) {
+      return res.status(400).json({ error: 'No se encontró ninguna cuenta de WhatsApp Business. Completá todos los pasos del asistente de Meta.' });
+    }
 
     // Subscribe our app to the WABA webhooks
     await axios.post(

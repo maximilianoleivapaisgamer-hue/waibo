@@ -92,39 +92,43 @@ export default function Channels() {
     const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
     const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
 
+    // También escuchar el mensaje por si llega directo
     const onMessage = (event) => {
       if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
       if (event.data.event === 'FINISH') {
         const { phone_number_id, waba_id } = event.data.data || {};
-        wabaDataRef.current = { phone_number_id, waba_id };
-        window.removeEventListener('message', onMessage);
-        if (popup && !popup.closed) popup.close();
-
-        if (!phone_number_id || !waba_id) {
-          showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
-          return;
+        if (phone_number_id && waba_id) {
+          wabaDataRef.current = { phone_number_id, waba_id };
         }
-
-        // Guardar en estado para que el usuario complete con un click
-        setPendingWaba({ phone_number_id, waba_id });
-      } else if (event.data.event === 'CANCEL') {
-        window.removeEventListener('message', onMessage);
-        if (popup && !popup.closed) popup.close();
       }
     };
     window.addEventListener('message', onMessage);
+
+    // Detectar cuando el popup se cierra
+    const pollClosed = setInterval(() => {
+      if (popup && popup.closed) {
+        clearInterval(pollClosed);
+        window.removeEventListener('message', onMessage);
+        // Mostrar botón para completar, independientemente de si recibimos el mensaje
+        setPendingWaba(wabaDataRef.current?.waba_id
+          ? wabaDataRef.current
+          : { phone_number_id: null, waba_id: null });
+      }
+    }, 500);
   };
 
   const completarConexion = () => {
-    if (!pendingWaba) return;
     if (!window.FB) { showError('El SDK de Meta todavía se está cargando.'); return; }
-    const { phone_number_id, waba_id } = pendingWaba;
+    const { phone_number_id, waba_id } = wabaDataRef.current || {};
     window.FB.login(function(response) {
       const code = response.authResponse?.code;
       if (!code) { showError('No se pudo obtener autorización. Intentá de nuevo.'); return; }
       setEmbeddedSignupLoading(true);
+      // Si no tenemos los IDs, el backend los buscará via token
       axios.post(`${API}/api/whatsapp/embedded-signup`, {
-        code, phone_number_id, waba_id
+        code,
+        ...(phone_number_id && { phone_number_id }),
+        ...(waba_id && { waba_id }),
       }, { headers: getHeaders() })
         .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
         .then(meRes => {
@@ -331,19 +335,29 @@ export default function Channels() {
                 ) : (
                   <div>
                     {/* Paso 2: completar conexión después del Embedded Signup */}
-                    {pendingWaba && (
+                    {pendingWaba !== null && (
                       <div style={{ background: '#FFF7ED', border: '2px solid #FB923C', borderRadius: 10, padding: 16, margin: '14px 0' }}>
                         <div style={{ fontWeight: 700, color: '#C2410C', marginBottom: 8 }}>⏳ Un paso más para completar la conexión</div>
                         <p style={{ fontSize: 13, color: '#9A3412', margin: '0 0 12px' }}>
-                          Meta procesó tu cuenta. Hacé clic en "Autorizar acceso" para que Waibo pueda gestionar tu WhatsApp.
+                          {pendingWaba.waba_id
+                            ? 'Meta procesó tu cuenta. Hacé clic para que Waibo pueda gestionar tu WhatsApp.'
+                            : 'Si completaste el proceso en Meta, hacé clic para vincular tu cuenta con Waibo.'}
                         </p>
-                        <button
-                          onClick={completarConexion}
-                          disabled={embeddedSignupLoading}
-                          style={{ padding: '10px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#EA580C', color: 'white', fontWeight: 700, fontSize: 14 }}
-                        >
-                          {embeddedSignupLoading ? '⏳ Conectando...' : '🔐 Autorizar acceso a Waibo'}
-                        </button>
+                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                          <button
+                            onClick={completarConexion}
+                            disabled={embeddedSignupLoading}
+                            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer', background: '#EA580C', color: 'white', fontWeight: 700, fontSize: 14 }}
+                          >
+                            {embeddedSignupLoading ? '⏳ Conectando...' : '🔐 Autorizar acceso a Waibo'}
+                          </button>
+                          <button
+                            onClick={() => setPendingWaba(null)}
+                            style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #FB923C', cursor: 'pointer', background: 'white', color: '#EA580C', fontWeight: 600, fontSize: 13 }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
                       </div>
                     )}
 
