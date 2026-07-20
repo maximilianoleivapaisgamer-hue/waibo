@@ -1,10 +1,12 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import ChannelLogo from '../components/ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
+const FB_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
+const META_CONFIG_ID = process.env.NEXT_PUBLIC_META_CONFIG_ID;
 
 export default function Channels() {
   const router = useRouter();
@@ -17,11 +19,43 @@ export default function Channels() {
   const [whatsappExpanded, setWhatsappExpanded] = useState(null); // 'cloud_api' | 'qr' | null
   const [qrStatus, setQrStatus] = useState(null);
   const [qrPolling, setQrPolling] = useState(null);
+  const [embeddedSignupLoading, setEmbeddedSignupLoading] = useState(false);
+  const [showManualForm, setShowManualForm] = useState(false);
+  const wabaDataRef = useRef({});
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   const showSuccess = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 4000); };
   const showError = (msg) => { setError(msg); setTimeout(() => setError(''), 4000); };
+
+  // Load Facebook JS SDK for Embedded Signup
+  useEffect(() => {
+    if (!FB_APP_ID) return;
+    if (document.getElementById('facebook-jssdk')) return;
+    window.fbAsyncInit = function () {
+      window.FB.init({ appId: FB_APP_ID, version: 'v21.0', xfbml: false, cookie: false });
+    };
+    const script = document.createElement('script');
+    script.id = 'facebook-jssdk';
+    script.src = 'https://connect.facebook.net/es_LA/sdk.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
+
+  // Listen for WABA data sent by the Embedded Signup popup
+  useEffect(() => {
+    const handler = (event) => {
+      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (event.data.event === 'FINISH') {
+        wabaDataRef.current = {
+          phone_number_id: event.data.data?.phone_number_id,
+          waba_id: event.data.data?.waba_id
+        };
+      }
+    };
+    window.addEventListener('message', handler);
+    return () => window.removeEventListener('message', handler);
+  }, []);
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
@@ -45,6 +79,50 @@ export default function Channels() {
       .then(res => setTiendanube(res.data))
       .catch(() => setTiendanube({ connected: false }));
   }, []);
+
+  const launchEmbeddedSignup = () => {
+    if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
+    wabaDataRef.current = {};
+    window.FB.login(async (response) => {
+      if (!response.authResponse?.code) return;
+      const { phone_number_id, waba_id } = wabaDataRef.current;
+      if (!phone_number_id || !waba_id) {
+        showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
+        return;
+      }
+      setEmbeddedSignupLoading(true);
+      try {
+        await axios.post(`${API}/api/whatsapp/embedded-signup`, {
+          code: response.authResponse.code,
+          phone_number_id,
+          waba_id
+        }, { headers: getHeaders() });
+        const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+        setProfile(meRes.data);
+        showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
+      } catch (err) {
+        showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
+      } finally {
+        setEmbeddedSignupLoading(false);
+      }
+    }, {
+      config_id: META_CONFIG_ID,
+      response_type: 'code',
+      override_default_response_type: true
+    });
+  };
+
+  const disconnectCloudAPI = async () => {
+    if (!confirm('¿Desconectar WhatsApp Cloud API?')) return;
+    try {
+      await axios.delete(`${API}/api/whatsapp/disconnect`, { headers: getHeaders() });
+      const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+      setProfile(meRes.data);
+      showSuccess('WhatsApp Cloud API desconectado');
+    } catch {
+      showError('Error al desconectar. Intentá de nuevo.');
+    }
+  };
 
   const handleSaveCloudAPI = async (e) => {
     e.preventDefault();
@@ -273,58 +351,111 @@ export default function Channels() {
 
             {whatsappExpanded === 'cloud_api' && (
               <div style={{ padding: '0 16px 20px' }}>
-                <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
-                  <div style={{ fontWeight: 700, marginBottom: 10, color: '#5B21B6' }}>📋 Cómo configurar — paso a paso</div>
-                  <ol style={{ margin: 0, paddingLeft: 18, lineHeight: 2 }}>
-                    <li>Entrá a <strong>developers.facebook.com</strong> e iniciá sesión con tu cuenta de Facebook.</li>
-                    <li>Necesitás una <strong>cuenta de Meta Business</strong>. Si no tenés, creala gratis en <strong>business.facebook.com</strong> → "Crear cuenta" → ingresá el nombre de tu empresa (ej: <em>"Panadería El Sol"</em>), tu nombre y tu email.</li>
-                    <li>En developers.facebook.com → <strong>"Mis apps" → "Crear app"</strong>. Cuando te pregunte el tipo, elegí <strong>"Business"</strong>. Dale un nombre descriptivo (ej: <em>"Bot WhatsApp Mi Negocio"</em>) y seleccioná tu cuenta de Meta Business.</li>
-                    <li>Dentro de la app, buscá el producto <strong>"WhatsApp"</strong> y hacé clic en <strong>"Configurar"</strong>. Aceptá las condiciones del servicio y seleccioná tu <strong>portfolio comercial</strong>. Hacé clic en <strong>"Continuar"</strong>.</li>
-                    <li>Meta te da automáticamente un <strong>número de prueba gratuito</strong> — usalo primero para verificar que el bot funciona. Después agregás tu número real desde <strong>"Registra tu número de teléfono"</strong>.</li>
-                    <li>En <strong>"Paso 1: Pruébalo"</strong>, vas a ver el <strong>Phone Number ID</strong> — copialo y pegalo en el campo de abajo.</li>
-                    <li>Generá un <strong>token de acceso temporal</strong> (para testear) o, para producción, andá a <strong>Configuración → Usuarios del sistema</strong> y creá un token permanente con el permiso <code>whatsapp_business_messaging</code>.</li>
-                    <li>Andá a <strong>"Paso 2: Configuración de producción" → "Configurar webhooks"</strong>. Pegá la URL del webhook de abajo, en el token de verificación escribí <code>whabot2024</code>, y hacé clic en <strong>"Verificar y guardar"</strong>. Después suscribite al evento <strong>messages</strong>.</li>
-                  </ol>
-                  <div style={{ marginTop: 10, padding: '8px 12px', background: '#EDE9FE', borderRadius: 8, fontSize: 12, color: '#5B21B6' }}>
-                    💡 <strong>Empezá con el número de prueba.</strong> Meta te lo da gratis y podés mandar mensajes a hasta 5 números para testear. Cuando todo funcione, agregás tu número real.
-                  </div>
-                </div>
-
-                <form onSubmit={handleSaveCloudAPI}>
-                  <div className="form-group">
-                    <label>Phone Number ID</label>
-                    <input
-                      placeholder="Ej: 123456789012345"
-                      value={profile.whatsapp_phone_id || ''}
-                      onChange={e => setProfile({ ...profile, whatsapp_phone_id: e.target.value })}
-                    />
-                    <small style={{ fontSize: 12, color: 'var(--text-muted)' }}>Lo encontrás en tu app de Meta → WhatsApp → Panel.</small>
-                  </div>
-                  <div className="form-group">
-                    <label>Access Token (Token de acceso)</label>
-                    <input
-                      type="password"
-                      placeholder="Tu token de acceso de WhatsApp"
-                      value={profile.whatsapp_api_key || ''}
-                      onChange={e => setProfile({ ...profile, whatsapp_api_key: e.target.value })}
-                    />
-                    <small style={{ fontSize: 12, color: 'var(--text-muted)' }}>El token permanente que generaste en tu app de Meta.</small>
-                  </div>
-
-                  <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                    <strong>🔗 URL de Webhook para Meta:</strong>
-                    <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: 'white', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', wordBreak: 'break-all' }}>
-                      {webhookUrl}
-                    </code>
-                    <div style={{ marginTop: 8, fontSize: 12, color: '#1D4ED8' }}>
-                      Token de verificación: <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4, border: '1px solid #BFDBFE' }}>whabot2024</code>
+                {isCloudAPIConnected ? (
+                  <div>
+                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13 }}>
+                      <div style={{ fontWeight: 700, color: '#5B21B6', marginBottom: 6 }}>✅ WhatsApp Cloud API conectado</div>
+                      {profile.whatsapp_phone_id && (
+                        <div style={{ color: 'var(--text-muted)' }}>Phone Number ID: <code style={{ background: '#EDE9FE', padding: '2px 6px', borderRadius: 4 }}>{profile.whatsapp_phone_id}</code></div>
+                      )}
+                      {profile.waba_id && (
+                        <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>WABA ID: <code style={{ background: '#EDE9FE', padding: '2px 6px', borderRadius: 4 }}>{profile.waba_id}</code></div>
+                      )}
                     </div>
+                    <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                      <strong>🔗 URL de Webhook:</strong>
+                      <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: 'white', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', wordBreak: 'break-all' }}>
+                        {webhookUrl}
+                      </code>
+                    </div>
+                    <button onClick={disconnectCloudAPI} className="btn btn-secondary" style={{ width: 'auto' }}>
+                      🔌 Desconectar
+                    </button>
                   </div>
+                ) : (
+                  <div>
+                    {/* Primary: Embedded Signup */}
+                    {FB_APP_ID && META_CONFIG_ID ? (
+                      <div style={{ margin: '14px 0' }}>
+                        <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
+                          <div style={{ fontWeight: 700, color: '#15803D', marginBottom: 6 }}>✨ Conectá en 2 minutos sin configuración técnica</div>
+                          <p style={{ margin: 0, color: '#166534' }}>
+                            Hacé clic en el botón y seguí los pasos que te muestra Meta: seleccioná o creá tu cuenta de WhatsApp Business y elegí el número que querés conectar. Waibo gestiona todo el resto automáticamente.
+                          </p>
+                        </div>
+                        <button
+                          onClick={launchEmbeddedSignup}
+                          disabled={embeddedSignupLoading}
+                          style={{
+                            display: 'inline-flex', alignItems: 'center', gap: 10,
+                            padding: '12px 24px', borderRadius: 8, border: 'none', cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer',
+                            background: embeddedSignupLoading ? '#9CA3AF' : '#1877F2', color: 'white',
+                            fontWeight: 700, fontSize: 15
+                          }}
+                        >
+                          {embeddedSignupLoading ? (
+                            '⏳ Conectando...'
+                          ) : (
+                            <>
+                              <svg width="22" height="22" viewBox="0 0 24 24" fill="white"><path d="M12 2C6.48 2 2 6.48 2 12c0 4.99 3.66 9.12 8.44 9.88V14.89H7.9v-2.89h2.54V9.85c0-2.51 1.49-3.89 3.78-3.89 1.09 0 2.23.19 2.23.19v2.47h-1.26c-1.24 0-1.63.77-1.63 1.56v1.88h2.78l-.44 2.89h-2.34v6.99C18.34 21.12 22 17 22 12c0-5.52-4.48-10-10-10z"/></svg>
+                              Conectar con Meta
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    ) : (
+                      <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13, color: '#92400E' }}>
+                        ⚠️ <strong>Configuración pendiente:</strong> Para habilitar el botón de conexión directa con Meta, hay que agregar las variables <code>NEXT_PUBLIC_FACEBOOK_APP_ID</code> y <code>NEXT_PUBLIC_META_CONFIG_ID</code> en Vercel. Mientras tanto podés usar la configuración manual de abajo.
+                      </div>
+                    )}
 
-                  <button className="btn btn-primary" type="submit" disabled={saving} style={{ width: 'auto', padding: '10px 24px' }}>
-                    {saving ? 'Guardando...' : '💾 Guardar configuración Cloud API'}
-                  </button>
-                </form>
+                    {/* Separator */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 12px' }}>
+                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                      <button
+                        onClick={() => setShowManualForm(!showManualForm)}
+                        style={{ fontSize: 12, color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', textDecoration: 'underline' }}
+                      >
+                        {showManualForm ? 'Ocultar configuración manual' : '⚙️ Configuración manual (avanzado)'}
+                      </button>
+                      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+                    </div>
+
+                    {showManualForm && (
+                      <form onSubmit={handleSaveCloudAPI}>
+                        <div className="form-group">
+                          <label>Phone Number ID</label>
+                          <input
+                            placeholder="Ej: 123456789012345"
+                            value={profile.whatsapp_phone_id || ''}
+                            onChange={e => setProfile({ ...profile, whatsapp_phone_id: e.target.value })}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label>Access Token</label>
+                          <input
+                            type="password"
+                            placeholder="Tu token de acceso permanente"
+                            value={profile.whatsapp_api_key || ''}
+                            onChange={e => setProfile({ ...profile, whatsapp_api_key: e.target.value })}
+                          />
+                        </div>
+                        <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>
+                          <strong>🔗 URL de Webhook para Meta:</strong>
+                          <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: 'white', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', wordBreak: 'break-all' }}>
+                            {webhookUrl}
+                          </code>
+                          <div style={{ marginTop: 8, fontSize: 12, color: '#1D4ED8' }}>
+                            Token de verificación: <code style={{ background: 'white', padding: '2px 6px', borderRadius: 4, border: '1px solid #BFDBFE' }}>whabot2024</code>
+                          </div>
+                        </div>
+                        <button className="btn btn-primary" type="submit" disabled={saving} style={{ width: 'auto', padding: '10px 24px' }}>
+                          {saving ? 'Guardando...' : '💾 Guardar configuración'}
+                        </button>
+                      </form>
+                    )}
+                  </div>
+                )}
               </div>
             )}
           </div>
