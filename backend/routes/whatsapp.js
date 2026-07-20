@@ -5,29 +5,19 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { code, waba_id, phone_number_id } = req.body;
-  if (!code || !waba_id || !phone_number_id) {
+  const { access_token, waba_id, phone_number_id } = req.body;
+  if (!access_token || !waba_id || !phone_number_id) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos' });
   }
 
   try {
-    // Exchange the short-lived code for a user access token
-    const tokenRes = await axios.get('https://graph.facebook.com/v21.0/oauth/access_token', {
-      params: {
-        client_id: process.env.FACEBOOK_APP_ID,
-        client_secret: process.env.FACEBOOK_APP_SECRET,
-        code
-      }
-    });
-    const userToken = tokenRes.data.access_token;
-
-    // Exchange for a long-lived token (60-day expiry)
+    // Exchange short-lived user token for a long-lived token (60-day expiry)
     const llRes = await axios.get('https://graph.facebook.com/v21.0/oauth/access_token', {
       params: {
         grant_type: 'fb_exchange_token',
         client_id: process.env.FACEBOOK_APP_ID,
         client_secret: process.env.FACEBOOK_APP_SECRET,
-        fb_exchange_token: userToken
+        fb_exchange_token: access_token
       }
     });
     const longLivedToken = llRes.data.access_token;
