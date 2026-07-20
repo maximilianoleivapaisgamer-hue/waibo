@@ -16,6 +16,7 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
       params: {
         client_id: process.env.FACEBOOK_APP_ID,
         client_secret: process.env.FACEBOOK_APP_SECRET,
+        redirect_uri: 'https://www.facebook.com/connect/login_success.html',
         code
       }
     });
