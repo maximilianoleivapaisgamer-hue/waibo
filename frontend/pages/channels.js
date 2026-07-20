@@ -21,6 +21,7 @@ export default function Channels() {
   const [qrPolling, setQrPolling] = useState(null);
   const [embeddedSignupLoading, setEmbeddedSignupLoading] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
+  const [pendingWaba, setPendingWaba] = useState(null); // { phone_number_id, waba_id }
   const wabaDataRef = useRef({});
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
@@ -104,41 +105,40 @@ export default function Channels() {
           return;
         }
 
-        // Obtener token via FB.login() sólo para el access token (sin config_id)
-        if (window.FB) {
-          window.FB.login(function(response) {
-            const code = response.authResponse?.code;
-            if (!code) {
-              showError('No se pudo obtener el token de acceso. Intentá de nuevo.');
-              return;
-            }
-            setEmbeddedSignupLoading(true);
-            axios.post(`${API}/api/whatsapp/embedded-signup`, {
-              code,
-              phone_number_id,
-              waba_id
-            }, { headers: getHeaders() })
-              .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-              .then(meRes => {
-                setProfile(meRes.data);
-                showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
-              })
-              .catch(err => {
-                showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
-              })
-              .finally(() => setEmbeddedSignupLoading(false));
-          }, {
-            scope: 'whatsapp_business_management,whatsapp_business_messaging',
-            response_type: 'code',
-            override_default_response_type: true,
-          });
-        }
+        // Guardar en estado para que el usuario complete con un click
+        setPendingWaba({ phone_number_id, waba_id });
       } else if (event.data.event === 'CANCEL') {
         window.removeEventListener('message', onMessage);
         if (popup && !popup.closed) popup.close();
       }
     };
     window.addEventListener('message', onMessage);
+  };
+
+  const completarConexion = () => {
+    if (!pendingWaba) return;
+    if (!window.FB) { showError('El SDK de Meta todavía se está cargando.'); return; }
+    const { phone_number_id, waba_id } = pendingWaba;
+    window.FB.login(function(response) {
+      const code = response.authResponse?.code;
+      if (!code) { showError('No se pudo obtener autorización. Intentá de nuevo.'); return; }
+      setEmbeddedSignupLoading(true);
+      axios.post(`${API}/api/whatsapp/embedded-signup`, {
+        code, phone_number_id, waba_id
+      }, { headers: getHeaders() })
+        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+        .then(meRes => {
+          setProfile(meRes.data);
+          setPendingWaba(null);
+          showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
+        })
+        .catch(err => { showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
+        .finally(() => setEmbeddedSignupLoading(false));
+    }, {
+      scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      response_type: 'code',
+      override_default_response_type: true,
+    });
   };
 
   const disconnectCloudAPI = async () => {
@@ -330,6 +330,23 @@ export default function Channels() {
                   </div>
                 ) : (
                   <div>
+                    {/* Paso 2: completar conexión después del Embedded Signup */}
+                    {pendingWaba && (
+                      <div style={{ background: '#FFF7ED', border: '2px solid #FB923C', borderRadius: 10, padding: 16, margin: '14px 0' }}>
+                        <div style={{ fontWeight: 700, color: '#C2410C', marginBottom: 8 }}>⏳ Un paso más para completar la conexión</div>
+                        <p style={{ fontSize: 13, color: '#9A3412', margin: '0 0 12px' }}>
+                          Meta procesó tu cuenta. Hacé clic en "Autorizar acceso" para que Waibo pueda gestionar tu WhatsApp.
+                        </p>
+                        <button
+                          onClick={completarConexion}
+                          disabled={embeddedSignupLoading}
+                          style={{ padding: '10px 20px', borderRadius: 8, border: 'none', cursor: 'pointer', background: '#EA580C', color: 'white', fontWeight: 700, fontSize: 14 }}
+                        >
+                          {embeddedSignupLoading ? '⏳ Conectando...' : '🔐 Autorizar acceso a Waibo'}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Primary: Embedded Signup */}
                     {FB_APP_ID && META_CONFIG_ID ? (
                       <div style={{ margin: '14px 0' }}>
