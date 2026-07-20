@@ -81,36 +81,64 @@ export default function Channels() {
   }, []);
 
   const launchEmbeddedSignup = () => {
-    if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
+    if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
     wabaDataRef.current = {};
-    window.FB.login(function(response) {
-      if (!response.authResponse?.code) return;
-      const { phone_number_id, waba_id } = wabaDataRef.current;
-      if (!phone_number_id || !waba_id) {
-        showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
-        return;
+
+    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
+    const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
+    const width = 600, height = 700;
+    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
+    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
+    const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
+
+    const onMessage = (event) => {
+      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (event.data.event === 'FINISH') {
+        const { phone_number_id, waba_id } = event.data.data || {};
+        wabaDataRef.current = { phone_number_id, waba_id };
+        window.removeEventListener('message', onMessage);
+        if (popup && !popup.closed) popup.close();
+
+        if (!phone_number_id || !waba_id) {
+          showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
+          return;
+        }
+
+        // Obtener token via FB.login() sólo para el access token (sin config_id)
+        if (window.FB) {
+          window.FB.login(function(response) {
+            const code = response.authResponse?.code;
+            if (!code) {
+              showError('No se pudo obtener el token de acceso. Intentá de nuevo.');
+              return;
+            }
+            setEmbeddedSignupLoading(true);
+            axios.post(`${API}/api/whatsapp/embedded-signup`, {
+              code,
+              phone_number_id,
+              waba_id
+            }, { headers: getHeaders() })
+              .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+              .then(meRes => {
+                setProfile(meRes.data);
+                showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
+              })
+              .catch(err => {
+                showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
+              })
+              .finally(() => setEmbeddedSignupLoading(false));
+          }, {
+            scope: 'whatsapp_business_management,whatsapp_business_messaging',
+            response_type: 'code',
+            override_default_response_type: true,
+          });
+        }
+      } else if (event.data.event === 'CANCEL') {
+        window.removeEventListener('message', onMessage);
+        if (popup && !popup.closed) popup.close();
       }
-      setEmbeddedSignupLoading(true);
-      axios.post(`${API}/api/whatsapp/embedded-signup`, {
-        code: response.authResponse.code,
-        phone_number_id,
-        waba_id
-      }, { headers: getHeaders() })
-        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-        .then(meRes => {
-          setProfile(meRes.data);
-          showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
-        })
-        .catch(err => {
-          showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
-        })
-        .finally(() => setEmbeddedSignupLoading(false));
-    }, {
-      config_id: META_CONFIG_ID,
-      response_type: 'code',
-      override_default_response_type: true,
-      extras: { sessionInfoVersion: '3', version: 'v4' }
-    });
+    };
+    window.addEventListener('message', onMessage);
   };
 
   const disconnectCloudAPI = async () => {
