@@ -29,6 +29,22 @@ export default function Channels() {
   const showSuccess = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 4000); };
   const showError = (msg) => { setError(msg); setTimeout(() => setError(''), 4000); };
 
+  // Cargar el SDK de Facebook para Embedded Signup
+  useEffect(() => {
+    if (!FB_APP_ID) return;
+    if (document.getElementById('facebook-jssdk')) {
+      if (window.FB) window.FB.init({ appId: FB_APP_ID, version: 'v21.0', xfbml: false, cookie: false });
+      return;
+    }
+    window.fbAsyncInit = function () {
+      window.FB.init({ appId: FB_APP_ID, version: 'v21.0', xfbml: false, cookie: false });
+    };
+    const script = document.createElement('script');
+    script.id = 'facebook-jssdk';
+    script.src = 'https://connect.facebook.net/es_LA/sdk.js';
+    script.async = true;
+    document.body.appendChild(script);
+  }, []);
 
   // Listen for WABA data sent by the Embedded Signup popup
   useEffect(() => {
@@ -70,25 +86,29 @@ export default function Channels() {
   }, []);
 
   const launchEmbeddedSignup = () => {
-    if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
-    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
-    const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
-    const width = 600, height = 700;
-    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-    const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
-
-    const pollClosed = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(pollClosed);
-        setEmbeddedSignupLoading(true);
-        axios.post(`${API}/api/whatsapp/embedded-signup`, {}, { headers: getHeaders() })
-          .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-          .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
-          .catch(err => showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'))
-          .finally(() => setEmbeddedSignupLoading(false));
+    if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
+    wabaDataRef.current = {};
+    window.FB.login(function(response) {
+      if (!response.authResponse?.accessToken) return;
+      const { phone_number_id, waba_id } = wabaDataRef.current;
+      if (!phone_number_id || !waba_id) {
+        showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
+        return;
       }
-    }, 500);
+      setEmbeddedSignupLoading(true);
+      axios.post(`${API}/api/whatsapp/embedded-signup`, {
+        access_token: response.authResponse.accessToken,
+        phone_number_id,
+        waba_id,
+      }, { headers: getHeaders() })
+        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+        .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
+        .catch(err => showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'))
+        .finally(() => setEmbeddedSignupLoading(false));
+    }, {
+      config_id: META_CONFIG_ID,
+      extras: { version: 'v4', sessionInfoVersion: 3 },
+    });
   };
 
   const disconnectCloudAPI = async () => {
