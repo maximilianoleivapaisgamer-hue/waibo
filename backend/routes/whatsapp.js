@@ -5,17 +5,42 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { waba_id, phone_number_id } = req.body;
+  const { waba_id: bodyWabaId, phone_number_id: bodyPhoneId } = req.body;
   const systemToken = process.env.META_SYSTEM_USER_TOKEN;
 
   if (!systemToken) {
     return res.status(500).json({ error: 'Token de sistema de Meta no configurado.' });
   }
-  if (!waba_id || !phone_number_id) {
-    return res.status(400).json({ error: 'Faltan waba_id o phone_number_id.' });
-  }
 
   try {
+    let waba_id = bodyWabaId;
+    let phone_number_id = bodyPhoneId;
+
+    if (!waba_id || !phone_number_id) {
+      const bizRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+        headers: { Authorization: `Bearer ${systemToken}` }
+      });
+      for (const biz of bizRes.data?.data || []) {
+        const waRes = await axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
+          headers: { Authorization: `Bearer ${systemToken}` }
+        }).catch(() => null);
+        const wabas = waRes?.data?.data || [];
+        if (wabas.length > 0) {
+          waba_id = wabas[0].id;
+          const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba_id}/phone_numbers`, {
+            headers: { Authorization: `Bearer ${systemToken}` }
+          }).catch(() => null);
+          const phones = phoneRes?.data?.data || [];
+          if (phones.length > 0) phone_number_id = phones[0].id;
+          break;
+        }
+      }
+    }
+
+    if (!waba_id || !phone_number_id) {
+      return res.status(400).json({ error: 'No se encontró ninguna cuenta de WhatsApp Business. Completá todos los pasos del asistente de Meta.' });
+    }
+
     await axios.post(
       `https://graph.facebook.com/v21.0/${waba_id}/subscribed_apps`,
       {},

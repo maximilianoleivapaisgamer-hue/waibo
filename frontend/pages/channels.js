@@ -105,13 +105,11 @@ export default function Channels() {
   };
 
   const completarConexion = () => {
-    const { phone_number_id, waba_id } = wabaDataRef.current || {};
-    if (!waba_id || !phone_number_id) {
-      showError('No se recibieron los datos de WhatsApp. Intentá el proceso desde el principio.');
-      return;
-    }
     setEmbeddedSignupLoading(true);
-    axios.post(`${API}/api/whatsapp/embedded-signup`, { waba_id, phone_number_id }, { headers: getHeaders() })
+    const { phone_number_id, waba_id } = wabaDataRef.current || {};
+    axios.post(`${API}/api/whatsapp/embedded-signup`,
+      { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
+      { headers: getHeaders() })
       .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
       .then(meRes => {
         setProfile(meRes.data);
