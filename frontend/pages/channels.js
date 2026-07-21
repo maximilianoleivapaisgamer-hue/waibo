@@ -141,6 +141,25 @@ export default function Channels() {
     }, 500);
   };
 
+  const refreshPhoneOptions = async () => {
+    setEmbeddedSignupLoading(true);
+    try {
+      const res = await axios.post(`${API}/api/whatsapp/embedded-signup`, {}, { headers: getHeaders() });
+      if (res.data?.needs_selection) {
+        setPhoneOptions(res.data.options);
+      } else if (res.data?.ok) {
+        const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+        setProfile(meRes.data);
+        setPhoneOptions(null);
+        showSuccess('✅ WhatsApp conectado correctamente');
+      }
+    } catch (err) {
+      showError(err.response?.data?.error || 'Error actualizando la lista.');
+    } finally {
+      setEmbeddedSignupLoading(false);
+    }
+  };
+
   const connectSelectedPhone = async (option) => {
     setEmbeddedSignupLoading(true);
     try {
@@ -422,12 +441,24 @@ export default function Channels() {
                             </button>
                           ))}
                         </div>
-                        <button
-                          onClick={() => setPhoneOptions(null)}
-                          style={{ marginTop: 10, background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
-                        >
-                          Cancelar
-                        </button>
+                        <div style={{ display: 'flex', gap: 14, marginTop: 10, alignItems: 'center' }}>
+                          <button
+                            onClick={refreshPhoneOptions}
+                            disabled={embeddedSignupLoading}
+                            style={{ background: 'none', border: '1px solid #93C5FD', borderRadius: 6, padding: '6px 12px', color: '#1D4ED8', fontSize: 13, cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                          >
+                            {embeddedSignupLoading ? '⏳ Buscando...' : '🔄 Actualizar lista'}
+                          </button>
+                          <button
+                            onClick={() => setPhoneOptions(null)}
+                            style={{ background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                          >
+                            Cancelar
+                          </button>
+                        </div>
+                        <p style={{ margin: '10px 0 0', fontSize: 12, color: '#6B7280' }}>
+                          💡 Si acabás de vincular tu número y no aparece, esperá un minuto y tocá "Actualizar lista" — Meta tarda un poco en registrarlo.
+                        </p>
                       </div>
                     )}
 
