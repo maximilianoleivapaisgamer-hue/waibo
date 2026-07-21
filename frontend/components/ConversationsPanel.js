@@ -50,7 +50,13 @@ export default function ConversationsPanel({ channel }) {
     const refresh = async (isInitial) => {
       try {
         const convRes = await axios.get(`${API}/api/bot/conversations`, { headers: getHeaders() });
-        setConversations(byChannel(convRes.data));
+        const list = byChannel(convRes.data);
+        setConversations(list);
+
+        // Al entrar, abrir directamente la primera conversación
+        if (isInitial && !selected && list.length > 0) {
+          loadMessages(list[0]);
+        }
 
         if (selected) {
           const refreshed = convRes.data.find(c => c.id === selected.id);
