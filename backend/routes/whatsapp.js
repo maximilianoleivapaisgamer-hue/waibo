@@ -18,11 +18,19 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
     console.log('[embedded-signup] body recibido:', { waba_id, phone_number_id });
 
     if (!waba_id || !phone_number_id) {
-      const bizRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
-        headers: { Authorization: `Bearer ${systemToken}` }
-      });
-      console.log('[embedded-signup] businesses encontrados:', bizRes.data?.data?.map(b => b.id));
-      for (const biz of bizRes.data?.data || []) {
+      // Con un system user token, me/businesses suele venir vacío.
+      // Usamos el ID del portfolio de Waibo directamente si está configurado.
+      let businessIds = [];
+      if (process.env.META_BUSINESS_ID) {
+        businessIds = [{ id: process.env.META_BUSINESS_ID }];
+      } else {
+        const bizRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+          headers: { Authorization: `Bearer ${systemToken}` }
+        });
+        businessIds = bizRes.data?.data || [];
+      }
+      console.log('[embedded-signup] businesses a revisar:', businessIds.map(b => b.id));
+      for (const biz of businessIds) {
         const [ownedRes, clientRes] = await Promise.all([
           axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
             headers: { Authorization: `Bearer ${systemToken}` }
