@@ -29,19 +29,6 @@ export default function Channels() {
   const showSuccess = (msg) => { setSuccess(msg); setTimeout(() => setSuccess(''), 4000); };
   const showError = (msg) => { setError(msg); setTimeout(() => setError(''), 4000); };
 
-  // Load Facebook JS SDK for Embedded Signup
-  useEffect(() => {
-    if (!FB_APP_ID) return;
-    if (document.getElementById('facebook-jssdk')) return;
-    window.fbAsyncInit = function () {
-      window.FB.init({ appId: FB_APP_ID, version: 'v21.0', xfbml: false, cookie: false });
-    };
-    const script = document.createElement('script');
-    script.id = 'facebook-jssdk';
-    script.src = 'https://connect.facebook.net/es_LA/sdk.js';
-    script.async = true;
-    document.body.appendChild(script);
-  }, []);
 
   // Listen for WABA data sent by the Embedded Signup popup
   useEffect(() => {
@@ -118,31 +105,21 @@ export default function Channels() {
   };
 
   const completarConexion = () => {
-    if (!window.FB) { showError('El SDK de Meta todavía se está cargando.'); return; }
     const { phone_number_id, waba_id } = wabaDataRef.current || {};
-    window.FB.login(function(response) {
-      const code = response.authResponse?.code;
-      if (!code) { showError('No se pudo obtener autorización. Intentá de nuevo.'); return; }
-      setEmbeddedSignupLoading(true);
-      // Si no tenemos los IDs, el backend los buscará via token
-      axios.post(`${API}/api/whatsapp/embedded-signup`, {
-        code,
-        ...(phone_number_id && { phone_number_id }),
-        ...(waba_id && { waba_id }),
-      }, { headers: getHeaders() })
-        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-        .then(meRes => {
-          setProfile(meRes.data);
-          setPendingWaba(null);
-          showSuccess('✅ WhatsApp conectado correctamente con tu cuenta de Meta');
-        })
-        .catch(err => { showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
-        .finally(() => setEmbeddedSignupLoading(false));
-    }, {
-      scope: 'whatsapp_business_management,whatsapp_business_messaging',
-      response_type: 'code',
-      override_default_response_type: true,
-    });
+    if (!waba_id || !phone_number_id) {
+      showError('No se recibieron los datos de WhatsApp. Intentá el proceso desde el principio.');
+      return;
+    }
+    setEmbeddedSignupLoading(true);
+    axios.post(`${API}/api/whatsapp/embedded-signup`, { waba_id, phone_number_id }, { headers: getHeaders() })
+      .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+      .then(meRes => {
+        setProfile(meRes.data);
+        setPendingWaba(null);
+        showSuccess('✅ WhatsApp conectado correctamente');
+      })
+      .catch(err => { showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
+      .finally(() => setEmbeddedSignupLoading(false));
   };
 
   const disconnectCloudAPI = async () => {
