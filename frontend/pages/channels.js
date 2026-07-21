@@ -53,7 +53,23 @@ export default function Channels() {
     if (params.get('tn_connected')) showSuccess(`✅ Tiendanube conectada: ${params.get('store')}`);
     if (params.get('tt_connected')) showSuccess(`✅ TikTok conectado: @${params.get('user')}`);
     if (params.get('tn_error') || params.get('tt_error')) showError('Error en la conexión. Intentá de nuevo.');
-    if (params.toString()) window.history.replaceState({}, '', '/channels');
+
+    // Callback del Embedded Signup redirect
+    const waCode = params.get('code');
+    const waState = params.get('state');
+    if (waCode && waState === 'wa_signup') {
+      window.history.replaceState({}, '', '/channels');
+      const token = localStorage.getItem('whabot_token');
+      setEmbeddedSignupLoading(true);
+      setWhatsappExpanded('cloud_api');
+      axios.post(`${API}/api/whatsapp/embedded-signup`, { code: waCode }, { headers: { Authorization: `Bearer ${token}` } })
+        .then(() => axios.get(`${API}/api/clients/me`, { headers: { Authorization: `Bearer ${token}` } }))
+        .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
+        .catch(err => showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'))
+        .finally(() => setEmbeddedSignupLoading(false));
+    } else if (params.toString()) {
+      window.history.replaceState({}, '', '/channels');
+    }
 
     axios.get(`${API}/api/clients/me`, { headers: getHeaders() })
       .then(res => {
@@ -70,54 +86,9 @@ export default function Channels() {
 
   const launchEmbeddedSignup = () => {
     if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
-    wabaDataRef.current = {};
-
-    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
-    const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
-    const width = 600, height = 700;
-    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-    const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
-
-    // También escuchar el mensaje por si llega directo
-    const onMessage = (event) => {
-      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
-      if (event.data.event === 'FINISH') {
-        const { phone_number_id, waba_id } = event.data.data || {};
-        if (phone_number_id && waba_id) {
-          wabaDataRef.current = { phone_number_id, waba_id };
-        }
-      }
-    };
-    window.addEventListener('message', onMessage);
-
-    // Detectar cuando el popup se cierra
-    const pollClosed = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(pollClosed);
-        window.removeEventListener('message', onMessage);
-        // Mostrar botón para completar, independientemente de si recibimos el mensaje
-        setPendingWaba(wabaDataRef.current?.waba_id
-          ? wabaDataRef.current
-          : { phone_number_id: null, waba_id: null });
-      }
-    }, 500);
-  };
-
-  const completarConexion = () => {
-    setEmbeddedSignupLoading(true);
-    const { phone_number_id, waba_id } = wabaDataRef.current || {};
-    axios.post(`${API}/api/whatsapp/embedded-signup`,
-      { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
-      { headers: getHeaders() })
-      .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-      .then(meRes => {
-        setProfile(meRes.data);
-        setPendingWaba(null);
-        showSuccess('✅ WhatsApp conectado correctamente');
-      })
-      .catch(err => { showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
-      .finally(() => setEmbeddedSignupLoading(false));
+    const redirectUri = encodeURIComponent(`${window.location.origin}/channels`);
+    const scope = 'whatsapp_business_management,whatsapp_business_messaging';
+    window.location.href = `https://www.facebook.com/dialog/oauth?client_id=${FB_APP_ID}&redirect_uri=${redirectUri}&config_id=${META_CONFIG_ID}&response_type=code&scope=${scope}&state=wa_signup`;
   };
 
   const disconnectCloudAPI = async () => {
@@ -309,30 +280,9 @@ export default function Channels() {
                   </div>
                 ) : (
                   <div>
-                    {/* Paso 2: completar conexión después del Embedded Signup */}
-                    {pendingWaba !== null && (
-                      <div style={{ background: '#FFF7ED', border: '2px solid #FB923C', borderRadius: 10, padding: 16, margin: '14px 0' }}>
-                        <div style={{ fontWeight: 700, color: '#C2410C', marginBottom: 8 }}>⏳ Un paso más para completar la conexión</div>
-                        <p style={{ fontSize: 13, color: '#9A3412', margin: '0 0 12px' }}>
-                          {pendingWaba.waba_id
-                            ? 'Meta procesó tu cuenta. Hacé clic para que Waibo pueda gestionar tu WhatsApp.'
-                            : 'Si completaste el proceso en Meta, hacé clic para vincular tu cuenta con Waibo.'}
-                        </p>
-                        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-                          <button
-                            onClick={completarConexion}
-                            disabled={embeddedSignupLoading}
-                            style={{ padding: '10px 20px', borderRadius: 8, border: 'none', cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer', background: '#EA580C', color: 'white', fontWeight: 700, fontSize: 14 }}
-                          >
-                            {embeddedSignupLoading ? '⏳ Conectando...' : '🔐 Autorizar acceso a Waibo'}
-                          </button>
-                          <button
-                            onClick={() => setPendingWaba(null)}
-                            style={{ padding: '10px 16px', borderRadius: 8, border: '1px solid #FB923C', cursor: 'pointer', background: 'white', color: '#EA580C', fontWeight: 600, fontSize: 13 }}
-                          >
-                            Cancelar
-                          </button>
-                        </div>
+                    {embeddedSignupLoading && (
+                      <div style={{ background: '#FFF7ED', border: '2px solid #FB923C', borderRadius: 10, padding: 16, margin: '14px 0', textAlign: 'center', color: '#C2410C', fontWeight: 600 }}>
+                        ⏳ Conectando tu WhatsApp con Waibo...
                       </div>
                     )}
 

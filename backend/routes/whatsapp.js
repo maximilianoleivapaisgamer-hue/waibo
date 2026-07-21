@@ -5,7 +5,7 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { waba_id: bodyWabaId, phone_number_id: bodyPhoneId } = req.body;
+  const { code, waba_id: bodyWabaId, phone_number_id: bodyPhoneId } = req.body;
   const systemToken = process.env.META_SYSTEM_USER_TOKEN;
 
   if (!systemToken) {
@@ -15,6 +15,40 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
   try {
     let waba_id = bodyWabaId;
     let phone_number_id = bodyPhoneId;
+
+    // Si vino un code OAuth, intercambiarlo por token de usuario para encontrar el WABA exacto
+    if (code && !waba_id) {
+      const frontendUrl = process.env.FRONTEND_URL || 'https://app.waibochat.com';
+      const tokenRes = await axios.get('https://graph.facebook.com/v21.0/oauth/access_token', {
+        params: {
+          client_id: process.env.FACEBOOK_APP_ID,
+          client_secret: process.env.FACEBOOK_APP_SECRET,
+          redirect_uri: `${frontendUrl}/channels`,
+          code,
+        }
+      }).catch(() => null);
+      const userToken = tokenRes?.data?.access_token;
+      if (userToken) {
+        const wabasRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
+          headers: { Authorization: `Bearer ${userToken}` }
+        }).catch(() => null);
+        for (const biz of wabasRes?.data?.data || []) {
+          const waRes = await axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
+            headers: { Authorization: `Bearer ${userToken}` }
+          }).catch(() => null);
+          const wabas = waRes?.data?.data || [];
+          if (wabas.length > 0) {
+            waba_id = wabas[0].id;
+            const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba_id}/phone_numbers`, {
+              headers: { Authorization: `Bearer ${userToken}` }
+            }).catch(() => null);
+            const phones = phoneRes?.data?.data || [];
+            if (phones.length > 0) phone_number_id = phones[0].id;
+            break;
+          }
+        }
+      }
+    }
 
     if (!waba_id || !phone_number_id) {
       const bizRes = await axios.get('https://graph.facebook.com/v21.0/me/businesses', {
