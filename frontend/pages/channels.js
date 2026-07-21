@@ -105,6 +105,7 @@ export default function Channels() {
 
     const onMessage = (event) => {
       if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      console.log('[WA_EMBEDDED_SIGNUP]', JSON.stringify(event.data));
       if (event.data.event === 'FINISH') {
         window.removeEventListener('message', onMessage);
         clearInterval(pollClosed);
