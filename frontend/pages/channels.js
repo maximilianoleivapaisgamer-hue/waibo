@@ -89,7 +89,7 @@ export default function Channels() {
     if (!window.FB) { showError('El SDK de Meta todavía se está cargando. Esperá unos segundos e intentá de nuevo.'); return; }
     wabaDataRef.current = {};
     window.FB.login(function(response) {
-      if (!response.authResponse?.accessToken) return;
+      if (!response.authResponse?.code) return;
       const { phone_number_id, waba_id } = wabaDataRef.current;
       if (!phone_number_id || !waba_id) {
         showError('No se recibieron los datos del número. Completá todos los pasos del asistente de Meta.');
@@ -97,7 +97,7 @@ export default function Channels() {
       }
       setEmbeddedSignupLoading(true);
       axios.post(`${API}/api/whatsapp/embedded-signup`, {
-        access_token: response.authResponse.accessToken,
+        code: response.authResponse.code,
         phone_number_id,
         waba_id,
       }, { headers: getHeaders() })
@@ -107,6 +107,8 @@ export default function Channels() {
         .finally(() => setEmbeddedSignupLoading(false));
     }, {
       config_id: META_CONFIG_ID,
+      response_type: 'code',
+      override_default_response_type: true,
       extras: { version: 'v4', sessionInfoVersion: 3 },
     });
   };

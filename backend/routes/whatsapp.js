@@ -5,10 +5,10 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { access_token, waba_id, phone_number_id } = req.body;
+  const { code, waba_id, phone_number_id } = req.body;
   const systemToken = process.env.META_SYSTEM_USER_TOKEN;
 
-  if (!access_token || !waba_id || !phone_number_id) {
+  if (!code || !waba_id || !phone_number_id) {
     return res.status(400).json({ error: 'Faltan parámetros requeridos.' });
   }
   if (!systemToken) {
