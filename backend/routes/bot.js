@@ -626,14 +626,43 @@ Reglas:
 
 router.post('/learn-from-chats', authMiddleware, async (req, res) => {
   try {
-    const { chats } = req.body;
-    if (!chats || typeof chats !== 'string' || chats.trim().length < 100) {
+    const { chats, from_history } = req.body;
+
+    let source = chats;
+
+    if (from_history) {
+      // Analizar las conversaciones ya guardadas en Waibo (ej: importadas por QR)
+      const msgsRes = await pool.query(
+        `SELECT c.customer_name, c.customer_phone, m.role, m.content, m.timestamp
+         FROM messages m JOIN conversations c ON c.id = m.conversation_id
+         WHERE c.client_id = $1
+         ORDER BY c.id, m.timestamp
+         LIMIT 5000`,
+        [req.client.id]
+      );
+      if (msgsRes.rows.length < 10) {
+        return res.status(400).json({ error: 'Todavía no hay suficientes conversaciones guardadas en Waibo. Conectá WhatsApp Lite (QR) para importar tu historial, o subí chats exportados.' });
+      }
+      let lastConv = null;
+      const lines = [];
+      for (const m of msgsRes.rows) {
+        const convKey = m.customer_phone;
+        if (convKey !== lastConv) {
+          lines.push(`\n=== Chat con ${m.customer_name || m.customer_phone} ===`);
+          lastConv = convKey;
+        }
+        lines.push(`${m.role === 'user' ? 'Cliente' : 'Negocio'}: ${m.content}`);
+      }
+      source = lines.join('\n');
+    }
+
+    if (!source || typeof source !== 'string' || source.trim().length < 100) {
       return res.status(400).json({ error: 'Subí al menos un chat exportado con contenido.' });
     }
 
     // Limitar tamaño: nos quedamos con lo más reciente (final del archivo)
     const MAX_CHARS = 150000;
-    const text = chats.length > MAX_CHARS ? chats.slice(-MAX_CHARS) : chats;
+    const text = source.length > MAX_CHARS ? source.slice(-MAX_CHARS) : source;
 
     const { callClaudeAPI } = require('../services/ai');
     const raw = await callClaudeAPI({

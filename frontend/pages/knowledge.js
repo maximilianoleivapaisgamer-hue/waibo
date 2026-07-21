@@ -96,6 +96,25 @@ export default function Knowledge() {
     }
   };
 
+  const handleLearnFromHistory = async () => {
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const res = await axios.post(`${API}/api/bot/learn-from-chats`,
+        { from_history: true },
+        { headers: getHeaders(), timeout: 120000 });
+      const parts = [];
+      if (res.data.style_saved) parts.push('el bot aprendió tu estilo de conversación');
+      if (res.data.knowledge_saved > 0) parts.push(`se agregaron ${res.data.knowledge_saved} entradas a la base de conocimiento`);
+      setSuccess(`¡Listo! ${parts.join(' y ')}. Probalo en "Probar bot".`);
+      loadEntries();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error analizando las conversaciones. Intentá de nuevo.');
+    } finally {
+      setSaving(false);
+      setTimeout(() => setSuccess(''), 8000);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -302,7 +321,21 @@ export default function Knowledge() {
                   Se analizan hasta ~150.000 caracteres (los mensajes más recientes tienen prioridad). El análisis tarda 30-60 segundos.
                 </small>
               </div>
-              {saving && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>🧠 Analizando tus conversaciones... esto puede tardar un minuto.</p>}
+              <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 16 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>⚡ Sin exportar nada: analizar el historial que ya está en Waibo</div>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>
+                  Si conectaste WhatsApp Lite (QR), Waibo ya importó ~90 días de tus chats automáticamente. También sirve si ya tenés conversaciones acumuladas por Cloud API. Con un click, la IA analiza todo eso.
+                </p>
+                <button
+                  onClick={handleLearnFromHistory}
+                  disabled={saving}
+                  className="btn btn-primary"
+                  style={{ width: 'auto', padding: '10px 20px' }}
+                >
+                  {saving ? '🧠 Analizando...' : '⚡ Analizar mis conversaciones de Waibo'}
+                </button>
+              </div>
+              {saving && <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 12 }}>🧠 Analizando tus conversaciones... esto puede tardar un minuto.</p>}
             </div>
           )}
 
