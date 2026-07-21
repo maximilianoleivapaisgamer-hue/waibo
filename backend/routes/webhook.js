@@ -12,6 +12,81 @@ const { decrypt } = require('../services/crypto');
 const { processIncomingMessage } = require('../services/messageProcessor');
 
 // ─────────────────────────────────────────
+// CLOUD API WEBHOOK (global — rutea por phone_number_id)
+// Meta envía todos los eventos a esta URL única configurada en Meta Developer Console.
+// ─────────────────────────────────────────
+
+router.get('/whatsapp/cloud', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
+});
+
+router.post('/whatsapp/cloud', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    const body = req.body;
+    const value = body.entry?.[0]?.changes?.[0]?.value;
+    const messageData = value?.messages?.[0];
+    if (!messageData) return;
+
+    const phoneNumberId = value?.metadata?.phone_number_id;
+    if (!phoneNumberId) return;
+
+    const clientResult = await pool.query(
+      'SELECT * FROM clients WHERE whatsapp_phone_id = $1 AND active = true',
+      [phoneNumberId]
+    );
+    if (!clientResult.rows.length) return;
+    const client = clientResult.rows[0];
+
+    const configResult = await pool.query(
+      'SELECT * FROM bot_configs WHERE client_id = $1 AND active = true',
+      [client.id]
+    );
+    if (!configResult.rows.length) return;
+
+    const customerPhone = messageData.from;
+    const customerName = value?.contacts?.[0]?.profile?.name || 'Cliente';
+
+    let customerMessage = '';
+    if (messageData.type === 'text') {
+      customerMessage = messageData.text.body;
+    } else if (messageData.type === 'audio') {
+      const config = configResult.rows[0];
+      if (!config.voice_enabled) return;
+      const axios = require('axios');
+      const audioId = messageData.audio.id;
+      const mediaRes = await axios.get(
+        `https://graph.facebook.com/v18.0/${audioId}`,
+        { headers: { Authorization: `Bearer ${client.whatsapp_api_key}` } }
+      );
+      const transcript = await downloadAndTranscribe(
+        mediaRes.data.url,
+        `Bearer ${client.whatsapp_api_key}`
+      );
+      if (!transcript) {
+        await sendWhatsAppMessage(customerPhone, 'No pude entender el audio. ¿Podés escribirme?', client.whatsapp_api_key, { provider: 'cloud_api', phoneNumberId: client.whatsapp_phone_id });
+        return;
+      }
+      customerMessage = `[Audio transcripto]: ${transcript}`;
+    } else {
+      return;
+    }
+
+    const sendFn = (phone, message) => sendWhatsAppMessage(phone, message, client.whatsapp_api_key, { provider: 'cloud_api', phoneNumberId: client.whatsapp_phone_id });
+    await processIncomingMessage(client.id, customerPhone, customerName, customerMessage, sendFn);
+
+  } catch (err) {
+    console.error('❌ Error webhook Cloud API:', err.message);
+  }
+});
+
+// ─────────────────────────────────────────
 // WHATSAPP WEBHOOK (oficial, 360dialog)
 // Usa messageProcessor.js — la misma lógica que también usa el modo QR.
 // ─────────────────────────────────────────
