@@ -21,10 +21,16 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
         headers: { Authorization: `Bearer ${systemToken}` }
       });
       for (const biz of bizRes.data?.data || []) {
-        const waRes = await axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
-          headers: { Authorization: `Bearer ${systemToken}` }
-        }).catch(() => null);
-        const wabas = waRes?.data?.data || [];
+        // Embedded Signup crea WABAs como "client accounts", no "owned"
+        const [ownedRes, clientRes] = await Promise.all([
+          axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
+            headers: { Authorization: `Bearer ${systemToken}` }
+          }).catch(() => null),
+          axios.get(`https://graph.facebook.com/v21.0/${biz.id}/client_whatsapp_business_accounts`, {
+            headers: { Authorization: `Bearer ${systemToken}` }
+          }).catch(() => null),
+        ]);
+        const wabas = [...(ownedRes?.data?.data || []), ...(clientRes?.data?.data || [])];
         if (wabas.length > 0) {
           waba_id = wabas[0].id;
           const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba_id}/phone_numbers`, {
