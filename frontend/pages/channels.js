@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import ChannelLogo from '../components/ChannelLogo';
+import ConversationsPanel from '../components/ConversationsPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 const FB_APP_ID = process.env.NEXT_PUBLIC_FACEBOOK_APP_ID;
@@ -268,12 +269,19 @@ export default function Channels() {
       <Sidebar active="channels" />
       <div className="main-content">
         <div className="page-header">
-          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="whatsapp" size={28} /> Canales</h1>
-          <p>Conectá WhatsApp y Tiendanube — Instagram y Mercado Libre tienen su propia sección en el menú</p>
+          <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="whatsapp" size={28} /> WhatsApp</h1>
+          <p>{isConnected ? 'Tus conversaciones de WhatsApp — la configuración está abajo de todo' : 'Conectá tu número de WhatsApp al bot'}</p>
         </div>
 
         {success && <div className="success-msg">{success}</div>}
         {error && <div className="error-msg">{error}</div>}
+
+        {/* ──────────────── CONVERSACIONES (si está conectado) ──────────────── */}
+        {isConnected && (
+          <div style={{ marginBottom: 24 }}>
+            <ConversationsPanel channel="whatsapp" />
+          </div>
+        )}
 
         {/* ──────────────── WHATSAPP ──────────────── */}
         <div className="card" style={{ marginBottom: 16 }}>
@@ -337,12 +345,6 @@ export default function Channels() {
                       {profile.waba_id && (
                         <div style={{ color: 'var(--text-muted)', marginTop: 4 }}>WABA ID: <code style={{ background: '#EDE9FE', padding: '2px 6px', borderRadius: 4 }}>{profile.waba_id}</code></div>
                       )}
-                    </div>
-                    <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13 }}>
-                      <strong>🔗 URL de Webhook:</strong>
-                      <code style={{ display: 'block', marginTop: 6, padding: '6px 10px', background: 'white', borderRadius: 6, fontSize: 12, border: '1px solid var(--border)', wordBreak: 'break-all' }}>
-                        {webhookUrl}
-                      </code>
                     </div>
                     <button onClick={disconnectCloudAPI} className="btn btn-secondary" style={{ width: 'auto' }}>
                       🔌 Desconectar
@@ -597,67 +599,6 @@ export default function Channels() {
           </div>
         </div>
         {/* ──────────────── FIN WHATSAPP ──────────────── */}
-
-
-        <ChannelCard
-          icon="🏪" title="Tiendanube" subtitle="Sincroniza catálogo y genera links de compra directa"
-          connected={tiendanube?.connected}
-          badge={tiendanube?.connected ? `✅ ${tiendanube.store_name}` : '⬜ Sin conectar'}
-          badgeColor={tiendanube?.connected ? 'green' : 'gray'}
-        >
-          {tiendanube?.connected ? (
-            <ConnectedInfo features={[
-              `${tiendanube.product_count || 0} productos sincronizados`,
-              'El bot consulta stock en tiempo real',
-              'Genera links de checkout directo',
-              'Se actualiza solo cuando cambian precios'
-            ]}>
-              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginTop: 8 }}>
-                <button
-                  onClick={syncTiendanube}
-                  className="btn btn-primary"
-                  disabled={syncing}
-                  style={{ width: 'auto', padding: '10px 20px' }}
-                >
-                  {syncing ? '🔄 Sincronizando...' : '🔄 Sincronizar productos'}
-                </button>
-                <button
-                  onClick={() => router.push('/catalog')}
-                  className="btn btn-secondary"
-                  style={{ width: 'auto' }}
-                >
-                  👁 Ver catálogo
-                </button>
-                <button onClick={() => disconnectChannel('tiendanube', setTiendanube)} className="btn btn-secondary" style={{ width: 'auto' }}>
-                  🔌 Desconectar
-                </button>
-              </div>
-            </ConnectedInfo>
-          ) : (
-            <ConnectPrompt
-              features={[
-                'Catálogo sincronizado automáticamente',
-                'El bot responde con precios reales',
-                'Links de checkout directo por WhatsApp',
-                'Stock actualizado sin intervención manual'
-              ]}
-              onConnect={() => connectChannel('tiendanube')}
-              label="🏪 Conectar Tiendanube"
-              note="Necesitás una tienda activa en Tiendanube."
-            />
-          )}
-        </ChannelCard>
-
-        <div className="card" style={{ opacity: 0.6 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <span style={{ fontSize: 32 }}>🎵</span>
-            <div style={{ flex: 1 }}>
-              <div style={{ fontWeight: 700, fontSize: 16 }}>TikTok DMs</div>
-              <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>Próximamente — Fase 4</div>
-            </div>
-            <span style={{ fontSize: 12, padding: '4px 12px', borderRadius: 20, background: '#F3F4F6', color: '#6B7280' }}>🔜 Próximamente</span>
-          </div>
-        </div>
       </div>
     </div>
   );
