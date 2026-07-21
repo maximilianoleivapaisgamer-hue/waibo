@@ -22,7 +22,8 @@ export default function Channels() {
   const [embeddedSignupLoading, setEmbeddedSignupLoading] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [pendingWaba, setPendingWaba] = useState(null); // { phone_number_id, waba_id }
-  const [phoneOptions, setPhoneOptions] = useState(null); // [{ waba_id, phone_number_id, display_phone_number, verified_name }]
+  const [askPhone, setAskPhone] = useState(false); // pedir al usuario su número para identificarlo
+  const [phoneInput, setPhoneInput] = useState('');
   const wabaDataRef = useRef({});
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
@@ -99,9 +100,9 @@ export default function Channels() {
         { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
         { headers: getHeaders() })
         .then(res => {
-          if (res.data?.needs_selection) {
-            // Hay varios números en el portfolio — el usuario elige el suyo
-            setPhoneOptions(res.data.options);
+          if (res.data?.needs_phone) {
+            // Hay varios números en el portfolio — pedimos el suyo para identificarlo
+            setAskPhone(true);
             return null;
           }
           return axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
@@ -141,34 +142,17 @@ export default function Channels() {
     }, 500);
   };
 
-  const refreshPhoneOptions = async () => {
-    setEmbeddedSignupLoading(true);
-    try {
-      const res = await axios.post(`${API}/api/whatsapp/embedded-signup`, {}, { headers: getHeaders() });
-      if (res.data?.needs_selection) {
-        setPhoneOptions(res.data.options);
-      } else if (res.data?.ok) {
-        const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
-        setProfile(meRes.data);
-        setPhoneOptions(null);
-        showSuccess('✅ WhatsApp conectado correctamente');
-      }
-    } catch (err) {
-      showError(err.response?.data?.error || 'Error actualizando la lista.');
-    } finally {
-      setEmbeddedSignupLoading(false);
-    }
-  };
-
-  const connectSelectedPhone = async (option) => {
+  const submitPhoneNumber = async () => {
+    if (!phoneInput.trim()) { showError('Ingresá tu número de WhatsApp.'); return; }
     setEmbeddedSignupLoading(true);
     try {
       await axios.post(`${API}/api/whatsapp/embedded-signup`,
-        { waba_id: option.waba_id, phone_number_id: option.phone_number_id },
+        { phone_number: phoneInput.trim() },
         { headers: getHeaders() });
       const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
       setProfile(meRes.data);
-      setPhoneOptions(null);
+      setAskPhone(false);
+      setPhoneInput('');
       showSuccess('✅ WhatsApp conectado correctamente');
     } catch (err) {
       showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
@@ -411,54 +395,41 @@ export default function Channels() {
                       </div>
                     )}
 
-                    {/* Selector de número cuando hay varios en el portfolio */}
-                    {phoneOptions && (
+                    {/* Confirmación de número: el cliente escribe el suyo y lo verificamos */}
+                    {askPhone && (
                       <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 16, margin: '14px 0' }}>
                         <div style={{ fontWeight: 700, color: '#1D4ED8', marginBottom: 8, fontSize: 14 }}>
-                          📱 Elegí el número que querés conectar
+                          📱 Confirmá tu número de WhatsApp
                         </div>
                         <p style={{ margin: '0 0 12px', fontSize: 13, color: '#1E40AF' }}>
-                          Encontramos varios números de WhatsApp Business. Seleccioná el tuyo:
+                          Escribí el número que acabás de vincular con Meta (con código de país y área):
                         </p>
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                          {phoneOptions.map(opt => (
-                            <button
-                              key={opt.phone_number_id}
-                              onClick={() => connectSelectedPhone(opt)}
-                              disabled={embeddedSignupLoading}
-                              style={{
-                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                                padding: '10px 14px', borderRadius: 8, border: '1px solid #93C5FD',
-                                background: 'white', cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer',
-                                fontSize: 14, textAlign: 'left'
-                              }}
-                            >
-                              <span>
-                                <strong>{opt.display_phone_number || opt.phone_number_id}</strong>
-                                {opt.verified_name && <span style={{ color: '#6B7280', marginLeft: 8 }}>{opt.verified_name}</span>}
-                              </span>
-                              <span style={{ color: '#1877F2', fontWeight: 600 }}>Conectar →</span>
-                            </button>
-                          ))}
-                        </div>
-                        <div style={{ display: 'flex', gap: 14, marginTop: 10, alignItems: 'center' }}>
+                        <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                          <input
+                            type="tel"
+                            value={phoneInput}
+                            onChange={e => setPhoneInput(e.target.value)}
+                            onKeyDown={e => { if (e.key === 'Enter') submitPhoneNumber(); }}
+                            placeholder="+54 9 11 1234-5678"
+                            style={{ flex: 1, minWidth: 200, padding: '10px 14px', borderRadius: 8, border: '1px solid #93C5FD', fontSize: 14 }}
+                          />
                           <button
-                            onClick={refreshPhoneOptions}
+                            onClick={submitPhoneNumber}
                             disabled={embeddedSignupLoading}
-                            style={{ background: 'none', border: '1px solid #93C5FD', borderRadius: 6, padding: '6px 12px', color: '#1D4ED8', fontSize: 13, cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer', fontWeight: 600 }}
+                            style={{ padding: '10px 18px', borderRadius: 8, border: 'none', background: embeddedSignupLoading ? '#9CA3AF' : '#1877F2', color: 'white', fontWeight: 700, fontSize: 14, cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer' }}
                           >
-                            {embeddedSignupLoading ? '⏳ Buscando...' : '🔄 Actualizar lista'}
-                          </button>
-                          <button
-                            onClick={() => setPhoneOptions(null)}
-                            style={{ background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
-                          >
-                            Cancelar
+                            {embeddedSignupLoading ? '⏳ Verificando...' : 'Conectar'}
                           </button>
                         </div>
                         <p style={{ margin: '10px 0 0', fontSize: 12, color: '#6B7280' }}>
-                          💡 Si acabás de vincular tu número y no aparece, esperá un minuto y tocá "Actualizar lista" — Meta tarda un poco en registrarlo.
+                          💡 Si lo acabás de vincular y no lo encuentra, esperá un minuto y volvé a intentar — Meta tarda un poco en registrarlo.
                         </p>
+                        <button
+                          onClick={() => { setAskPhone(false); setPhoneInput(''); }}
+                          style={{ marginTop: 10, background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Cancelar
+                        </button>
                       </div>
                     )}
 

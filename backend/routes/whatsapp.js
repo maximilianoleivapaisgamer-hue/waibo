@@ -5,7 +5,7 @@ const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 
 router.post('/embedded-signup', authMiddleware, async (req, res) => {
-  const { waba_id: bodyWabaId, phone_number_id: bodyPhoneId } = req.body;
+  const { waba_id: bodyWabaId, phone_number_id: bodyPhoneId, phone_number: typedPhone } = req.body;
   const systemToken = process.env.META_SYSTEM_USER_TOKEN;
   if (!systemToken) {
     return res.status(500).json({ error: 'Token de sistema de Meta no configurado.' });
@@ -86,12 +86,33 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
       if (options.length === 0) {
         return res.status(400).json({ error: 'No se encontró ninguna cuenta de WhatsApp Business. Completá todos los pasos del asistente de Meta.' });
       }
-      if (options.length === 1) {
+      if (options.length === 1 && !typedPhone) {
         waba_id = options[0].waba_id;
         phone_number_id = options[0].phone_number_id;
+      } else if (typedPhone) {
+        // El usuario escribió su número — lo buscamos entre los disponibles
+        const userDigits = String(typedPhone).replace(/\D/g, '');
+        if (userDigits.length < 8) {
+          return res.status(400).json({ error: 'Ingresá tu número completo con código de área.' });
+        }
+        const tail = userDigits.slice(-8);
+        const matches = options.filter(o => {
+          const optDigits = String(o.display_phone_number).replace(/\D/g, '');
+          return optDigits.endsWith(tail) || userDigits.endsWith(optDigits.slice(-8));
+        });
+        console.log('[embedded-signup] match para', tail, '→', matches.length);
+        if (matches.length === 0) {
+          return res.status(404).json({ error: 'No encontramos ese número. Si lo acabás de vincular, esperá un minuto y volvé a intentar.' });
+        }
+        if (matches.length > 1) {
+          return res.status(400).json({ error: 'Hay más de un número parecido. Escribí el número completo con código de país.' });
+        }
+        waba_id = matches[0].waba_id;
+        phone_number_id = matches[0].phone_number_id;
       } else {
-        // Hay varios números — el usuario tiene que elegir el suyo
-        return res.json({ needs_selection: true, options });
+        // Hay varios números y no sabemos cuál es el del cliente:
+        // pedimos que escriba el suyo (no mostramos la lista por privacidad)
+        return res.json({ needs_phone: true });
       }
     }
 
