@@ -373,6 +373,46 @@ export default function Channels() {
                       </div>
                     )}
 
+                    {/* Problemas frecuentes */}
+                    <details style={{ margin: '20px 0 4px', fontSize: 13 }}>
+                      <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-muted)', userSelect: 'none' }}>
+                        ¿Tuviste algún problema? Ver soluciones frecuentes
+                      </summary>
+                      <div style={{ marginTop: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+                        {[
+                          {
+                            error: '🔴 "Tu número ya está vinculado a eventos automáticos"',
+                            fix: 'Abrí WhatsApp Business en tu celular → Herramientas empresariales → Etiquetas → desactivá las etiquetas automáticas. Después reiniciá el proceso.',
+                          },
+                          {
+                            error: '🔴 El popup se cierra solo sin completar',
+                            fix: 'Asegurate de que el navegador no esté bloqueando popups. En la barra de dirección aparece un ícono de popup bloqueado — permitilo y volvé a hacer clic en "Conectar con Meta".',
+                          },
+                          {
+                            error: '🔴 "Este número ya existe en otra cuenta de WhatsApp Business"',
+                            fix: 'El número ya está registrado en una WABA diferente. Entrá a business.facebook.com, buscá ese número en Cuentas de WhatsApp Business y transferilo a tu negocio actual, o usá un número diferente.',
+                          },
+                          {
+                            error: '🔴 Me pide crear una cuenta nueva de WhatsApp y eliminar la existente',
+                            fix: 'En el paso de selección de número, elegí la opción "Usar un número existente" en lugar de crear uno nuevo. Si Meta no lo muestra, asegurate de haber iniciado sesión con el Facebook del negocio correcto.',
+                          },
+                          {
+                            error: '🔴 El proceso termina pero el banner de autorización no aparece',
+                            fix: 'Hacé clic en "Conectar con Meta" otra vez. Si el proceso ya se completó en Meta, el botón "Autorizar acceso a Waibo" debería aparecer al cerrar el popup.',
+                          },
+                          {
+                            error: '🔴 Sale error al hacer clic en "Autorizar acceso a Waibo"',
+                            fix: 'Cerrá el banner con "Cancelar" y volvé a hacer clic en "Conectar con Meta" para reiniciar el proceso desde el principio.',
+                          },
+                        ].map((item, i) => (
+                          <div key={i} style={{ background: '#F9FAFB', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px' }}>
+                            <div style={{ fontWeight: 600, color: '#374151', marginBottom: 4 }}>{item.error}</div>
+                            <div style={{ color: '#6B7280' }}>→ {item.fix}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+
                     {/* Separator */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '20px 0 12px' }}>
                       <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
