@@ -17,6 +17,16 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
 
     console.log('[embedded-signup] body recibido:', { waba_id, phone_number_id });
 
+    if (phone_number_id) {
+      const dupRes = await pool.query(
+        'SELECT id FROM clients WHERE whatsapp_phone_id = $1 AND id != $2',
+        [phone_number_id, req.client.id]
+      );
+      if (dupRes.rows.length > 0) {
+        return res.status(400).json({ error: 'Ese número ya está conectado a otra cuenta de Waibo.' });
+      }
+    }
+
     if (!waba_id || !phone_number_id) {
       // Con un system user token, me/businesses suele venir vacío.
       // Usamos el ID del portfolio de Waibo directamente si está configurado.
@@ -60,7 +70,18 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
         }
       }
 
-      console.log('[embedded-signup] números encontrados:', options.length);
+      // Excluir números que ya están conectados a otros clientes de Waibo
+      const takenRes = await pool.query(
+        'SELECT whatsapp_phone_id FROM clients WHERE whatsapp_phone_id IS NOT NULL AND id != $1',
+        [req.client.id]
+      );
+      const taken = new Set(takenRes.rows.map(r => r.whatsapp_phone_id));
+      const available = options.filter(o => !taken.has(o.phone_number_id));
+
+      console.log('[embedded-signup] números encontrados:', options.length, '— disponibles:', available.length);
+
+      options.length = 0;
+      options.push(...available);
 
       if (options.length === 0) {
         return res.status(400).json({ error: 'No se encontró ninguna cuenta de WhatsApp Business. Completá todos los pasos del asistente de Meta.' });
