@@ -22,6 +22,7 @@ export default function Channels() {
   const [embeddedSignupLoading, setEmbeddedSignupLoading] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
   const [pendingWaba, setPendingWaba] = useState(null); // { phone_number_id, waba_id }
+  const [phoneOptions, setPhoneOptions] = useState(null); // [{ waba_id, phone_number_id, display_phone_number, verified_name }]
   const wabaDataRef = useRef({});
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
@@ -97,8 +98,17 @@ export default function Channels() {
       axios.post(`${API}/api/whatsapp/embedded-signup`,
         { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
         { headers: getHeaders() })
-        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-        .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
+        .then(res => {
+          if (res.data?.needs_selection) {
+            // Hay varios números en el portfolio — el usuario elige el suyo
+            setPhoneOptions(res.data.options);
+            return null;
+          }
+          return axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+        })
+        .then(meRes => {
+          if (meRes) { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); }
+        })
         .catch(err => { connected = false; showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
         .finally(() => setEmbeddedSignupLoading(false));
     };
@@ -129,6 +139,23 @@ export default function Channels() {
         connectToWaibo(wabaDataRef.current);
       }
     }, 500);
+  };
+
+  const connectSelectedPhone = async (option) => {
+    setEmbeddedSignupLoading(true);
+    try {
+      await axios.post(`${API}/api/whatsapp/embedded-signup`,
+        { waba_id: option.waba_id, phone_number_id: option.phone_number_id },
+        { headers: getHeaders() });
+      const meRes = await axios.get(`${API}/api/clients/me`, { headers: getHeaders() });
+      setProfile(meRes.data);
+      setPhoneOptions(null);
+      showSuccess('✅ WhatsApp conectado correctamente');
+    } catch (err) {
+      showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.');
+    } finally {
+      setEmbeddedSignupLoading(false);
+    }
   };
 
   const disconnectCloudAPI = async () => {
@@ -362,6 +389,45 @@ export default function Channels() {
                     ) : (
                       <div style={{ background: '#FEF3C7', border: '1px solid #FDE68A', borderRadius: 10, padding: 14, margin: '14px 0', fontSize: 13, color: '#92400E' }}>
                         ⚠️ <strong>Configuración pendiente:</strong> Para habilitar el botón de conexión directa con Meta, hay que agregar las variables <code>NEXT_PUBLIC_FACEBOOK_APP_ID</code> y <code>NEXT_PUBLIC_META_CONFIG_ID</code> en Vercel. Mientras tanto podés usar la configuración manual de abajo.
+                      </div>
+                    )}
+
+                    {/* Selector de número cuando hay varios en el portfolio */}
+                    {phoneOptions && (
+                      <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 16, margin: '14px 0' }}>
+                        <div style={{ fontWeight: 700, color: '#1D4ED8', marginBottom: 8, fontSize: 14 }}>
+                          📱 Elegí el número que querés conectar
+                        </div>
+                        <p style={{ margin: '0 0 12px', fontSize: 13, color: '#1E40AF' }}>
+                          Encontramos varios números de WhatsApp Business. Seleccioná el tuyo:
+                        </p>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                          {phoneOptions.map(opt => (
+                            <button
+                              key={opt.phone_number_id}
+                              onClick={() => connectSelectedPhone(opt)}
+                              disabled={embeddedSignupLoading}
+                              style={{
+                                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '10px 14px', borderRadius: 8, border: '1px solid #93C5FD',
+                                background: 'white', cursor: embeddedSignupLoading ? 'not-allowed' : 'pointer',
+                                fontSize: 14, textAlign: 'left'
+                              }}
+                            >
+                              <span>
+                                <strong>{opt.display_phone_number || opt.phone_number_id}</strong>
+                                {opt.verified_name && <span style={{ color: '#6B7280', marginLeft: 8 }}>{opt.verified_name}</span>}
+                              </span>
+                              <span style={{ color: '#1877F2', fontWeight: 600 }}>Conectar →</span>
+                            </button>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setPhoneOptions(null)}
+                          style={{ marginTop: 10, background: 'none', border: 'none', color: '#6B7280', fontSize: 13, cursor: 'pointer', textDecoration: 'underline' }}
+                        >
+                          Cancelar
+                        </button>
                       </div>
                     )}
 

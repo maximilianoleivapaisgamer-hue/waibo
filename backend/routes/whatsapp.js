@@ -30,6 +30,9 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
         businessIds = bizRes.data?.data || [];
       }
       console.log('[embedded-signup] businesses a revisar:', businessIds.map(b => b.id));
+
+      // Juntar TODOS los WABAs con sus números y dejar que el usuario elija
+      const options = [];
       for (const biz of businessIds) {
         const [ownedRes, clientRes] = await Promise.all([
           axios.get(`https://graph.facebook.com/v21.0/${biz.id}/owned_whatsapp_business_accounts`, {
@@ -41,15 +44,33 @@ router.post('/embedded-signup', authMiddleware, async (req, res) => {
         ]);
         const wabas = [...(ownedRes?.data?.data || []), ...(clientRes?.data?.data || [])];
         console.log(`[embedded-signup] biz ${biz.id} WABAs:`, wabas.map(w => w.id));
-        if (wabas.length > 0) {
-          waba_id = wabas[0].id;
-          const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba_id}/phone_numbers`, {
+        for (const waba of wabas) {
+          const phoneRes = await axios.get(`https://graph.facebook.com/v21.0/${waba.id}/phone_numbers`, {
             headers: { Authorization: `Bearer ${systemToken}` }
           }).catch(() => null);
-          const phones = phoneRes?.data?.data || [];
-          if (phones.length > 0) phone_number_id = phones[0].id;
-          break;
+          for (const phone of phoneRes?.data?.data || []) {
+            options.push({
+              waba_id: waba.id,
+              waba_name: waba.name || '',
+              phone_number_id: phone.id,
+              display_phone_number: phone.display_phone_number || '',
+              verified_name: phone.verified_name || ''
+            });
+          }
         }
+      }
+
+      console.log('[embedded-signup] números encontrados:', options.length);
+
+      if (options.length === 0) {
+        return res.status(400).json({ error: 'No se encontró ninguna cuenta de WhatsApp Business. Completá todos los pasos del asistente de Meta.' });
+      }
+      if (options.length === 1) {
+        waba_id = options[0].waba_id;
+        phone_number_id = options[0].phone_number_id;
+      } else {
+        // Hay varios números — el usuario tiene que elegir el suyo
+        return res.json({ needs_selection: true, options });
       }
     }
 
