@@ -22,6 +22,14 @@ router.get('/callback', async (req, res) => {
     const account = await getInstagramAccount(accessToken);
     const encryptedToken = encrypt(account.pageToken);
 
+    // Suscribir la página a la app para que Meta mande los webhooks de IG
+    const axios = require('axios');
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${account.pageId}/subscribed_apps`,
+      {},
+      { params: { access_token: account.pageToken, subscribed_fields: 'messages,feed' } }
+    ).catch(err => console.error('Error suscribiendo página IG:', err.response?.data || err.message));
+
     await pool.query(
       `INSERT INTO instagram_tokens (client_id, page_id, page_name, access_token, instagram_account_id)
        VALUES ($1, $2, $3, $4, $5)

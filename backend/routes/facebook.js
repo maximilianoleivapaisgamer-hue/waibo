@@ -20,6 +20,14 @@ router.get('/callback', async (req, res) => {
     const accessToken = await exchangeFacebookCode(code);
     const page = await getFacebookPage(accessToken);
 
+    // Suscribir la página a la app para que Meta mande los webhooks de Messenger/feed
+    const axios = require('axios');
+    await axios.post(
+      `https://graph.facebook.com/v21.0/${page.pageId}/subscribed_apps`,
+      {},
+      { params: { access_token: page.pageToken, subscribed_fields: 'messages,feed,ratings' } }
+    ).catch(err => console.error('Error suscribiendo página FB:', err.response?.data || err.message));
+
     await pool.query(
       `INSERT INTO facebook_tokens (client_id, page_id, page_name, access_token)
        VALUES ($1, $2, $3, $4)

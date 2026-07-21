@@ -168,12 +168,8 @@ router.get('/instagram/:clientId', (req, res) => {
   res.sendStatus(403);
 });
 
-router.post('/instagram/:clientId', async (req, res) => {
-  res.sendStatus(200);
+async function handleInstagramEvent(clientId, body) {
   try {
-    const clientId = req.params.clientId;
-    const body = req.body;
-
     const clientResult = await pool.query(
       `SELECT c.*, bc.system_prompt, bc.business_info, bc.welcome_message, bc.human_handoff_keyword,
               bc.bot_name, bc.bot_tone, bc.ai_model, bc.instagram_comment_keywords,
@@ -333,6 +329,44 @@ router.post('/instagram/:clientId', async (req, res) => {
   } catch (err) {
     console.error('❌ Error webhook Instagram:', err.message);
   }
+}
+
+router.post('/instagram/:clientId', (req, res) => {
+  res.sendStatus(200);
+  handleInstagramEvent(req.params.clientId, req.body);
+});
+
+// Webhook global de Instagram (Meta manda todo a una sola URL a nivel app).
+// Ruteamos por el ID de la entrada (cuenta de IG o página vinculada).
+router.get('/instagram', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
+});
+
+router.post('/instagram', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    for (const entry of req.body.entry || []) {
+      const entryId = String(entry.id);
+      const tokRes = await pool.query(
+        `SELECT client_id FROM instagram_tokens
+         WHERE (instagram_account_id = $1 OR page_id = $1) AND active = true LIMIT 1`,
+        [entryId]
+      );
+      if (!tokRes.rows.length) {
+        console.log('[webhook IG global] entry sin cliente:', entryId);
+        continue;
+      }
+      await handleInstagramEvent(tokRes.rows[0].client_id, { entry: [entry] });
+    }
+  } catch (err) {
+    console.error('❌ Error webhook Instagram global:', err.message);
+  }
 });
 
 // ─────────────────────────────────────────
@@ -349,12 +383,8 @@ router.get('/facebook/:clientId', (req, res) => {
   res.sendStatus(403);
 });
 
-router.post('/facebook/:clientId', async (req, res) => {
-  res.sendStatus(200);
+async function handleFacebookEvent(clientId, body) {
   try {
-    const clientId = req.params.clientId;
-    const body = req.body;
-
     const clientResult = await pool.query(
       `SELECT c.*, bc.system_prompt, bc.business_info, bc.welcome_message, bc.human_handoff_keyword,
               bc.bot_name, bc.bot_tone, bc.ai_model, bc.facebook_comment_keywords,
@@ -495,6 +525,42 @@ router.post('/facebook/:clientId', async (req, res) => {
     }
   } catch (err) {
     console.error('❌ Error webhook Facebook:', err.message);
+  }
+}
+
+router.post('/facebook/:clientId', (req, res) => {
+  res.sendStatus(200);
+  handleFacebookEvent(req.params.clientId, req.body);
+});
+
+// Webhook global de Facebook — rutea por el ID de página de la entrada
+router.get('/facebook', (req, res) => {
+  const mode = req.query['hub.mode'];
+  const token = req.query['hub.verify_token'];
+  const challenge = req.query['hub.challenge'];
+  if (mode === 'subscribe' && token === process.env.WEBHOOK_VERIFY_TOKEN) {
+    return res.status(200).send(challenge);
+  }
+  res.sendStatus(403);
+});
+
+router.post('/facebook', async (req, res) => {
+  res.sendStatus(200);
+  try {
+    for (const entry of req.body.entry || []) {
+      const entryId = String(entry.id);
+      const tokRes = await pool.query(
+        'SELECT client_id FROM facebook_tokens WHERE page_id = $1 AND active = true LIMIT 1',
+        [entryId]
+      );
+      if (!tokRes.rows.length) {
+        console.log('[webhook FB global] entry sin cliente:', entryId);
+        continue;
+      }
+      await handleFacebookEvent(tokRes.rows[0].client_id, { entry: [entry] });
+    }
+  } catch (err) {
+    console.error('❌ Error webhook Facebook global:', err.message);
   }
 });
 
