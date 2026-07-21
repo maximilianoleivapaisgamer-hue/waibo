@@ -343,9 +343,13 @@ export default function Channels() {
                       <div style={{ margin: '14px 0' }}>
                         <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13 }}>
                           <div style={{ fontWeight: 700, color: '#15803D', marginBottom: 6 }}>✨ Conectá en 2 minutos sin configuración técnica</div>
-                          <p style={{ margin: 0, color: '#166534' }}>
-                            Hacé clic en el botón y seguí los pasos que te muestra Meta: seleccioná o creá tu cuenta de WhatsApp Business y elegí el número que querés conectar. Waibo gestiona todo el resto automáticamente.
+                          <p style={{ margin: '0 0 10px', color: '#166534' }}>
+                            Hacé clic en el botón y seguí los pasos de Meta. En el paso de <strong>"Cuenta de WhatsApp Business"</strong> vas a ver dos opciones:
                           </p>
+                          <ul style={{ margin: '0 0 4px', paddingLeft: 20, color: '#166534', fontSize: 13, lineHeight: 1.7 }}>
+                            <li><strong>Si ya tenés WhatsApp Business instalado en el celular</strong> → elegí <em>"Conecta una app de WhatsApp Business"</em></li>
+                            <li><strong>Si no tenés WhatsApp Business</strong> → elegí <em>"Crear una cuenta de WhatsApp Business"</em></li>
+                          </ul>
                         </div>
                         <button
                           onClick={launchEmbeddedSignup}
