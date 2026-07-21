@@ -31,11 +31,46 @@ router.post('/whatsapp/cloud', async (req, res) => {
   try {
     const body = req.body;
     const value = body.entry?.[0]?.changes?.[0]?.value;
-    const messageData = value?.messages?.[0];
-    if (!messageData) return;
 
     const phoneNumberId = value?.metadata?.phone_number_id;
     if (!phoneNumberId) return;
+
+    // Mensajes que el dueño envía desde la app del celular (modo coexistencia):
+    // Meta los manda como "message_echoes" — los registramos en la conversación.
+    const echo = value?.message_echoes?.[0];
+    if (echo?.type === 'text' && echo?.to) {
+      const echoClientRes = await pool.query(
+        'SELECT id FROM clients WHERE whatsapp_phone_id = $1 AND active = true',
+        [phoneNumberId]
+      );
+      if (echoClientRes.rows.length) {
+        const echoClientId = echoClientRes.rows[0].id;
+        const convRes = await pool.query(
+          `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+          [echoClientId, echo.to]
+        );
+        let convId;
+        if (convRes.rows.length) {
+          convId = convRes.rows[0].id;
+        } else {
+          const newConv = await pool.query(
+            `INSERT INTO conversations (client_id, customer_phone, customer_name, channel)
+             VALUES ($1, $2, 'Cliente', 'whatsapp') RETURNING id`,
+            [echoClientId, echo.to]
+          );
+          convId = newConv.rows[0].id;
+        }
+        await pool.query(
+          'INSERT INTO messages (conversation_id, role, content) VALUES ($1, $2, $3)',
+          [convId, 'assistant', `📱 ${echo.text.body}`]
+        );
+        await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
+      }
+      return;
+    }
+
+    const messageData = value?.messages?.[0];
+    if (!messageData) return;
 
     const clientResult = await pool.query(
       'SELECT * FROM clients WHERE whatsapp_phone_id = $1 AND active = true',

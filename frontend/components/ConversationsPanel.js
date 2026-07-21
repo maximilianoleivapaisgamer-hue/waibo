@@ -29,7 +29,12 @@ export default function ConversationsPanel({ channel }) {
   ];
   const getFunnelStyle = (key) => FUNNEL_STAGES.find(s => s.key === key) || FUNNEL_STAGES[0];
 
-  const SUGGESTED_TAGS = ['Lead Caliente', 'Falta Pago', 'Turno Agendado'];
+  // Sugerencias: las fijas + todas las etiquetas que el cliente ya usó en otras conversaciones
+  const BASE_TAGS = ['Lead Caliente', 'Falta Pago', 'Turno Agendado'];
+  const SUGGESTED_TAGS = [...new Set([
+    ...BASE_TAGS,
+    ...conversations.flatMap(c => c.tags || [])
+  ])];
   const TAG_COLORS = {
     'Lead Caliente': { bg: '#FEE2E2', color: '#DC2626' },
     'Falta Pago': { bg: '#FEF3C7', color: '#92400E' },
