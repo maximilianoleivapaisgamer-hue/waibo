@@ -600,4 +600,83 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────
+// APRENDER DEL HISTORIAL DE CHATS
+// El cliente sube sus chats exportados de WhatsApp; la IA extrae el
+// estilo de conversación (→ bot_tone_custom) y la información concreta
+// como precios y respuestas frecuentes (→ knowledge_base).
+// ─────────────────────────────────────────
+
+const LEARN_SYSTEM = `Sos un analista experto en conversaciones de negocios. Vas a recibir chats reales exportados de WhatsApp entre un negocio y sus clientes.
+
+Tu tarea es analizar cómo responde EL NEGOCIO (no los clientes) y devolver SOLO un JSON válido con esta estructura exacta, sin texto adicional:
+
+{
+  "style": "Descripción detallada del estilo de comunicación del negocio para que un bot lo imite: tono (formal/informal, voseo), saludos y despedidas típicas, uso de emojis, largo de las respuestas, muletillas o frases características, cómo presentan los precios, cómo manejan objeciones y cómo cierran ventas. Incluí 3-5 frases de ejemplo textuales que usa el negocio.",
+  "knowledge": [
+    { "title": "Título corto del tema (ej: Precios de cursos)", "content": "La información concreta extraída: precios, horarios, formas de pago, políticas, respuestas a preguntas frecuentes, etc. Solo información que el negocio afirmó explícitamente en los chats." }
+  ]
+}
+
+Reglas:
+- En "knowledge" creá entre 1 y 8 entradas, agrupadas por tema.
+- NO inventes información: solo lo que aparece en los chats.
+- Si un precio aparece varias veces con valores distintos, usá el más reciente y aclaralo.
+- Escribí todo en español rioplatense.`;
+
+router.post('/learn-from-chats', authMiddleware, async (req, res) => {
+  try {
+    const { chats } = req.body;
+    if (!chats || typeof chats !== 'string' || chats.trim().length < 100) {
+      return res.status(400).json({ error: 'Subí al menos un chat exportado con contenido.' });
+    }
+
+    // Limitar tamaño: nos quedamos con lo más reciente (final del archivo)
+    const MAX_CHARS = 150000;
+    const text = chats.length > MAX_CHARS ? chats.slice(-MAX_CHARS) : chats;
+
+    const { callClaudeAPI } = require('../services/ai');
+    const raw = await callClaudeAPI({
+      model: 'claude-sonnet-5',
+      max_tokens: 4000,
+      system: LEARN_SYSTEM,
+      messages: [{ role: 'user', content: `Chats exportados:\n\n${text}` }]
+    });
+
+    let parsed;
+    try {
+      const jsonMatch = raw.match(/\{[\s\S]*\}/);
+      parsed = JSON.parse(jsonMatch ? jsonMatch[0] : raw);
+    } catch {
+      return res.status(502).json({ error: 'La IA no pudo analizar los chats. Probá con menos archivos o intentá de nuevo.' });
+    }
+
+    let knowledgeSaved = 0;
+    if (parsed.style) {
+      await pool.query(
+        'UPDATE bot_configs SET bot_tone_custom = $1 WHERE client_id = $2',
+        [parsed.style, req.client.id]
+      );
+    }
+    for (const item of parsed.knowledge || []) {
+      if (!item.title || !item.content) continue;
+      await pool.query(
+        `INSERT INTO knowledge_base (client_id, type, title, content) VALUES ($1, 'text', $2, $3)`,
+        [req.client.id, `📚 ${item.title} (aprendido de tus chats)`, item.content]
+      );
+      knowledgeSaved++;
+    }
+
+    res.json({
+      ok: true,
+      style_saved: !!parsed.style,
+      style_preview: parsed.style ? parsed.style.slice(0, 300) : null,
+      knowledge_saved: knowledgeSaved
+    });
+  } catch (err) {
+    console.error('[learn-from-chats]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Error analizando los chats. Intentá de nuevo.' });
+  }
+});
+
 module.exports = router;

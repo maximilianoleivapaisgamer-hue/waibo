@@ -84,4 +84,4 @@ ${knowledgeBase}
   });
 }
 
-module.exports = { getAIResponse };
+module.exports = { getAIResponse, callClaudeAPI };

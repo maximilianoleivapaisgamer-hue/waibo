@@ -68,6 +68,34 @@ export default function Knowledge() {
     }
   };
 
+  const handleLearnFromChats = async (e) => {
+    const files = Array.from(e.target.files || []);
+    if (!files.length) return;
+    setSaving(true); setError(''); setSuccess('');
+    try {
+      const texts = await Promise.all(files.map(f => f.text()));
+      let combined = texts.join('\n\n');
+      const MAX = 150000;
+      if (combined.length > MAX) combined = combined.slice(-MAX);
+
+      const res = await axios.post(`${API}/api/bot/learn-from-chats`,
+        { chats: combined },
+        { headers: getHeaders(), timeout: 120000 });
+
+      const parts = [];
+      if (res.data.style_saved) parts.push('el bot aprendió tu estilo de conversación');
+      if (res.data.knowledge_saved > 0) parts.push(`se agregaron ${res.data.knowledge_saved} entradas a la base de conocimiento`);
+      setSuccess(`¡Listo! ${parts.join(' y ')}. Probalo en "Probar bot".`);
+      loadEntries();
+    } catch (err) {
+      setError(err.response?.data?.error || 'Error analizando los chats. Intentá de nuevo.');
+    } finally {
+      setSaving(false);
+      e.target.value = '';
+      setTimeout(() => setSuccess(''), 8000);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -184,7 +212,8 @@ export default function Knowledge() {
             {[
               { key: 'text', label: '📝 Texto libre' },
               { key: 'url', label: '🌐 Importar web' },
-              { key: 'file', label: '📄 Subir archivo' }
+              { key: 'file', label: '📄 Subir archivo' },
+              { key: 'chats', label: '💬 Aprender de tus chats' }
             ].map(t => (
               <button
                 key={t.key}
@@ -246,6 +275,35 @@ export default function Knowledge() {
                 {saving ? 'Leyendo página...' : '🌐 Importar contenido'}
               </button>
             </form>
+          )}
+
+          {tab === 'chats' && (
+            <div>
+              <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13, color: '#166534' }}>
+                <div style={{ fontWeight: 700, marginBottom: 6 }}>✨ Entrená al bot con tus conversaciones reales</div>
+                <p style={{ margin: '0 0 8px' }}>
+                  Subí tus chats exportados de WhatsApp y la IA va a aprender <strong>cómo hablás con tus clientes</strong>: tu tono, tus frases, cómo pasás precios y cómo cerrás ventas. También extrae precios e info frecuente y la agrega a la base de conocimiento.
+                </p>
+                <p style={{ margin: 0 }}>
+                  <strong>Cómo exportar:</strong> abrí un chat en WhatsApp → ⋮ → Más → Exportar chat → <em>Sin archivos</em>. Repetí con tus mejores conversaciones y subí los .txt acá (podés seleccionar varios).
+                </p>
+              </div>
+              <div className="form-group">
+                <label>Archivos .txt exportados de WhatsApp</label>
+                <input
+                  type="file"
+                  accept=".txt"
+                  multiple
+                  onChange={handleLearnFromChats}
+                  disabled={saving}
+                  style={{ padding: '8px 0' }}
+                />
+                <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                  Se analizan hasta ~150.000 caracteres (los mensajes más recientes tienen prioridad). El análisis tarda 30-60 segundos.
+                </small>
+              </div>
+              {saving && <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>🧠 Analizando tus conversaciones... esto puede tardar un minuto.</p>}
+            </div>
           )}
 
           {tab === 'file' && (
