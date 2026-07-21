@@ -88,6 +88,31 @@ export default function Channels() {
   const launchEmbeddedSignup = () => {
     if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
     wabaDataRef.current = {};
+    let connected = false;
+
+    const connectToWaibo = ({ waba_id, phone_number_id } = {}) => {
+      if (connected) return;
+      connected = true;
+      setEmbeddedSignupLoading(true);
+      axios.post(`${API}/api/whatsapp/embedded-signup`,
+        { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
+        { headers: getHeaders() })
+        .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
+        .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
+        .catch(err => { connected = false; showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'); })
+        .finally(() => setEmbeddedSignupLoading(false));
+    };
+
+    const onMessage = (event) => {
+      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
+      if (event.data.event === 'FINISH') {
+        window.removeEventListener('message', onMessage);
+        clearInterval(pollClosed);
+        connectToWaibo(event.data.data || {});
+      }
+    };
+    window.addEventListener('message', onMessage);
+
     const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
     const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
     const width = 600, height = 700;
@@ -95,18 +120,12 @@ export default function Channels() {
     const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
     const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
 
+    // fallback: si el popup se cierra sin postMessage, igual intentamos conectar
     const pollClosed = setInterval(() => {
       if (popup && popup.closed) {
         clearInterval(pollClosed);
-        setEmbeddedSignupLoading(true);
-        const { phone_number_id, waba_id } = wabaDataRef.current;
-        axios.post(`${API}/api/whatsapp/embedded-signup`,
-          { ...(waba_id && { waba_id }), ...(phone_number_id && { phone_number_id }) },
-          { headers: getHeaders() })
-          .then(() => axios.get(`${API}/api/clients/me`, { headers: getHeaders() }))
-          .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
-          .catch(err => showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'))
-          .finally(() => setEmbeddedSignupLoading(false));
+        window.removeEventListener('message', onMessage);
+        connectToWaibo(wabaDataRef.current);
       }
     }, 500);
   };
