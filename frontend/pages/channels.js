@@ -87,27 +87,11 @@ export default function Channels() {
 
   const launchEmbeddedSignup = () => {
     if (!FB_APP_ID || !META_CONFIG_ID) { showError('Configuración de Meta no encontrada.'); return; }
+    if (!window.FB) { showError('El SDK de Facebook aún no cargó. Esperá un segundo y volvé a intentar.'); return; }
     wabaDataRef.current = {};
-    const extras = encodeURIComponent(JSON.stringify({ sessionInfoVersion: '3', version: 'v4' }));
-    const url = `https://business.facebook.com/messaging/whatsapp/onboard/?app_id=${FB_APP_ID}&config_id=${META_CONFIG_ID}&extras=${extras}`;
-    const width = 600, height = 700;
-    const left = Math.round(window.screenX + (window.outerWidth - width) / 2);
-    const top = Math.round(window.screenY + (window.outerHeight - height) / 2);
-    const popup = window.open(url, 'WaiboEmbeddedSignup', `width=${width},height=${height},left=${left},top=${top}`);
 
-    const onMessage = (event) => {
-      if (typeof event.data !== 'object' || event.data?.type !== 'WA_EMBEDDED_SIGNUP') return;
-      if (event.data.event === 'FINISH') {
-        const { phone_number_id, waba_id } = event.data.data || {};
-        if (phone_number_id && waba_id) wabaDataRef.current = { phone_number_id, waba_id };
-      }
-    };
-    window.addEventListener('message', onMessage);
-
-    const pollClosed = setInterval(() => {
-      if (popup && popup.closed) {
-        clearInterval(pollClosed);
-        window.removeEventListener('message', onMessage);
+    window.FB.login(
+      (response) => {
         setEmbeddedSignupLoading(true);
         const { phone_number_id, waba_id } = wabaDataRef.current;
         axios.post(`${API}/api/whatsapp/embedded-signup`,
@@ -117,8 +101,14 @@ export default function Channels() {
           .then(meRes => { setProfile(meRes.data); showSuccess('✅ WhatsApp conectado correctamente'); })
           .catch(err => showError(err.response?.data?.error || 'Error conectando WhatsApp. Intentá de nuevo.'))
           .finally(() => setEmbeddedSignupLoading(false));
+      },
+      {
+        config_id: META_CONFIG_ID,
+        response_type: 'code',
+        override_default_response_type: true,
+        extras: { sessionInfoVersion: '3', version: 'v4' },
       }
-    }, 500);
+    );
   };
 
   const disconnectCloudAPI = async () => {
