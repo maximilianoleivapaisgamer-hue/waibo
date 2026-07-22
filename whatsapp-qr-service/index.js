@@ -223,7 +223,7 @@ async function createSession(clientId) {
       });
       console.log(`[${clientId}] Mensaje reenviado al backend OK`);
     } catch (err) {
-      console.error(`[${clientId}] Error enviando mensaje al backend:`, err.message);
+      console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
   });
 

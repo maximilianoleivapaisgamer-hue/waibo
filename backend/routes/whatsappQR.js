@@ -242,7 +242,6 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
 
 router.post('/message', checkServiceSecret, async (req, res) => {
   const { clientId, from, name, text } = req.body;
-  res.json({ ok: true }); // Responder rápido
 
   try {
     const sendFn = async (phone, message) => {
@@ -254,8 +253,10 @@ router.post('/message', checkServiceSecret, async (req, res) => {
       );
     };
     await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn);
+    res.json({ ok: true });
   } catch (err) {
-    console.error('Error procesando mensaje QR:', err.message);
+    console.error('Error procesando mensaje QR:', err.stack || err.message);
+    res.status(500).json({ error: err.message });
   }
 });
 
