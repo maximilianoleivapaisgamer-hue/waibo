@@ -572,6 +572,9 @@ export default function Channels() {
                     <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
                       🔌 Desconectar
                     </button>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                      ⚠️ Para desvincular por completo, además de este botón cerrá la sesión desde tu celular: <strong>WhatsApp → Configuración → Dispositivos vinculados → cerrar sesión</strong>.
+                    </p>
                   </div>
                 ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
                   <div style={{ textAlign: 'center', padding: '10px 0' }}>
