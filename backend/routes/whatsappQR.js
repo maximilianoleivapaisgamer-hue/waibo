@@ -103,7 +103,9 @@ router.post('/history', checkServiceSecret, async (req, res) => {
       byPhone[m.phone].push(m);
     }
 
+    let saved = 0;
     for (const [phone, msgs] of Object.entries(byPhone)) {
+      try {
       // Buscar o crear conversación
       let convResult = await pool.query(
         `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
@@ -122,19 +124,23 @@ router.post('/history', checkServiceSecret, async (req, res) => {
 
       // Insertar mensajes que no existan ya (evitar duplicados por timestamp+role+content)
       for (const m of msgs) {
-        await pool.query(
+        const ins = await pool.query(
           `INSERT INTO messages (conversation_id, role, content, timestamp)
-           SELECT $1,$2,$3,$4
+           SELECT $1,$2,$3,$4::timestamp
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
              WHERE conversation_id = $1 AND role = $2 AND content = $3
-               AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamptz))) < 5
+               AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5
            )`,
           [convId, m.role, m.text, m.timestamp]
         );
+        saved += ins.rowCount;
+      }
+      } catch (convErr) {
+        console.error(`[QR history] error en conversación ${phone}:`, convErr.message);
       }
     }
-    console.log(`[QR history] clientId=${clientId} — ${messages.length} mensajes procesados`);
+    console.log(`[QR history v2] clientId=${clientId} — recibidos: ${messages.length}, guardados: ${saved}`);
   } catch (err) {
     console.error('Error procesando historial QR:', err.message);
   }
