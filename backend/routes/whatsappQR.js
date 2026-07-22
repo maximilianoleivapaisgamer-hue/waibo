@@ -114,7 +114,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
         convId = convResult.rows[0].id;
       } else {
         const newConv = await pool.query(
-          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$3,'whatsapp','open') RETURNING id`,
+          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$3,'whatsapp','bot') RETURNING id`,
           [clientId, phone, phone]
         );
         convId = newConv.rows[0].id;
@@ -123,12 +123,12 @@ router.post('/history', checkServiceSecret, async (req, res) => {
       // Insertar mensajes que no existan ya (evitar duplicados por timestamp+role+content)
       for (const m of msgs) {
         await pool.query(
-          `INSERT INTO messages (conversation_id, role, content, created_at)
+          `INSERT INTO messages (conversation_id, role, content, timestamp)
            SELECT $1,$2,$3,$4
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
              WHERE conversation_id = $1 AND role = $2 AND content = $3
-               AND ABS(EXTRACT(EPOCH FROM (created_at - $4::timestamptz))) < 5
+               AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamptz))) < 5
            )`,
           [convId, m.role, m.text, m.timestamp]
         );
