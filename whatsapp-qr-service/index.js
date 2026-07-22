@@ -107,11 +107,15 @@ async function createSession(clientId) {
       if (!jid || jid.endsWith('@g.us')) continue; // ignorar grupos
 
       const phone = jid.replace('@s.whatsapp.net', '');
+      const innerMsg = msg.message?.ephemeralMessage?.message
+        || msg.message?.viewOnceMessage?.message
+        || msg.message?.viewOnceMessageV2?.message
+        || msg.message;
       const text =
-        msg.message?.conversation ||
-        msg.message?.extendedTextMessage?.text ||
-        msg.message?.imageMessage?.caption ||
-        msg.message?.videoMessage?.caption ||
+        innerMsg?.conversation ||
+        innerMsg?.extendedTextMessage?.text ||
+        innerMsg?.imageMessage?.caption ||
+        innerMsg?.videoMessage?.caption ||
         null;
 
       if (!text) continue;
@@ -181,17 +185,30 @@ async function createSession(clientId) {
     if (!msg.message || msg.key.fromMe) return;
 
     const remoteJid = msg.key.remoteJid;
+    if (remoteJid?.endsWith('@g.us') || remoteJid === 'status@broadcast') return;
     // Preservar el JID completo (puede ser @s.whatsapp.net o @lid)
     const from = remoteJid?.endsWith('@s.whatsapp.net')
       ? remoteJid.replace('@s.whatsapp.net', '')
       : remoteJid; // conservar @lid u otros formatos tal cual
 
+    // Desenvolver mensajes temporales / ver una vez
+    const inner = msg.message.ephemeralMessage?.message
+      || msg.message.viewOnceMessage?.message
+      || msg.message.viewOnceMessageV2?.message
+      || msg.message;
+
     const text =
-      msg.message?.conversation ||
-      msg.message?.extendedTextMessage?.text ||
+      inner?.conversation ||
+      inner?.extendedTextMessage?.text ||
+      inner?.imageMessage?.caption ||
+      inner?.videoMessage?.caption ||
       '';
 
-    if (!from || !text) return;
+    if (!from) return;
+    if (!text) {
+      console.log(`[${clientId}] Mensaje sin texto de ${from} (tipos: ${Object.keys(msg.message).join(',')})`);
+      return;
+    }
 
     console.log(`[${clientId}] Mensaje entrante de ${from}: ${text.slice(0, 60)}`);
 
