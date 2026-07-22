@@ -9,6 +9,10 @@ const path = require('path');
 const app = express();
 app.use(express.json());
 
+// Baileys a veces lanza rechazos no manejados — logueamos en vez de morir
+process.on('unhandledRejection', (err) => console.error('⚠️ unhandledRejection:', err?.message || err));
+process.on('uncaughtException', (err) => console.error('⚠️ uncaughtException:', err?.message || err));
+
 const PORT = process.env.PORT || 3002;
 const RAILWAY_BACKEND = process.env.RAILWAY_BACKEND_URL || 'https://whabot-backend-production.up.railway.app';
 const SERVICE_SECRET = process.env.SERVICE_SECRET || 'whabot_qr_secret_2024';
