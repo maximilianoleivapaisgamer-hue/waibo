@@ -14,6 +14,8 @@ export default function Knowledge() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+  const [qrStatus, setQrStatus] = useState(null);
+  const [qrPolling, setQrPolling] = useState(null);
 
   const getHeaders = () => ({
     Authorization: `Bearer ${localStorage.getItem('whabot_token')}`
@@ -65,6 +67,41 @@ export default function Knowledge() {
     } finally {
       setSaving(false);
       setTimeout(() => setSuccess(''), 5000);
+    }
+  };
+
+  const startQR = async () => {
+    setError('');
+    try {
+      await axios.post(`${API}/api/whatsapp-qr/connect`, {}, { headers: getHeaders() });
+      setQrStatus({ status: 'starting', qr: null });
+      const interval = setInterval(async () => {
+        try {
+          const res = await axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() });
+          setQrStatus(res.data);
+          if (res.data.status === 'connected') {
+            clearInterval(interval);
+            setQrPolling(null);
+            setSuccess('✅ WhatsApp vinculado — el historial se está importando, esperá unos minutos y tocá "Analizar".');
+          }
+        } catch {}
+      }, 3000);
+      setQrPolling(interval);
+      setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 120000);
+    } catch {
+      setError('No se pudo iniciar la vinculación. Avisale al soporte de Waibo.');
+    }
+  };
+
+  const disconnectQR = async () => {
+    if (!confirm('¿Desvincular y limpiar? Se eliminan de Waibo todas las conversaciones importadas (lo que el bot aprendió se conserva). Acordate de cerrar la sesión también en tu celular: WhatsApp → Dispositivos vinculados.')) return;
+    if (qrPolling) { clearInterval(qrPolling); setQrPolling(null); }
+    try {
+      const res = await axios.post(`${API}/api/whatsapp-qr/disconnect`, {}, { headers: getHeaders() });
+      setQrStatus(null);
+      setSuccess(`Desvinculado. Se eliminaron ${res.data.deleted_conversations ?? 0} conversaciones importadas.`);
+    } catch {
+      setError('Error al desvincular. Intentá de nuevo.');
     }
   };
 
@@ -300,31 +337,48 @@ export default function Knowledge() {
             <div>
               <div style={{ background: '#F0FDF4', border: '1px solid #BBF7D0', borderRadius: 10, padding: 14, marginBottom: 16, fontSize: 13, color: '#166534' }}>
                 <div style={{ fontWeight: 700, marginBottom: 6 }}>✨ Entrená al bot con tus conversaciones reales</div>
-                <p style={{ margin: '0 0 8px' }}>
-                  Subí tus chats exportados de WhatsApp y la IA va a aprender <strong>cómo hablás con tus clientes</strong>: tu tono, tus frases, cómo pasás precios y cómo cerrás ventas. También extrae precios e info frecuente y la agrega a la base de conocimiento.
-                </p>
                 <p style={{ margin: 0 }}>
-                  <strong>Cómo exportar:</strong> abrí un chat en WhatsApp → ⋮ → Más → Exportar chat → <em>Sin archivos</em>. Repetí con tus mejores conversaciones y subí los .txt acá (podés seleccionar varios).
+                  La IA analiza tus chats y aprende <strong>cómo hablás con tus clientes</strong>: tu tono, tus frases, cómo pasás precios y cómo cerrás ventas. También extrae precios e info frecuente y la agrega a la base de conocimiento.
                 </p>
               </div>
-              <div className="form-group">
-                <label>Archivos .txt exportados de WhatsApp</label>
-                <input
-                  type="file"
-                  accept=".txt"
-                  multiple
-                  onChange={handleLearnFromChats}
-                  disabled={saving}
-                  style={{ padding: '8px 0' }}
-                />
-                <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                  Se analizan hasta ~150.000 caracteres (los mensajes más recientes tienen prioridad). El análisis tarda 30-60 segundos.
-                </small>
-              </div>
-              <div style={{ borderTop: '1px solid var(--border)', marginTop: 16, paddingTop: 16 }}>
-                <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 6 }}>⚡ Sin exportar nada: analizar el historial que ya está en Waibo</div>
+
+              {/* Paso 1: importar historial por QR */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>1️⃣ Importá tu historial de WhatsApp (recomendado)</div>
                 <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>
-                  Si conectaste WhatsApp Lite (QR), Waibo ya importó ~90 días de tus chats automáticamente. También sirve si ya tenés conversaciones acumuladas por Cloud API. Con un click, la IA analiza todo eso.
+                  Vinculá tu WhatsApp escaneando un QR y Waibo importa automáticamente ~90 días de conversaciones, con etiquetas y archivados. El bot <strong>no responde</strong> por este canal — es solo para importar. Cuando desvinculás, las conversaciones importadas se eliminan (lo aprendido se conserva).
+                </p>
+                {qrStatus?.status === 'connected' ? (
+                  <div>
+                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 13 }}>
+                      ✅ <strong>WhatsApp vinculado</strong> — el historial se importa solo (tarda unos minutos).
+                    </div>
+                    <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto', fontSize: 13 }}>
+                      🔌 Desvincular y limpiar
+                    </button>
+                  </div>
+                ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
+                  <div style={{ textAlign: 'center', padding: '6px 0' }}>
+                    <p style={{ fontSize: 13, marginBottom: 10 }}>
+                      En tu celular: <strong>WhatsApp → Configuración → Dispositivos vinculados → Vincular dispositivo</strong> y escaneá:
+                    </p>
+                    <img src={qrStatus.qr} alt="QR WhatsApp" style={{ width: 200, height: 200, borderRadius: 12, border: '2px solid var(--border)' }} />
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>El código expira en 60 segundos — si caduca, tocá el botón de nuevo.</p>
+                  </div>
+                ) : qrStatus?.status === 'starting' || qrStatus?.status === 'connecting' ? (
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>🔄 Generando código QR...</p>
+                ) : (
+                  <button onClick={startQR} className="btn btn-primary" style={{ width: 'auto', padding: '10px 20px' }}>
+                    📲 Vincular WhatsApp por QR
+                  </button>
+                )}
+              </div>
+
+              {/* Paso 2: analizar */}
+              <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>2️⃣ Analizá tus conversaciones</div>
+                <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>
+                  Con el historial importado (o conversaciones acumuladas por el canal oficial), la IA aprende tu estilo y extrae la información útil.
                 </p>
                 <button
                   onClick={handleLearnFromHistory}
@@ -332,10 +386,31 @@ export default function Knowledge() {
                   className="btn btn-primary"
                   style={{ width: 'auto', padding: '10px 20px' }}
                 >
-                  {saving ? '🧠 Analizando...' : '⚡ Analizar mis conversaciones de Waibo'}
+                  {saving ? '🧠 Analizando...' : '⚡ Analizar mis conversaciones'}
                 </button>
+                {saving && <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 10 }}>🧠 Analizando... esto puede tardar un minuto.</p>}
               </div>
-              {saving && <p style={{ color: 'var(--text-muted)', fontSize: 13, marginTop: 12 }}>🧠 Analizando tus conversaciones... esto puede tardar un minuto.</p>}
+
+              {/* Alternativa: subir .txt */}
+              <details style={{ fontSize: 13 }}>
+                <summary style={{ cursor: 'pointer', fontWeight: 600, color: 'var(--text-muted)' }}>Alternativa: subir chats exportados a mano (.txt)</summary>
+                <div className="form-group" style={{ marginTop: 10 }}>
+                  <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 8px' }}>
+                    En WhatsApp: abrí un chat → ⋮ → Más → Exportar chat → <em>Sin archivos</em>. Subí los .txt acá (podés seleccionar varios).
+                  </p>
+                  <input
+                    type="file"
+                    accept=".txt"
+                    multiple
+                    onChange={handleLearnFromChats}
+                    disabled={saving}
+                    style={{ padding: '8px 0' }}
+                  />
+                  <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                    Se analizan hasta ~150.000 caracteres (lo más reciente tiene prioridad).
+                  </small>
+                </div>
+              </details>
             </div>
           )}
 

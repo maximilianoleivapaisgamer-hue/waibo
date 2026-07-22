@@ -198,6 +198,23 @@ router.post('/history', checkServiceSecret, async (req, res) => {
 });
 
 // El microservicio reenvía mensajes entrantes para que la IA los procese
+// Limpieza de soporte: borra conversaciones de WhatsApp importadas sin marca
+// (anteriores a la columna source). Protegido por el secret del servicio.
+router.post('/purge-legacy', checkServiceSecret, async (req, res) => {
+  const { clientId } = req.body;
+  if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
+  try {
+    const del = await pool.query(
+      `DELETE FROM conversations WHERE client_id = $1 AND channel = 'whatsapp'`,
+      [clientId]
+    );
+    console.log(`[QR purge-legacy] clientId=${clientId} — ${del.rowCount} conversaciones eliminadas`);
+    res.json({ ok: true, deleted: del.rowCount });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Contactos: reemplazar JIDs @lid por el número real y guardar nombres
 router.post('/contacts', checkServiceSecret, async (req, res) => {
   const { clientId, items } = req.body;
