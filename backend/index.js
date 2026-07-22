@@ -79,7 +79,7 @@ app.use('/api/campaigns', apiLimiter, campaignsRoutes);
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
 
 app.get('/', (req, res) => {
-  res.json({ status: 'WhaBot API running', version: '1.0.1' });
+  res.json({ status: 'WhaBot API running', version: '1.0.2' });
 });
 
 require('./services/cronjobs');
