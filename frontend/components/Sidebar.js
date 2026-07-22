@@ -75,7 +75,6 @@ export default function Sidebar({ active }) {
         { key: 'campaigns', label: 'Campañas masivas', icon: '📣', href: '/campaigns', onlyOwner: true },
         { key: 'orders', label: 'Pedidos', icon: '🍕', href: '/orders' },
         { key: 'agenda', label: 'Agenda', icon: '📅', href: '/agenda' },
-        { key: 'knowledge', label: 'Base de conocimiento', icon: '🧠', href: '/knowledge', onlyOwner: true },
         { key: 'catalog', label: 'Catálogo', icon: '🏪', href: '/catalog', onlyOwner: true },
         { key: 'test-chat', label: 'Modo prueba', icon: '🧪', href: '/test-chat', onlyOwner: true },
       ]

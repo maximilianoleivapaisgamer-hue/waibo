@@ -2,16 +2,22 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
+import KnowledgePanel from '../components/KnowledgePanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Config() {
   const router = useRouter();
+  const [mainTab, setMainTab] = useState('config');
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (router.query.tab === 'knowledge') setMainTab('knowledge');
+  }, [router.query.tab]);
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');
@@ -61,10 +67,28 @@ export default function Config() {
       <div className="main-content">
         <div className="page-header">
           <h1>⚙️ Configurar bot</h1>
-          <p>Personalizá cómo responde tu asistente de WhatsApp</p>
+          <p>Personalizá cómo responde tu asistente y qué información conoce</p>
         </div>
 
-        <form onSubmit={handleSave}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+          {[
+            { key: 'config', label: '🎭 Personalidad y comportamiento' },
+            { key: 'knowledge', label: '🧠 Base de conocimiento' }
+          ].map(t => (
+            <button
+              key={t.key}
+              onClick={() => setMainTab(t.key)}
+              className={`btn ${mainTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
+              style={{ width: 'auto', padding: '10px 20px', fontSize: 14 }}
+            >
+              {t.label}
+            </button>
+          ))}
+        </div>
+
+        {mainTab === 'knowledge' && <KnowledgePanel />}
+
+        <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}
           {error && <div className="error-msg">{error}</div>}
 
