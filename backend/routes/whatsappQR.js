@@ -40,15 +40,20 @@ router.get('/status', authMiddleware, async (req, res) => {
   }
 });
 
-// Desconectar
+// Desconectar — además limpia todo lo importado por QR
 router.post('/disconnect', authMiddleware, async (req, res) => {
   if (QR_SERVICE_URL) {
     try {
       await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/disconnect`, { secret: SERVICE_SECRET }, { headers: qrHeaders() });
     } catch {}
   }
+  const del = await pool.query(
+    `DELETE FROM conversations WHERE client_id = $1 AND source = 'qr'`,
+    [req.client.id]
+  );
+  console.log(`[QR disconnect] clientId=${req.client.id} — ${del.rowCount} conversaciones importadas eliminadas`);
   await pool.query(`UPDATE clients SET whatsapp_mode = 'api' WHERE id = $1`, [req.client.id]);
-  res.json({ success: true });
+  res.json({ success: true, deleted_conversations: del.rowCount });
 });
 
 // Enviar mensaje desde Railway al microservicio (usado por sendWhatsAppQRMessage)
@@ -147,7 +152,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
         convId = convResult.rows[0].id;
       } else {
         const newConv = await pool.query(
-          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$3,'whatsapp','bot') RETURNING id`,
+          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, source) VALUES ($1,$2,$3,'whatsapp','bot','qr') RETURNING id`,
           [clientId, phone, phone]
         );
         convId = newConv.rows[0].id;
@@ -240,22 +245,34 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
   }
 });
 
+// El QR es solo para importar/observar conversaciones — el bot NO responde
+// por este canal (las respuestas automáticas van por Cloud API).
 router.post('/message', checkServiceSecret, async (req, res) => {
   const { clientId, from, name, text } = req.body;
 
   try {
-    const sendFn = async (phone, message) => {
-      if (!QR_SERVICE_URL) return;
-      await axios.post(
-        `${QR_SERVICE_URL}/session/${clientId}/send`,
-        { to: phone, message, secret: SERVICE_SECRET },
-        { headers: qrHeaders() }
+    let convRes = await pool.query(
+      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+      [clientId, from]
+    );
+    let convId;
+    if (convRes.rows.length) {
+      convId = convRes.rows[0].id;
+    } else {
+      const newConv = await pool.query(
+        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, source) VALUES ($1,$2,$3,'whatsapp','bot','qr') RETURNING id`,
+        [clientId, from, name || from]
       );
-    };
-    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn);
+      convId = newConv.rows[0].id;
+    }
+    await pool.query(
+      `INSERT INTO messages (conversation_id, role, content) VALUES ($1::uuid, 'user', $2::text)`,
+      [convId, text]
+    );
+    await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
     res.json({ ok: true });
   } catch (err) {
-    console.error('Error procesando mensaje QR:', err.stack || err.message);
+    console.error('Error guardando mensaje QR:', err.message);
     res.status(500).json({ error: err.message });
   }
 });

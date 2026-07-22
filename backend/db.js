@@ -65,6 +65,7 @@ async function initDB() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS whatsapp_provider VARCHAR(20) DEFAULT '360dialog';
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS waba_id VARCHAR(255);
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source VARCHAR(20);
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS channel_user_id VARCHAR(255);
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';

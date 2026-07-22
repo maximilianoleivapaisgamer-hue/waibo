@@ -230,7 +230,7 @@ export default function Channels() {
   };
 
   const disconnectQR = async () => {
-    if (!confirm('¿Desconectar WhatsApp QR?')) return;
+    if (!confirm('¿Desconectar WhatsApp QR? Se van a eliminar de Waibo todas las conversaciones importadas por QR (lo que el bot ya aprendió en la Base de conocimiento se conserva).')) return;
     if (qrPolling) { clearInterval(qrPolling); setQrPolling(null); }
     await axios.post(`${API}/api/whatsapp-qr/disconnect`, {}, { headers: getHeaders() });
     setQrStatus(null);
@@ -561,8 +561,8 @@ export default function Channels() {
 
             {whatsappExpanded === 'qr' && (
               <div style={{ padding: '0 16px 20px' }}>
-                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: 12, margin: '14px 0', fontSize: 13, color: '#92400E' }}>
-                  ⚠️ <strong>Canal no oficial.</strong> WhatsApp puede desconectar o bloquear el número en cualquier momento sin previo aviso, ya que esta modalidad no está avalada por Meta. Usala para empezar y testear mientras tramitás la Cloud API oficial. Tus conversaciones y la configuración del bot se conservan si después migrás.
+                <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, margin: '14px 0', fontSize: 13, color: '#1E40AF' }}>
+                  📥 <strong>¿Para qué sirve?</strong> Vinculá tu WhatsApp por QR para <strong>importar tu historial de conversaciones</strong> (~90 días): Waibo las analiza para que el bot aprenda tu estilo, tus precios y qué conversaciones cerraron ventas. El bot <strong>no responde por este canal</strong> — las respuestas automáticas funcionan con la conexión oficial de Meta de arriba. Cuando desconectás el QR, las conversaciones importadas se eliminan (lo aprendido se conserva).
                 </div>
                 {isQRConnected ? (
                   <div>
