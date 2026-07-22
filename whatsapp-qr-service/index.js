@@ -32,7 +32,10 @@ async function createSession(clientId) {
     auth: state,
     logger: pino({ level: 'silent' }),
     printQRInTerminal: false,
-    browser: ['WhaBot', 'Chrome', '1.0.0'],
+    // Identidad "Desktop" + syncFullHistory: WhatsApp solo manda el historial
+    // completo a clientes de escritorio con este flag activado.
+    browser: ['WhaBot', 'Desktop', '1.0.0'],
+    syncFullHistory: true,
   });
 
   sessions[clientId] = { sock, qr: null, status: 'connecting', phone: null };
