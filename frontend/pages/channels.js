@@ -296,7 +296,7 @@ export default function Channels() {
               background: isConnected ? '#EDE9FE' : '#FEF3C7',
               color: isConnected ? '#5B21B6' : '#92400E'
             }}>
-              {isQRConnected ? '✅ WhatsApp Lite activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
+              {isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
             </span>
           </div>
 
@@ -526,80 +526,6 @@ export default function Channels() {
             )}
           </div>
 
-          {/* ── Opción 2: WhatsApp Lite (QR) ── */}
-          <div style={{
-            border: `2px solid ${whatsappExpanded === 'qr' ? '#F59E0B' : 'var(--border)'}`,
-            borderRadius: 12, overflow: 'hidden', marginTop: 12
-          }}>
-            <button
-              onClick={() => setWhatsappExpanded(whatsappExpanded === 'qr' ? null : 'qr')}
-              style={{
-                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
-                background: whatsappExpanded === 'qr' ? '#FFFBEB' : 'var(--bg)',
-                border: 'none', cursor: 'pointer', textAlign: 'left'
-              }}
-            >
-              <span style={{ fontSize: 22 }}>📲</span>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  WhatsApp Lite (QR)
-                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#FEF3C7', color: '#92400E', fontWeight: 600 }}>
-                    ⚠️ Canal no oficial
-                  </span>
-                  {isQRConnected && (
-                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
-                      Activo
-                    </span>
-                  )}
-                </div>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Conectá tu número escaneando un QR · Sin trámites · Listo en segundos
-                </div>
-              </div>
-              <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>{whatsappExpanded === 'qr' ? '▲' : '▼'}</span>
-            </button>
-
-            {whatsappExpanded === 'qr' && (
-              <div style={{ padding: '0 16px 20px' }}>
-                <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, margin: '14px 0', fontSize: 13, color: '#1E40AF' }}>
-                  📥 <strong>¿Para qué sirve?</strong> Vinculá tu WhatsApp por QR para <strong>importar tu historial de conversaciones</strong> (~90 días): Waibo las analiza para que el bot aprenda tu estilo, tus precios y qué conversaciones cerraron ventas. El bot <strong>no responde por este canal</strong> — las respuestas automáticas funcionan con la conexión oficial de Meta de arriba. Cuando desconectás el QR, las conversaciones importadas se eliminan (lo aprendido se conserva).
-                </div>
-                {isQRConnected ? (
-                  <div>
-                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
-                      ✅ <strong>WhatsApp conectado por QR</strong> — el bot está activo en este número.
-                    </div>
-                    <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
-                      🔌 Desconectar
-                    </button>
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
-                      ⚠️ Para desvincular por completo, además de este botón cerrá la sesión desde tu celular: <strong>WhatsApp → Configuración → Dispositivos vinculados → cerrar sesión</strong>.
-                    </p>
-                  </div>
-                ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
-                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
-                    <p style={{ fontSize: 13, marginBottom: 12 }}>
-                      Abrí WhatsApp en tu celular → <strong>Configuración → Dispositivos vinculados → Vincular dispositivo</strong> y escaneá este código:
-                    </p>
-                    <img src={qrStatus.qr} alt="QR WhatsApp" style={{ width: 220, height: 220, borderRadius: 12, border: '2px solid var(--border)' }} />
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10 }}>El código expira en 60 segundos — si caduca, hacé clic en Conectar de nuevo.</p>
-                  </div>
-                ) : qrStatus?.status === 'starting' || qrStatus?.status === 'connecting' ? (
-                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>
-                    🔄 Generando código QR...
-                  </div>
-                ) : (
-                  <button
-                    onClick={startQR}
-                    className="btn btn-primary"
-                    style={{ width: 'auto', padding: '10px 20px', background: '#F59E0B', borderColor: '#F59E0B' }}
-                  >
-                    📲 Conectar por QR
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
         </div>
         {/* ──────────────── FIN WHATSAPP ──────────────── */}
       </div>

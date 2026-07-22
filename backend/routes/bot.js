@@ -95,26 +95,26 @@ router.put('/config', authMiddleware, async (req, res) => {
 router.get('/stats', authMiddleware, async (req, res) => {
   try {
     const totalConversations = await pool.query(
-      'SELECT COUNT(*) FROM conversations WHERE client_id = $1',
+      "SELECT COUNT(*) FROM conversations WHERE client_id = $1 AND source IS DISTINCT FROM 'qr'",
       [req.client.id]
     );
 
     const todayConversations = await pool.query(
       `SELECT COUNT(*) FROM conversations
-       WHERE client_id = $1 AND DATE(created_at) = CURRENT_DATE`,
+       WHERE client_id = $1 AND source IS DISTINCT FROM 'qr' AND DATE(created_at) = CURRENT_DATE`,
       [req.client.id]
     );
 
     const totalMessages = await pool.query(
       `SELECT COUNT(*) FROM messages m
        JOIN conversations c ON m.conversation_id = c.id
-       WHERE c.client_id = $1`,
+       WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'`,
       [req.client.id]
     );
 
     const activeConversations = await pool.query(
       `SELECT COUNT(*) FROM conversations
-       WHERE client_id = $1 AND status = 'bot'`,
+       WHERE client_id = $1 AND source IS DISTINCT FROM 'qr' AND status = 'bot'`,
       [req.client.id]
     );
 
@@ -142,7 +142,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
         (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message,
         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
        FROM conversations c
-       WHERE c.client_id = $1
+       WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
        ORDER BY c.updated_at DESC
        LIMIT 300`,
       [req.client.id]
@@ -356,7 +356,7 @@ router.get('/onboarding', authMiddleware, async (req, res) => {
       pool.query('SELECT whatsapp_api_key FROM clients WHERE id = $1', [clientId]),
       pool.query('SELECT business_info, welcome_message, has_tested_bot FROM bot_configs WHERE client_id = $1', [clientId]),
       pool.query('SELECT COUNT(*) FROM knowledge_base WHERE client_id = $1', [clientId]),
-      pool.query('SELECT COUNT(*) FROM conversations WHERE client_id = $1', [clientId]),
+      pool.query("SELECT COUNT(*) FROM conversations WHERE client_id = $1 AND source IS DISTINCT FROM 'qr'", [clientId]),
     ]);
 
     const steps = [
