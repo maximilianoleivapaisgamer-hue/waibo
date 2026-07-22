@@ -126,10 +126,10 @@ router.post('/history', checkServiceSecret, async (req, res) => {
       for (const m of msgs) {
         const ins = await pool.query(
           `INSERT INTO messages (conversation_id, role, content, timestamp)
-           SELECT $1,$2,$3,$4::timestamp
+           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
-             WHERE conversation_id = $1 AND role = $2 AND content = $3
+             WHERE conversation_id = $1::uuid AND role = $2::varchar AND content = $3::text
                AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5
            )`,
           [convId, m.role, m.text, m.timestamp]
