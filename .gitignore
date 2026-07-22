@@ -27,3 +27,4 @@ backend/uploads/
 
 .vercel
 .env*
+whatsapp-qr-service/sessions/
