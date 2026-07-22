@@ -86,12 +86,17 @@ async function createSession(clientId) {
   });
 
   // Historial al conectar
-  sock.ev.on('messaging-history.set', async ({ messages: histMsgs, isLatest }) => {
-    if (!histMsgs?.length) return;
-    console.log(`[${clientId}] Historial recibido: ${histMsgs.length} mensajes`);
+  sock.ev.on('messaging-history.set', async ({ chats, messages: histMsgs, isLatest }) => {
+    // Chats archivados en WhatsApp → avisar al backend para marcarlos
+    const archivedPhones = (chats || [])
+      .filter(c => c.archived && c.id && !c.id.endsWith('@g.us'))
+      .map(c => c.id.replace('@s.whatsapp.net', ''));
+
+    if (!histMsgs?.length && !archivedPhones.length) return;
+    console.log(`[${clientId}] Historial recibido: ${histMsgs?.length || 0} mensajes, ${archivedPhones.length} chats archivados`);
 
     const batch = [];
-    for (const msg of histMsgs) {
+    for (const msg of histMsgs || []) {
       if (!msg.message) continue;
       const jid = msg.key.remoteJid;
       if (!jid || jid.endsWith('@g.us')) continue; // ignorar grupos
@@ -114,12 +119,13 @@ async function createSession(clientId) {
       batch.push({ phone, role, text, timestamp });
     }
 
-    if (!batch.length) return;
+    if (!batch.length && !archivedPhones.length) return;
 
     try {
       await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/history`, {
         clientId,
         messages: batch,
+        archived_phones: archivedPhones,
         secret: SERVICE_SECRET
       }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
       console.log(`[${clientId}] Historial enviado al backend: ${batch.length} mensajes`);

@@ -144,7 +144,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
        FROM conversations c
        WHERE c.client_id = $1
        ORDER BY c.updated_at DESC
-       LIMIT 50`,
+       LIMIT 300`,
       [req.client.id]
     );
     res.json(result.rows);

@@ -90,8 +90,17 @@ router.post('/connected', checkServiceSecret, async (req, res) => {
 
 // El microservicio envía historial de mensajes al conectar
 router.post('/history', checkServiceSecret, async (req, res) => {
-  const { clientId, messages } = req.body;
+  const { clientId, messages, archived_phones } = req.body;
   res.json({ ok: true }); // Responder rápido
+
+  // Marcar como archivadas las conversaciones que están archivadas en WhatsApp
+  if (Array.isArray(archived_phones) && archived_phones.length) {
+    pool.query(
+      `UPDATE conversations SET archived = true
+       WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = ANY($2::text[])`,
+      [clientId, archived_phones]
+    ).catch(err => console.error('[QR history] error marcando archivados:', err.message));
+  }
 
   if (!Array.isArray(messages) || !messages.length) return;
 
@@ -136,10 +145,25 @@ router.post('/history', checkServiceSecret, async (req, res) => {
         );
         saved += ins.rowCount;
       }
+      // Reflejar la fecha del último mensaje real en la conversación (para ordenar bien)
+      await pool.query(
+        `UPDATE conversations SET updated_at = (SELECT MAX(timestamp) FROM messages WHERE conversation_id = $1::uuid) WHERE id = $1::uuid`,
+        [convId]
+      );
       } catch (convErr) {
         console.error(`[QR history] error en conversación ${phone}:`, convErr.message);
       }
     }
+
+    // Re-aplicar archivados (por si las conversaciones se crearon en este mismo lote)
+    if (Array.isArray(archived_phones) && archived_phones.length) {
+      await pool.query(
+        `UPDATE conversations SET archived = true
+         WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = ANY($2::text[])`,
+        [clientId, archived_phones]
+      ).catch(err => console.error('[QR history] error marcando archivados:', err.message));
+    }
+
     console.log(`[QR history v2] clientId=${clientId} — recibidos: ${messages.length}, guardados: ${saved}`);
   } catch (err) {
     console.error('Error procesando historial QR:', err.message);

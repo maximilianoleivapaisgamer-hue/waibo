@@ -18,6 +18,7 @@ export default function ConversationsPanel({ channel }) {
   const [sendingMessage, setSendingMessage] = useState(false);
   const [contactVariables, setContactVariables] = useState([]);
   const [funnelFilter, setFunnelFilter] = useState('');
+  const [showArchived, setShowArchived] = useState(false);
   const [savingFunnel, setSavingFunnel] = useState(false);
 
   const FUNNEL_STAGES = [
@@ -53,9 +54,9 @@ export default function ConversationsPanel({ channel }) {
         const list = byChannel(convRes.data);
         setConversations(list);
 
-        // Al entrar, abrir directamente la primera conversación
+        // Al entrar, abrir directamente la primera conversación (no archivada)
         if (isInitial && !selected && list.length > 0) {
-          loadMessages(list[0]);
+          loadMessages(list.find(c => !c.archived) || list[0]);
         }
 
         if (selected) {
@@ -184,8 +185,18 @@ export default function ConversationsPanel({ channel }) {
     <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1.4fr' : '1fr', gap: 20 }}>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
-          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8 }}>
-            {conversations.filter(c => !funnelFilter || c.funnel_stage === funnelFilter).length} conversaciones
+          <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
+            <span>{conversations.filter(c => (showArchived || !c.archived) && (!funnelFilter || c.funnel_stage === funnelFilter)).length} conversaciones</span>
+            {conversations.some(c => c.archived) && (
+              <button
+                onClick={() => setShowArchived(!showArchived)}
+                style={{
+                  fontSize: 11, padding: '3px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 500,
+                  border: showArchived ? '2px solid #6B7280' : '1px solid var(--border)',
+                  background: showArchived ? '#F3F4F6' : 'var(--bg)', color: 'var(--text-muted)'
+                }}
+              >🗄 {showArchived ? 'Ocultar archivados' : `Archivados (${conversations.filter(c => c.archived).length})`}</button>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <button
@@ -213,7 +224,7 @@ export default function ConversationsPanel({ channel }) {
           </p>
         ) : (
           <ul className="conv-list" style={{ padding: '0 16px' }}>
-            {conversations.filter(c => !funnelFilter || c.funnel_stage === funnelFilter).map(conv => (
+            {conversations.filter(c => (showArchived || !c.archived) && (!funnelFilter || c.funnel_stage === funnelFilter)).map(conv => (
               <li
                 key={conv.id}
                 className="conv-item"
@@ -232,6 +243,7 @@ export default function ConversationsPanel({ channel }) {
                   <div className="conv-name" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
                     <ChannelLogo channel={conv.channel} size={13} style={{ borderRadius: 3 }} />
                     {conv.customer_name || conv.customer_phone}
+                    {conv.archived && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#F3F4F6', color: '#6B7280', fontWeight: 500 }}>🗄 archivado</span>}
                   </div>
                   <div className="conv-last">{conv.last_message || '—'}</div>
                   {conv.tags?.length > 0 && (
