@@ -86,7 +86,8 @@ async function createSession(clientId) {
   });
 
   // Historial al conectar
-  sock.ev.on('messaging-history.set', async ({ chats, messages: histMsgs, isLatest }) => {
+  sock.ev.on('messaging-history.set', async ({ chats, contacts, messages: histMsgs, isLatest }) => {
+    if (contacts?.length) sendContacts(contacts).catch(() => {});
     // Chats archivados en WhatsApp → avisar al backend para marcarlos
     const archivedPhones = (chats || [])
       .filter(c => c.archived && c.id && !c.id.endsWith('@g.us'))
@@ -188,18 +189,43 @@ async function createSession(clientId) {
 
     if (!from || !text) return;
 
+    console.log(`[${clientId}] Mensaje entrante de ${from}: ${text.slice(0, 60)}`);
+
     // Reenviar mensaje al backend de Railway para que lo procese la IA
     try {
       await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/message`, {
         clientId,
         from,
+        name: msg.pushName || null,
         text,
         secret: SERVICE_SECRET
       });
+      console.log(`[${clientId}] Mensaje reenviado al backend OK`);
     } catch (err) {
       console.error(`[${clientId}] Error enviando mensaje al backend:`, err.message);
     }
   });
+
+  // Contactos: mapear LID → número real y nombre
+  const sendContacts = async (contacts) => {
+    const items = (contacts || []).map(c => {
+      const phone = c.id?.endsWith('@s.whatsapp.net') ? c.id.replace('@s.whatsapp.net', '') : null;
+      const lid = c.lid || (c.id?.endsWith('@lid') ? c.id : null);
+      const name = c.name || c.notify || c.verifiedName || null;
+      return { phone, lid, name };
+    }).filter(i => i.phone || i.name);
+    if (!items.length) return;
+    try {
+      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/contacts`, {
+        clientId, items, secret: SERVICE_SECRET
+      }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
+      console.log(`[${clientId}] Contactos enviados: ${items.length}`);
+    } catch (err) {
+      console.error(`[${clientId}] Error enviando contactos:`, err.message);
+    }
+  };
+
+  sock.ev.on('contacts.upsert', sendContacts);
 
   return sock;
 }

@@ -193,8 +193,55 @@ router.post('/history', checkServiceSecret, async (req, res) => {
 });
 
 // El microservicio reenvía mensajes entrantes para que la IA los procese
+// Contactos: reemplazar JIDs @lid por el número real y guardar nombres
+router.post('/contacts', checkServiceSecret, async (req, res) => {
+  const { clientId, items } = req.body;
+  res.json({ ok: true });
+  if (!Array.isArray(items) || !items.length) return;
+  try {
+    let renamed = 0;
+    for (const { phone, lid, name } of items) {
+      try {
+        if (lid && phone) {
+          const lidConv = await pool.query(
+            `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' LIMIT 1`,
+            [clientId, lid]
+          );
+          if (lidConv.rows.length) {
+            const phoneConv = await pool.query(
+              `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' LIMIT 1`,
+              [clientId, phone]
+            );
+            if (phoneConv.rows.length) {
+              // Ya existe una conversación con el número real: fusionar
+              await pool.query('UPDATE messages SET conversation_id = $1 WHERE conversation_id = $2', [phoneConv.rows[0].id, lidConv.rows[0].id]);
+              await pool.query('DELETE FROM conversations WHERE id = $1', [lidConv.rows[0].id]);
+            } else {
+              await pool.query('UPDATE conversations SET customer_phone = $1 WHERE id = $2', [phone, lidConv.rows[0].id]);
+            }
+            renamed++;
+          }
+        }
+        if (name && phone) {
+          await pool.query(
+            `UPDATE conversations SET customer_name = $1
+             WHERE client_id = $2 AND customer_phone = $3 AND channel = 'whatsapp'
+               AND (customer_name IS NULL OR customer_name = customer_phone OR customer_name IN ('Cliente', 'Usuario'))`,
+            [name, clientId, phone]
+          );
+        }
+      } catch (itemErr) {
+        console.error('[QR contacts] error item:', itemErr.message);
+      }
+    }
+    console.log(`[QR contacts] clientId=${clientId} — ${items.length} contactos, ${renamed} lid→número`);
+  } catch (err) {
+    console.error('[QR contacts] error:', err.message);
+  }
+});
+
 router.post('/message', checkServiceSecret, async (req, res) => {
-  const { clientId, from, text } = req.body;
+  const { clientId, from, name, text } = req.body;
   res.json({ ok: true }); // Responder rápido
 
   try {
@@ -206,7 +253,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
         { headers: qrHeaders() }
       );
     };
-    await processIncomingMessage(clientId, from, 'Cliente', text, sendFn);
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn);
   } catch (err) {
     console.error('Error procesando mensaje QR:', err.message);
   }

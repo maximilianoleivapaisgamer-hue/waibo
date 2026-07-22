@@ -4,6 +4,27 @@ import ChannelLogo from './ChannelLogo';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
+// Convierte el formato de WhatsApp (*negrita*, _cursiva_, ~tachado~, ```mono```) a HTML seguro
+function formatWhatsAppText(text) {
+  const escaped = String(text)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  return escaped
+    .replace(/```([\s\S]+?)```/g, '<code>$1</code>')
+    .replace(/\*([^*\n]+)\*/g, '<strong>$1</strong>')
+    .replace(/_([^_\n]+)_/g, '<em>$1</em>')
+    .replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    .replace(/\n/g, '<br/>');
+}
+
+function formatDateTime(ts) {
+  const d = new Date(ts);
+  const today = new Date();
+  const sameDay = d.toDateString() === today.toDateString();
+  const time = d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  if (sameDay) return time;
+  return `${d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: '2-digit' })} ${time}`;
+}
+
 // Panel de conversaciones reutilizable.
 // props.channel: si se pasa (ej. 'whatsapp'), filtra las conversaciones de ese canal.
 export default function ConversationsPanel({ channel }) {
@@ -461,9 +482,9 @@ export default function ConversationsPanel({ channel }) {
                   fontSize: 13,
                   lineHeight: 1.5
                 }}>
-                  {msg.content}
+                  <span dangerouslySetInnerHTML={{ __html: formatWhatsAppText(msg.content) }} />
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, textAlign: 'right' }}>
-                    {new Date(msg.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                    {formatDateTime(msg.timestamp)}
                   </div>
                 </div>
               </div>
