@@ -89,6 +89,28 @@ router.post('/connected', checkServiceSecret, async (req, res) => {
 });
 
 // El microservicio envía historial de mensajes al conectar
+// Etiquetas de WhatsApp Business → tags de la conversación
+router.post('/labels', checkServiceSecret, async (req, res) => {
+  const { clientId, items } = req.body;
+  res.json({ ok: true });
+  if (!Array.isArray(items) || !items.length) return;
+  try {
+    for (const { phone, label } of items) {
+      if (!phone || !label) continue;
+      await pool.query(
+        `UPDATE conversations
+         SET tags = array_append(COALESCE(tags, '{}'), $3::text)
+         WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = $2
+           AND NOT (COALESCE(tags, '{}') @> ARRAY[$3::text])`,
+        [clientId, phone, label]
+      );
+    }
+    console.log(`[QR labels] clientId=${clientId} — ${items.length} etiquetas aplicadas`);
+  } catch (err) {
+    console.error('[QR labels] error:', err.message);
+  }
+});
+
 router.post('/history', checkServiceSecret, async (req, res) => {
   const { clientId, messages, archived_phones } = req.body;
   res.json({ ok: true }); // Responder rápido

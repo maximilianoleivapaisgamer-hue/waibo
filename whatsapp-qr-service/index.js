@@ -134,6 +134,42 @@ async function createSession(clientId) {
     }
   });
 
+  // Etiquetas de WhatsApp Business → tags en Waibo
+  // labels.edit define las etiquetas (id → nombre); labels.association las asigna a chats.
+  const labelNames = {};   // labelId -> name
+  const pendingAssoc = []; // { chatJid, labelId }
+  let labelFlushTimer = null;
+
+  const flushLabels = async () => {
+    const assoc = pendingAssoc.splice(0);
+    const items = assoc
+      .filter(a => labelNames[a.labelId] && !a.chatJid.endsWith('@g.us'))
+      .map(a => ({
+        phone: a.chatJid.replace('@s.whatsapp.net', ''),
+        label: labelNames[a.labelId]
+      }));
+    if (!items.length) return;
+    try {
+      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/labels`, {
+        clientId, items, secret: SERVICE_SECRET
+      }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
+      console.log(`[${clientId}] Etiquetas enviadas: ${items.length} asignaciones`);
+    } catch (err) {
+      console.error(`[${clientId}] Error enviando etiquetas:`, err.message);
+    }
+  };
+
+  sock.ev.on('labels.edit', (label) => {
+    if (label?.id && label?.name && !label.deleted) labelNames[label.id] = label.name;
+  });
+
+  sock.ev.on('labels.association', ({ type, association }) => {
+    if (type !== 'add' || !association?.chatId || !association?.labelId) return;
+    pendingAssoc.push({ chatJid: association.chatId, labelId: association.labelId });
+    clearTimeout(labelFlushTimer);
+    labelFlushTimer = setTimeout(flushLabels, 5000);
+  });
+
   sock.ev.on('messages.upsert', async ({ messages, type }) => {
     if (type !== 'notify') return;
     const msg = messages[0];

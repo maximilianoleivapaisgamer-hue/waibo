@@ -19,6 +19,8 @@ export default function ConversationsPanel({ channel }) {
   const [contactVariables, setContactVariables] = useState([]);
   const [funnelFilter, setFunnelFilter] = useState('');
   const [showArchived, setShowArchived] = useState(false);
+  const [searchText, setSearchText] = useState('');
+  const [tagFilter, setTagFilter] = useState('');
   const [savingFunnel, setSavingFunnel] = useState(false);
 
   const FUNNEL_STAGES = [
@@ -46,6 +48,23 @@ export default function ConversationsPanel({ channel }) {
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   const byChannel = (list) => channel ? list.filter(c => c.channel === channel) : list;
+
+  // Filtro combinado: archivados + embudo + búsqueda + etiqueta.
+  // Con etiqueta o búsqueda activa se incluyen también los archivados
+  // (para encontrar chats archivados con etiquetas útiles).
+  const visibleConversations = conversations.filter(c => {
+    if (!showArchived && c.archived && !tagFilter && !searchText.trim()) return false;
+    if (funnelFilter && c.funnel_stage !== funnelFilter) return false;
+    if (tagFilter && !(c.tags || []).includes(tagFilter)) return false;
+    if (searchText.trim()) {
+      const q = searchText.trim().toLowerCase();
+      const hay = `${c.customer_name || ''} ${c.customer_phone || ''}`.toLowerCase();
+      if (!hay.includes(q)) return false;
+    }
+    return true;
+  });
+
+  const allTags = [...new Set(conversations.flatMap(c => c.tags || []))];
 
   useEffect(() => {
     const refresh = async (isInitial) => {
@@ -186,7 +205,7 @@ export default function ConversationsPanel({ channel }) {
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span>{conversations.filter(c => (showArchived || !c.archived) && (!funnelFilter || c.funnel_stage === funnelFilter)).length} conversaciones</span>
+            <span>{visibleConversations.length} conversaciones</span>
             {conversations.some(c => c.archived) && (
               <button
                 onClick={() => setShowArchived(!showArchived)}
@@ -196,6 +215,24 @@ export default function ConversationsPanel({ channel }) {
                   background: showArchived ? '#F3F4F6' : 'var(--bg)', color: 'var(--text-muted)'
                 }}
               >🗄 {showArchived ? 'Ocultar archivados' : `Archivados (${conversations.filter(c => c.archived).length})`}</button>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+            <input
+              placeholder="🔍 Buscar por número o nombre..."
+              value={searchText}
+              onChange={e => setSearchText(e.target.value)}
+              style={{ flex: 1, fontSize: 12, padding: '6px 10px', borderRadius: 8, border: '1px solid var(--border)', outline: 'none' }}
+            />
+            {allTags.length > 0 && (
+              <select
+                value={tagFilter}
+                onChange={e => setTagFilter(e.target.value)}
+                style={{ fontSize: 12, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', maxWidth: 150, color: tagFilter ? 'inherit' : 'var(--text-muted)' }}
+              >
+                <option value="">🏷 Todas las etiquetas</option>
+                {allTags.map(t => <option key={t} value={t}>{t}</option>)}
+              </select>
             )}
           </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
@@ -224,7 +261,7 @@ export default function ConversationsPanel({ channel }) {
           </p>
         ) : (
           <ul className="conv-list" style={{ padding: '0 16px' }}>
-            {conversations.filter(c => (showArchived || !c.archived) && (!funnelFilter || c.funnel_stage === funnelFilter)).map(conv => (
+            {visibleConversations.map(conv => (
               <li
                 key={conv.id}
                 className="conv-item"
