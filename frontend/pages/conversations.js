@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+﻿import { useEffect, useState, useRef } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
@@ -11,6 +11,7 @@ export default function Conversations() {
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -38,6 +39,10 @@ export default function Conversations() {
   };
   const getTagStyle = (tag) => TAG_COLORS[tag] || { bg: '#F3F4F6', color: '#6B7280' };
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages]);
+
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   useEffect(() => {
@@ -47,7 +52,7 @@ export default function Conversations() {
     const refresh = async (isInitial) => {
       try {
         const convRes = await axios.get(`${API}/api/bot/conversations`, { headers: getHeaders() });
-        setConversations(convRes.data);
+        setConversations([...convRes.data].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
 
         if (selected) {
           const refreshed = convRes.data.find(c => c.id === selected.id);
@@ -487,7 +492,8 @@ export default function Conversations() {
                     </div>
                   </div>
                 ))}
-                {selected.is_typing && (
+                <div ref={messagesEndRef} />
+            {selected.is_typing && (
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     <div style={{
                       padding: '8px 14px', borderRadius: '12px 4px 12px 12px',

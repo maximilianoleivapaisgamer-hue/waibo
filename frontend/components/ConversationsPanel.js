@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import ChannelLogo from './ChannelLogo';
 
@@ -31,6 +31,7 @@ export default function ConversationsPanel({ channel }) {
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
   const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
   const [loading, setLoading] = useState(true);
   const [togglingStatus, setTogglingStatus] = useState(false);
   const [newTagInput, setNewTagInput] = useState('');
@@ -66,6 +67,10 @@ export default function ConversationsPanel({ channel }) {
   };
   const getTagStyle = (tag) => TAG_COLORS[tag] || { bg: '#F3F4F6', color: '#6B7280' };
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: 'end' });
+  }, [messages]);
+
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
   const byChannel = (list) => channel ? list.filter(c => c.channel === channel) : list;
@@ -92,7 +97,7 @@ export default function ConversationsPanel({ channel }) {
       try {
         const convRes = await axios.get(`${API}/api/bot/conversations`, { headers: getHeaders() });
         const list = byChannel(convRes.data);
-        setConversations(list);
+        setConversations([...list].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
 
         // Al entrar, abrir directamente la primera conversación (no archivada)
         if (isInitial && !selected && list.length > 0) {
@@ -489,6 +494,7 @@ export default function ConversationsPanel({ channel }) {
                 </div>
               </div>
             ))}
+            <div ref={messagesEndRef} />
             {selected.is_typing && (
               <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                 <div style={{
