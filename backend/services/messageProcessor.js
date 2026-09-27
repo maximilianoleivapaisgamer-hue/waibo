@@ -1,5 +1,5 @@
 const pool = require('../db');
-const { getAIResponse } = require('./ai');
+const { getAIResponse, toWhatsAppFormat } = require('./ai');
 const { handleBookingFlow } = require('./agenda');
 const { handlePurchaseConfirmation, rememberShownProduct } = require('./checkout');
 const { processMessageWithOrderDetection, saveConfirmedOrder } = require('./orders');
@@ -181,6 +181,8 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       await createAlert(clientId, conversation.id, 'ai_failed', `El bot no pudo responder a ${customerName}: "${customerMessage.substring(0, 100)}"`);
       aiResponse = 'Disculpá, estoy teniendo un problema técnico en este momento. Ya le avisamos al equipo 🙏';
     }
+
+    aiResponse = toWhatsAppFormat(aiResponse);
 
     let actions = [];
     if (extras.onActions) {

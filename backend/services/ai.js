@@ -58,12 +58,15 @@ const DEFAULT_TONE_INSTRUCTIONS = {
 async function getAIResponse(messages, systemPrompt, businessInfo, knowledgeBase = '', botName = 'Asistente', botTone = 'amigable', aiModel = null, botToneCustom = null) {
   const tone = botToneCustom || DEFAULT_TONE_INSTRUCTIONS[botTone] || DEFAULT_TONE_INSTRUCTIONS['amigable'];
 
-  const fullSystem = `Sos ${botName}, el asistente virtual del negocio.
+  const fullSystem = `Tu nombre es ${botName}. Atendés los mensajes de los clientes del negocio. Si te presentás, decí tu nombre tal cual (ej: "Soy ${botName}").
 
 PERSONALIDAD Y TONO:
 ${tone}
 
-INFORMACIÓN DEL NEGOCIO:
+${systemPrompt ? `INSTRUCCIONES DEL NEGOCIO (seguilas siempre):
+${systemPrompt}
+
+` : ''}INFORMACIÓN DEL NEGOCIO:
 ${businessInfo}
 
 ${knowledgeBase ? `BASE DE CONOCIMIENTOS (usá esta info para responder):
@@ -73,19 +76,26 @@ ${knowledgeBase}
 - Respondé siempre en el mismo idioma en que te escriben
 - Sé conciso pero completo (máximo 3 párrafos)
 - Usá emojis estratégicamente para hacer el texto más legible
-- Usá *negritas* para resaltar info importante (precio, horarios, etc)
+- Resaltá la info importante (precio, horarios, etc) con negrita: usá *un solo asterisco* para las negritas (formato de WhatsApp), nunca **doble**
 - Si te preguntan algo que no sabés, decilo claramente y ofrecé ayuda alternativa
 - No inventes información sobre el negocio
 - Si el cliente parece enojado o tiene un problema grave, empatizá y ofrecé derivarlo a una persona real`;
 
   const modelToUse = aiModel || DEFAULT_MODEL;
 
-  return await callClaudeAPI({
+  const text = await callClaudeAPI({
     model: modelToUse,
     max_tokens: 500,
     system: fullSystem,
     messages: messages
   });
+  return toWhatsAppFormat(text);
 }
 
-module.exports = { getAIResponse, callClaudeAPI };
+// WhatsApp marca la negrita con un asterisco; el modelo a veces escribe **doble** (markdown)
+// y el cliente vería los asteriscos.
+function toWhatsAppFormat(text) {
+  return String(text || '').replace(/\*\*([^*\n]+?)\*\*/g, '*$1*');
+}
+
+module.exports = { getAIResponse, callClaudeAPI, toWhatsAppFormat };

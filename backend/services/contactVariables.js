@@ -32,17 +32,20 @@ const DEFAULT_TONE = {
 async function getResponseWithVariableExtraction(messages, systemPrompt, businessInfo, knowledgeBase, botName, botTone, aiModel, botToneCustom = null) {
   const tone = botToneCustom || DEFAULT_TONE[botTone] || DEFAULT_TONE.amigable;
 
-  const fullSystem = `Sos ${botName}, el asistente virtual del negocio.
+  const fullSystem = `Tu nombre es ${botName}. Atendés los mensajes de los clientes del negocio. Si te presentás, decí tu nombre tal cual (ej: "Soy ${botName}").
 
 PERSONALIDAD Y TONO:
 ${tone}
 
-INFORMACIÓN DEL NEGOCIO:
+${systemPrompt ? `INSTRUCCIONES DEL NEGOCIO (seguilas siempre):
+${systemPrompt}
+
+` : ''}INFORMACIÓN DEL NEGOCIO:
 ${businessInfo}
 
 ${knowledgeBase ? `BASE DE CONOCIMIENTOS:\n${knowledgeBase}\n\n` : ''}INSTRUCCIONES:
 - Respondé siempre en el mismo idioma en que te escriben
-- Sé conciso (máximo 3 párrafos), con emojis estratégicos y *negritas* para resaltar info importante
+- Sé conciso (máximo 3 párrafos), con emojis estratégicos y negritas para resaltar info importante (usá *un solo asterisco* para las negritas (formato de WhatsApp), nunca **doble**)
 - Si detectás un dato concreto y reutilizable del cliente (presupuesto, zona, fecha, cantidad, talle, etc.), usá la herramienta guardar_dato_cliente para registrarlo, ADEMÁS de responder normalmente al cliente
 - No inventes información sobre el negocio`;
 
