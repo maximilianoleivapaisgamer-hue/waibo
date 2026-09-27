@@ -44,6 +44,7 @@ export default function ConversationsPanel({ channel }) {
   const [showArchived, setShowArchived] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  const [unreadOnly, setUnreadOnly] = useState(false);
   const [savingFunnel, setSavingFunnel] = useState(false);
 
   const FUNNEL_STAGES = [
@@ -81,6 +82,7 @@ export default function ConversationsPanel({ channel }) {
   // (para encontrar chats archivados con etiquetas útiles).
   const visibleConversations = conversations.filter(c => {
     if (!showArchived && c.archived && !tagFilter && !searchText.trim()) return false;
+    if (unreadOnly && !c.unread) return false;
     if (funnelFilter && c.funnel_stage !== funnelFilter) return false;
     if (tagFilter && !(c.tags || []).includes(tagFilter)) return false;
     if (searchText.trim()) {
@@ -127,6 +129,7 @@ export default function ConversationsPanel({ channel }) {
 
   const loadMessages = async (conv) => {
     setSelected(conv);
+    if (conv.unread) setConversations(prev => prev.map(c => c.id === conv.id ? { ...c, unread: false } : c));
     const res = await axios.get(`${API}/api/bot/conversations/${conv.id}/messages`, { headers: getHeaders() });
     setMessages(res.data);
     try {
@@ -233,7 +236,19 @@ export default function ConversationsPanel({ channel }) {
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
           <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 8, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8 }}>
-            <span>{visibleConversations.length} conversaciones</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              {visibleConversations.length} conversaciones
+              {conversations.some(c => c.unread) && (
+                <button
+                  onClick={() => setUnreadOnly(!unreadOnly)}
+                  style={{
+                    fontSize: 11, padding: '3px 10px', borderRadius: 20, cursor: 'pointer', fontWeight: 600,
+                    border: unreadOnly ? '2px solid #16A34A' : '1px solid var(--border)',
+                    background: unreadOnly ? '#DCFCE7' : 'var(--bg)', color: '#16A34A'
+                  }}
+                >● Sin leer ({conversations.filter(c => c.unread).length})</button>
+              )}
+            </span>
             {conversations.some(c => c.archived) && (
               <button
                 onClick={() => setShowArchived(!showArchived)}
@@ -305,7 +320,7 @@ export default function ConversationsPanel({ channel }) {
                   {(conv.customer_name || conv.customer_phone)[0].toUpperCase()}
                 </div>
                 <div className="conv-info">
-                  <div className="conv-name" style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                  <div className="conv-name" style={{ display: 'flex', alignItems: 'center', gap: 5, fontWeight: conv.unread ? 800 : undefined }}>
                     <ChannelLogo channel={conv.channel} size={13} style={{ borderRadius: 3 }} />
                     {conv.customer_name || conv.customer_phone}
                     {conv.archived && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#F3F4F6', color: '#6B7280', fontWeight: 500 }}>🗄 archivado</span>}
@@ -324,8 +339,8 @@ export default function ConversationsPanel({ channel }) {
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
                   {conv.last_message_at && (
-                    <span title={lastContactTitle(conv.last_message_at)} style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                      {lastContactLabel(conv.last_message_at)}
+                    <span title={lastContactTitle(conv.last_message_at)} style={{ fontSize: 11, whiteSpace: 'nowrap', color: conv.unread ? '#16A34A' : 'var(--text-muted)', fontWeight: conv.unread ? 700 : 400 }}>
+                      {conv.unread && '● '}{lastContactLabel(conv.last_message_at)}
                     </span>
                   )}
                   <span className={`conv-badge ${conv.status === 'bot' ? 'badge-bot' : 'badge-human'}`}>

@@ -504,6 +504,7 @@ async function initDB() {
       -- NULL = lo escribió el bot/sistema; 'import' = historial importado,
       -- 'manual' = enviado a mano desde el panel, 'phone' = enviado desde el celular.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS origin VARCHAR(20);
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS last_read_at TIMESTAMP;
 
       CREATE TABLE IF NOT EXISTS bot_resources (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

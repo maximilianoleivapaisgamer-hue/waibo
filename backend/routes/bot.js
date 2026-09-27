@@ -117,9 +117,17 @@ router.get('/stats', authMiddleware, async (req, res) => {
       [req.client.id]
     );
 
+    // Activos = con algún mensaje en las últimas 24 h.
+    // Sin leer = el último mensaje es del cliente y no se abrió el chat en Waibo después.
     const activeConversations = await pool.query(
-      `SELECT COUNT(*) FROM conversations
-       WHERE client_id = $1 AND source IS DISTINCT FROM 'qr' AND status = 'bot'`,
+      `SELECT
+         COUNT(*) FILTER (WHERE lm.timestamp >= NOW() - INTERVAL '24 hours') AS activos,
+         COUNT(*) FILTER (WHERE lm.role = 'user' AND (c.last_read_at IS NULL OR lm.timestamp > c.last_read_at)) AS sin_leer
+       FROM conversations c
+       LEFT JOIN LATERAL (
+         SELECT timestamp, role FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1
+       ) lm ON true
+       WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'`,
       [req.client.id]
     );
 
@@ -132,7 +140,8 @@ router.get('/stats', authMiddleware, async (req, res) => {
       total_conversations: parseInt(totalConversations.rows[0].count),
       today_conversations: parseInt(todayConversations.rows[0].count),
       total_messages: parseInt(totalMessages.rows[0].count),
-      active_conversations: parseInt(activeConversations.rows[0].count),
+      active_conversations: parseInt(activeConversations.rows[0].activos),
+      unread_conversations: parseInt(activeConversations.rows[0].sin_leer),
       active_alerts: parseInt(activeAlerts.rows[0].count)
     });
   } catch (err) {
@@ -144,6 +153,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT c.*, lm.content AS last_message, lm.timestamp AS last_message_at, lm.role AS last_message_role,
+        (lm.role = 'user' AND (c.last_read_at IS NULL OR lm.timestamp > c.last_read_at)) AS unread,
         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
        FROM conversations c
        LEFT JOIN LATERAL (
@@ -174,6 +184,8 @@ router.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
       'SELECT * FROM messages WHERE conversation_id = $1 ORDER BY timestamp ASC',
       [req.params.id]
     );
+    // Abrir el chat en el panel lo marca como leído
+    await pool.query('UPDATE conversations SET last_read_at = NOW() WHERE id = $1', [req.params.id]);
     res.json(messages.rows);
   } catch (err) {
     res.status(500).json({ error: 'Error al obtener mensajes' });

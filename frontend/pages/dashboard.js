@@ -216,12 +216,19 @@ export default function Dashboard() {
             <div className="stat-value">{stats?.total_messages ?? 0}</div>
             <div className="stat-sub">respondidos por IA</div>
           </div>
-          <div className="stat-card">
+          <div className="stat-card" onClick={() => router.push('/conversations')} style={{ cursor: 'pointer' }}>
             <div className="stat-label">Chats activos</div>
             <div className="stat-value" style={{ color: '#F59E0B' }}>
               {stats?.active_conversations ?? 0}
             </div>
-            <div className="stat-sub">en curso ahora</div>
+            <div className="stat-sub">
+              con mensajes en las últimas 24 h
+              {stats?.unread_conversations > 0 && (
+                <strong style={{ display: 'block', color: '#16A34A', marginTop: 2 }}>
+                  ● {stats.unread_conversations} sin leer
+                </strong>
+              )}
+            </div>
           </div>
         </div>
 
