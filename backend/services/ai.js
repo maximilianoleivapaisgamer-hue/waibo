@@ -14,10 +14,14 @@ function isRetryableError(err) {
   return status === 429 || status === 500 || status === 502 || status === 503 || status === 529;
 }
 
-async function callClaudeAPI(payload) {
+// options.timeout: las respuestas del bot tienen que ser rápidas (15 s), pero tareas
+// largas como analizar el historial de chats necesitan minutos.
+async function callClaudeAPI(payload, options = {}) {
+  const timeout = options.timeout || 15000;
+  const maxRetries = options.maxRetries ?? MAX_RETRIES;
   let lastError;
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
     try {
       const response = await axios.post(
         'https://api.anthropic.com/v1/messages',
@@ -28,14 +32,14 @@ async function callClaudeAPI(payload) {
             'anthropic-version': '2023-06-01',
             'content-type': 'application/json'
           },
-          timeout: 15000
+          timeout
         }
       );
       return response.data.content[0].text;
     } catch (err) {
       lastError = err;
-      if (!isRetryableError(err) || attempt === MAX_RETRIES) break;
-      console.warn(`⚠️ Claude API falló (intento ${attempt + 1}/${MAX_RETRIES + 1}), reintentando...`, err.response?.status || err.message);
+      if (!isRetryableError(err) || attempt === maxRetries) break;
+      console.warn(`⚠️ Claude API falló (intento ${attempt + 1}/${maxRetries + 1}), reintentando...`, err.response?.status || err.message);
       await sleep(RETRY_DELAY_MS * (attempt + 1));
     }
   }

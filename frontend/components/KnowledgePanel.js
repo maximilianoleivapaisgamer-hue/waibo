@@ -74,7 +74,7 @@ export default function KnowledgePanel() {
 
       const res = await axios.post(`${API}/api/bot/learn-from-chats`,
         { chats: combined },
-        { headers: getHeaders(), timeout: 120000 });
+        { headers: getHeaders(), timeout: 300000 });
 
       const parts = [];
       if (res.data.style_saved) parts.push('el bot aprendió tu estilo de conversación');
@@ -95,7 +95,7 @@ export default function KnowledgePanel() {
     try {
       const res = await axios.post(`${API}/api/bot/learn-from-chats`,
         { from_history: true },
-        { headers: getHeaders(), timeout: 120000 });
+        { headers: getHeaders(), timeout: 300000 });
       const parts = [];
       if (res.data.style_saved) parts.push('el bot aprendió tu estilo de conversación');
       if (res.data.knowledge_saved > 0) parts.push(`se agregaron ${res.data.knowledge_saved} entradas a la base de conocimiento`);

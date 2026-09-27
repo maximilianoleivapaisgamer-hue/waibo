@@ -651,12 +651,22 @@ router.post('/learn-from-chats', authMiddleware, async (req, res) => {
 
     if (from_history) {
       // Analizar las conversaciones ya guardadas en Waibo (ej: importadas por QR)
+      // Los chats más recientes donde el negocio respondió: de ahí sale cómo vende.
+      // Los chats donde nadie contestó no enseñan nada del estilo.
       const msgsRes = await pool.query(
-        `SELECT c.customer_name, c.customer_phone, m.role, m.content, m.timestamp
-         FROM messages m JOIN conversations c ON c.id = m.conversation_id
-         WHERE c.client_id = $1
-         ORDER BY c.id, m.timestamp
-         LIMIT 5000`,
+        `WITH chats AS (
+           SELECT c.id, c.customer_name, c.customer_phone, MAX(m.timestamp) AS ultimo
+           FROM conversations c JOIN messages m ON m.conversation_id = c.id
+           WHERE c.client_id = $1
+           GROUP BY c.id
+           HAVING COUNT(*) FILTER (WHERE m.role = 'assistant') > 0
+              AND COUNT(*) FILTER (WHERE m.role = 'user') > 0
+           ORDER BY ultimo DESC
+           LIMIT 250
+         )
+         SELECT ch.customer_name, ch.customer_phone, m.role, m.content, m.timestamp
+         FROM chats ch JOIN messages m ON m.conversation_id = ch.id
+         ORDER BY ch.ultimo ASC, ch.id, m.timestamp`,
         [req.client.id]
       );
       if (msgsRes.rows.length < 10) {
@@ -689,7 +699,7 @@ router.post('/learn-from-chats', authMiddleware, async (req, res) => {
       max_tokens: 4000,
       system: LEARN_SYSTEM,
       messages: [{ role: 'user', content: `Chats exportados:\n\n${text}` }]
-    });
+    }, { timeout: 240000, maxRetries: 1 });
 
     let parsed;
     try {
