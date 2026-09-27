@@ -10,8 +10,12 @@ const { isWithinBusinessHours } = require('./businessHours');
 const { createAlert } = require('./alerts');
 const { normalizePhone } = require('./phone');
 const { searchProducts, getTNToken } = require('./tiendanube');
+const { extractActions } = require('./whatsappActions');
 
-async function processIncomingMessage(clientId, customerPhoneRaw, customerName, rawMessage, sendFn) {
+// extras (opcional, lo usa el canal WhatsApp por QR):
+//   buildInstructions(conversation) -> texto extra para la IA (recursos, etiquetas, archivar)
+//   onActions(actions, conversation) -> ejecuta lo que la IA pidió con [[...]]
+async function processIncomingMessage(clientId, customerPhoneRaw, customerName, rawMessage, sendFn, extras = {}) {
   const customerPhone = normalizePhone(customerPhoneRaw);
 
   const clientResult = await pool.query('SELECT * FROM clients WHERE id = $1 AND active = true', [clientId]);
@@ -136,6 +140,10 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       }
     }
 
+    if (extras.buildInstructions) {
+      try { productContext += await extras.buildInstructions(conversation); } catch (e) { console.error('[acciones] instrucciones:', e.message); }
+    }
+
     let aiResponse;
     try {
       if (config.orders_enabled) {
@@ -174,9 +182,22 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       aiResponse = 'Disculpá, estoy teniendo un problema técnico en este momento. Ya le avisamos al equipo 🙏';
     }
 
-    await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', aiResponse]);
+    let actions = [];
+    if (extras.onActions) {
+      const parsed = extractActions(aiResponse);
+      aiResponse = parsed.clean;
+      actions = parsed.actions;
+    }
+
+    if (aiResponse) {
+      await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', aiResponse]);
+      await sendFn(customerPhone, aiResponse);
+    }
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
-    await sendFn(customerPhone, aiResponse);
+
+    if (actions.length) {
+      try { await extras.onActions(actions, conversation); } catch (e) { console.error('[acciones] ejecutando:', e.message); }
+    }
 
     // Detección de etapa de embudo (fire-and-forget, no bloquea la respuesta)
     const currentStage = conversation.funnel_stage || 'nuevo';

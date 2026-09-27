@@ -66,6 +66,7 @@ async function initDB() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS waba_id VARCHAR(255);
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS archived BOOLEAN DEFAULT false;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS source VARCHAR(20);
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sent_resources TEXT[] DEFAULT '{}';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS channel VARCHAR(50) DEFAULT 'whatsapp';
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS channel_user_id VARCHAR(255);
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}';
@@ -496,6 +497,24 @@ async function initDB() {
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_cbu VARCHAR(255);
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_mp_link TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS payment_holder VARCHAR(255);
+
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS label_instructions TEXT;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS whatsapp_actions_enabled BOOLEAN DEFAULT true;
+
+      CREATE TABLE IF NOT EXISTS bot_resources (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID REFERENCES clients(id) ON DELETE CASCADE,
+        name VARCHAR(120) NOT NULL,
+        description TEXT,
+        kind VARCHAR(20) NOT NULL,
+        mimetype VARCHAR(120),
+        filename VARCHAR(255),
+        data BYTEA,
+        url TEXT,
+        size_bytes INTEGER,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_bot_resources_client ON bot_resources(client_id);
     `);
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {

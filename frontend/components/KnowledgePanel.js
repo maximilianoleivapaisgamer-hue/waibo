@@ -12,8 +12,6 @@ export default function KnowledgePanel() {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
-  const [qrStatus, setQrStatus] = useState(null);
-  const [qrPolling, setQrPolling] = useState(null);
 
   const getHeaders = () => ({
     Authorization: `Bearer ${localStorage.getItem('whabot_token')}`
@@ -61,41 +59,6 @@ export default function KnowledgePanel() {
     } finally {
       setSaving(false);
       setTimeout(() => setSuccess(''), 5000);
-    }
-  };
-
-  const startQR = async () => {
-    setError('');
-    try {
-      await axios.post(`${API}/api/whatsapp-qr/connect`, {}, { headers: getHeaders() });
-      setQrStatus({ status: 'starting', qr: null });
-      const interval = setInterval(async () => {
-        try {
-          const res = await axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() });
-          setQrStatus(res.data);
-          if (res.data.status === 'connected') {
-            clearInterval(interval);
-            setQrPolling(null);
-            setSuccess('✅ WhatsApp vinculado — el historial se está importando, esperá unos minutos y tocá "Analizar".');
-          }
-        } catch {}
-      }, 3000);
-      setQrPolling(interval);
-      setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 120000);
-    } catch {
-      setError('No se pudo iniciar la vinculación. Avisale al soporte de Waibo.');
-    }
-  };
-
-  const disconnectQR = async () => {
-    if (!confirm('¿Desvincular y limpiar? Se eliminan de Waibo todas las conversaciones importadas (lo que el bot aprendió se conserva). Acordate de cerrar la sesión también en tu celular: WhatsApp → Dispositivos vinculados.')) return;
-    if (qrPolling) { clearInterval(qrPolling); setQrPolling(null); }
-    try {
-      const res = await axios.post(`${API}/api/whatsapp-qr/disconnect`, {}, { headers: getHeaders() });
-      setQrStatus(null);
-      setSuccess(`Desvinculado. Se eliminaron ${res.data.deleted_conversations ?? 0} conversaciones importadas.`);
-    } catch {
-      setError('Error al desvincular. Intentá de nuevo.');
     }
   };
 
@@ -329,34 +292,13 @@ export default function KnowledgePanel() {
 
               {/* Paso 1: importar historial por QR */}
               <div style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 14, marginBottom: 14 }}>
-                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>1️⃣ Importá tu historial de WhatsApp (recomendado)</div>
+                <div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>1️⃣ Juntá conversaciones</div>
                 <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 10px' }}>
-                  Vinculá tu WhatsApp escaneando un QR y Waibo importa automáticamente ~90 días de conversaciones, con etiquetas y archivados. El bot <strong>no responde</strong> por este canal — es solo para importar. Cuando desvinculás, las conversaciones importadas se eliminan (lo aprendido se conserva).
+                  El análisis usa las conversaciones que ya están en Waibo. Conectá tu WhatsApp (por QR o por Meta) en la página <strong>WhatsApp</strong>: cada charla que entre se guarda y sirve para entrenar al bot. También podés subir chats exportados a mano (abajo).
                 </p>
-                {qrStatus?.status === 'connected' ? (
-                  <div>
-                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 13 }}>
-                      ✅ <strong>WhatsApp vinculado</strong> — el historial se importa solo (tarda unos minutos).
-                    </div>
-                    <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto', fontSize: 13 }}>
-                      🔌 Desvincular y limpiar
-                    </button>
-                  </div>
-                ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
-                  <div style={{ textAlign: 'center', padding: '6px 0' }}>
-                    <p style={{ fontSize: 13, marginBottom: 10 }}>
-                      En tu celular: <strong>WhatsApp → Configuración → Dispositivos vinculados → Vincular dispositivo</strong> y escaneá:
-                    </p>
-                    <img src={qrStatus.qr} alt="QR WhatsApp" style={{ width: 200, height: 200, borderRadius: 12, border: '2px solid var(--border)' }} />
-                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>El código expira en 60 segundos — si caduca, tocá el botón de nuevo.</p>
-                  </div>
-                ) : qrStatus?.status === 'starting' || qrStatus?.status === 'connecting' ? (
-                  <p style={{ fontSize: 13, color: 'var(--text-muted)' }}>🔄 Generando código QR...</p>
-                ) : (
-                  <button onClick={startQR} className="btn btn-primary" style={{ width: 'auto', padding: '10px 20px' }}>
-                    📲 Vincular WhatsApp por QR
-                  </button>
-                )}
+                <a href="/channels" className="btn btn-secondary" style={{ width: 'auto', padding: '8px 16px', fontSize: 13, display: 'inline-block', textDecoration: 'none' }}>
+                  📱 Ir a conectar WhatsApp
+                </a>
               </div>
 
               {/* Paso 2: analizar */}

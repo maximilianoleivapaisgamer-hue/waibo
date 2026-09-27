@@ -78,7 +78,12 @@ export default function Channels() {
     axios.get(`${API}/api/clients/me`, { headers: getHeaders() })
       .then(res => {
         setProfile(res.data);
-        if (res.data.whatsapp_mode === 'qr') setWhatsappExpanded('qr');
+        if (res.data.whatsapp_mode === 'qr') {
+          setWhatsappExpanded('qr');
+          axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() })
+            .then(s => setQrStatus(s.data))
+            .catch(() => {});
+        }
         else if (res.data.whatsapp_provider === 'cloud_api') setWhatsappExpanded('cloud_api');
       })
       .catch(err => { if (err.response?.status === 401) router.push('/login'); });
@@ -225,12 +230,12 @@ export default function Channels() {
         } catch {}
       }, 3000);
       setQrPolling(interval);
-      setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 120000);
+      setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 300000);
     } catch { showError('No se pudo iniciar la conexión QR. Verificá que el servicio esté activo.'); }
   };
 
   const disconnectQR = async () => {
-    if (!confirm('¿Desconectar WhatsApp QR? Se van a eliminar de Waibo todas las conversaciones importadas por QR (lo que el bot ya aprendió en la Base de conocimiento se conserva).')) return;
+    if (!confirm('¿Desconectar WhatsApp por QR? El bot deja de responder en este número. Tus conversaciones en Waibo se conservan.')) return;
     if (qrPolling) { clearInterval(qrPolling); setQrPolling(null); }
     await axios.post(`${API}/api/whatsapp-qr/disconnect`, {}, { headers: getHeaders() });
     setQrStatus(null);
@@ -296,7 +301,7 @@ export default function Channels() {
               background: isConnected ? '#EDE9FE' : '#FEF3C7',
               color: isConnected ? '#5B21B6' : '#92400E'
             }}>
-              {isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
+              {isQRConnected ? '✅ QR activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
             </span>
           </div>
 
@@ -521,6 +526,81 @@ export default function Channels() {
                       </form>
                     )}
                   </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Opción 2: WhatsApp por QR (con etiquetas y archivado) ── */}
+          <div style={{
+            border: `2px solid ${whatsappExpanded === 'qr' ? '#F59E0B' : 'var(--border)'}`,
+            borderRadius: 12, overflow: 'hidden', marginTop: 12
+          }}>
+            <button
+              onClick={() => setWhatsappExpanded(whatsappExpanded === 'qr' ? null : 'qr')}
+              style={{
+                width: '100%', display: 'flex', alignItems: 'center', gap: 12, padding: '14px 16px',
+                background: whatsappExpanded === 'qr' ? '#FFFBEB' : 'var(--bg)',
+                border: 'none', cursor: 'pointer', textAlign: 'left'
+              }}
+            >
+              <span style={{ fontSize: 22 }}>📲</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 700, fontSize: 14, display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  WhatsApp por QR — con etiquetas y archivado
+                  <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#FEF3C7', color: '#92400E', fontWeight: 600 }}>
+                    ⚠️ No oficial
+                  </span>
+                  {isQRConnected && qrStatus?.status === 'connected' && (
+                    <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
+                      Activo
+                    </span>
+                  )}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Seguís usando tu WhatsApp Business del celular con todos tus chats · El bot responde, manda fotos y videos, etiqueta y archiva
+                </div>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 18 }}>{whatsappExpanded === 'qr' ? '▲' : '▼'}</span>
+            </button>
+
+            {whatsappExpanded === 'qr' && (
+              <div style={{ padding: '0 16px 20px' }}>
+                <div style={{ background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, padding: 12, margin: '14px 0', fontSize: 13, color: '#92400E' }}>
+                  ⚠️ <strong>Canal no oficial.</strong> Funciona como WhatsApp Web: WhatsApp puede restringir el número si detecta uso automatizado agresivo. El bot responde con pausas humanas para cuidarlo. Las imágenes, videos y reglas de etiquetas se configuran en <strong>Configurar bot → Recursos y etiquetas</strong>.
+                </div>
+                {isQRConnected && qrStatus?.status === 'connected' ? (
+                  <div>
+                    <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
+                      ✅ <strong>WhatsApp conectado por QR</strong>{qrStatus.phone ? ` (+${qrStatus.phone})` : ''} — el bot está respondiendo en este número.
+                    </div>
+                    <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
+                      🔌 Desconectar
+                    </button>
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+                      Para desvincular por completo, cerrá también la sesión en tu celular: <strong>WhatsApp → Dispositivos vinculados</strong>.
+                    </p>
+                  </div>
+                ) : qrStatus?.status === 'qr_ready' && qrStatus?.qr ? (
+                  <div style={{ textAlign: 'center', padding: '10px 0' }}>
+                    <p style={{ fontSize: 13, marginBottom: 12 }}>
+                      En tu celular: <strong>WhatsApp → Configuración → Dispositivos vinculados → Vincular dispositivo</strong> y escaneá este código:
+                    </p>
+                    <img src={qrStatus.qr} alt="QR WhatsApp" style={{ width: 220, height: 220, borderRadius: 12, border: '2px solid var(--border)' }} />
+                    <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 10 }}>El código se renueva solo cada unos segundos.</p>
+                  </div>
+                ) : qrStatus?.status === 'starting' || qrStatus?.status === 'connecting' ? (
+                  <div style={{ textAlign: 'center', padding: 20, color: 'var(--text-muted)', fontSize: 13 }}>
+                    🔄 {qrStatus.status === 'connecting' ? 'Vinculando, cargando tus chats…' : 'Generando código QR…'}
+                  </div>
+                ) : (
+                  <button
+                    onClick={startQR}
+                    className="btn btn-primary"
+                    style={{ width: 'auto', padding: '10px 20px', background: '#F59E0B', borderColor: '#F59E0B' }}
+                  >
+                    📲 Conectar por QR
+                  </button>
                 )}
               </div>
             )}

@@ -54,6 +54,7 @@ const webchatRoutes = require('./routes/webchat');
 const reportsRoutes = require('./routes/reports');
 const campaignsRoutes = require('./routes/campaigns');
 const whatsappRoutes = require('./routes/whatsapp');
+const resourcesRoutes = require('./routes/resources');
 
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/clients', apiLimiter, clientRoutes);
@@ -77,6 +78,7 @@ app.use('/api/webchat', webchatRoutes);
 app.use('/api/reports', apiLimiter, reportsRoutes);
 app.use('/api/campaigns', apiLimiter, campaignsRoutes);
 app.use('/api/whatsapp', apiLimiter, whatsappRoutes);
+app.use('/api/resources', apiLimiter, resourcesRoutes);
 
 app.get('/', (req, res) => {
   res.json({ status: 'WhaBot API running', version: '1.0.2' });

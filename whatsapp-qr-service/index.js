@@ -1,359 +1,389 @@
+/*
+ * Servicio de WhatsApp por QR para Waibo — whatsapp-web.js
+ *
+ * Corre en la PC del admin (WhatsApp bloquea IPs de datacenter) y se expone con un
+ * túnel de Cloudflare. Railway lo llama para mandar mensajes/multimedia, etiquetar y
+ * archivar; este servicio le avisa a Railway cada mensaje entrante.
+ *
+ * Basado en el bot del Captador de Clientes (misma versión de whatsapp-web.js y los
+ * mismos rodeos para funciones rotas de la librería). El servicio anterior con Baileys
+ * quedó en index.baileys.js.
+ */
 const express = require('express');
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason, fetchLatestBaileysVersion } = require('@whiskeysockets/baileys');
-const pino = require('pino');
-const QRCode = require('qrcode');
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
 
 const app = express();
-app.use(express.json());
-
-// Baileys a veces lanza rechazos no manejados — logueamos en vez de morir
-process.on('unhandledRejection', (err) => console.error('⚠️ unhandledRejection:', err?.message || err));
-process.on('uncaughtException', (err) => console.error('⚠️ uncaughtException:', err?.message || err));
+app.use(express.json({ limit: '60mb' }));
 
 const PORT = process.env.PORT || 3002;
 const RAILWAY_BACKEND = process.env.RAILWAY_BACKEND_URL || 'https://whabot-backend-production.up.railway.app';
 const SERVICE_SECRET = process.env.SERVICE_SECRET || 'whabot_qr_secret_2024';
+const AUTH_DIR = path.join(__dirname, 'sessions-wweb');
+const CHATMAP_FILE = path.join(__dirname, 'chatmap.json');
+const LIDMAP_FILE = path.join(__dirname, 'lidmap.json');
 
-// Sessions en memoria: clientId -> { sock, qr, status, phone }
-const sessions = {};
+// Chrome instalado: el Chromium que trae puppeteer no puede mandar videos (sin H.264).
+const CHROME_DEFAULT = 'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe';
+const CHROME_PATH = process.env.CHROME_PATH || (fs.existsSync(CHROME_DEFAULT) ? CHROME_DEFAULT : undefined);
 
-function getSessionDir(clientId) {
-  return path.join(__dirname, 'sessions', clientId);
+process.on('unhandledRejection', (err) => console.error('⚠️ unhandledRejection:', err?.message || err));
+process.on('uncaughtException', (err) => console.error('⚠️ uncaughtException:', err?.message || err));
+
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const soloDigitos = (s) => String(s || '').replace(/\D/g, '');
+
+function leerJson(file) {
+  try { return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {}; } catch (_) { return {}; }
+}
+function guardarLuego(file, getData) {
+  let t = null;
+  return () => { clearTimeout(t); t = setTimeout(() => { try { fs.writeFileSync(file, JSON.stringify(getData())); } catch (_) {} }, 1500); };
 }
 
-async function createSession(clientId) {
-  const sessionDir = getSessionDir(clientId);
-  if (!fs.existsSync(sessionDir)) fs.mkdirSync(sessionDir, { recursive: true });
+// clientId -> { teléfono -> chatId }. Railway manda "to" como teléfono; acá recordamos
+// el chatId exacto (a veces @lid) con el que ese cliente nos escribió, que es el único
+// que funciona seguro para responder, etiquetar y archivar.
+const chatmap = leerJson(CHATMAP_FILE);
+const guardarChatmap = guardarLuego(CHATMAP_FILE, () => chatmap);
+const lidmap = leerJson(LIDMAP_FILE); // lid (dígitos) -> teléfono (dígitos)
+const guardarLidmap = guardarLuego(LIDMAP_FILE, () => lidmap);
 
-  const { state, saveCreds } = await useMultiFileAuthState(sessionDir);
-  const { version } = await fetchLatestBaileysVersion();
+const sessions = {}; // clientId -> { client, status, qr, phone, labelsCache }
 
-  const sock = makeWASocket({
-    version,
-    auth: state,
-    logger: pino({ level: 'silent' }),
-    printQRInTerminal: false,
-    // Identidad "Desktop" + syncFullHistory: WhatsApp solo manda el historial
-    // completo a clientes de escritorio con este flag activado.
-    browser: ['WhaBot', 'Desktop', '1.0.0'],
-    syncFullHistory: true,
+/* Teléfono real de un remitente. Si viene @lid (id interno de WhatsApp, no es el
+   teléfono) lo resolvemos contra WhatsApp y lo cacheamos. */
+async function telefonoDe(client, addr) {
+  const s = String(addr || '');
+  if (!s) return '';
+  if (!s.includes('@lid')) return soloDigitos(s);
+  const lid = soloDigitos(s);
+  if (lidmap[lid]) return lidmap[lid];
+  try {
+    const [par] = await client.getContactLidAndPhone([s]);
+    const tel = soloDigitos(par && par.pn);
+    if (tel && tel !== lid) { lidmap[lid] = tel; guardarLidmap(); return tel; }
+  } catch (_) {}
+  try {
+    const c = await client.getContactById(s);
+    const tel = soloDigitos(c && (c.number || (c.id && c.id.user)));
+    if (tel && tel !== lid) { lidmap[lid] = tel; guardarLidmap(); return tel; }
+  } catch (_) {}
+  return '';
+}
+
+function chatIdPara(clientId, to) {
+  const s = String(to || '');
+  if (s.includes('@')) return s;
+  const known = chatmap[clientId] && chatmap[clientId][soloDigitos(s)];
+  return known || soloDigitos(s) + '@c.us';
+}
+
+async function etiquetasDe(rec) {
+  const ahora = Date.now();
+  if (rec.labelsCache && ahora - rec.labelsCache.at < 5 * 60 * 1000) return rec.labelsCache.list;
+  try {
+    const list = (await rec.client.getLabels()).map((l) => ({ id: String(l.id), name: l.name }));
+    rec.labelsCache = { at: ahora, list };
+    return list;
+  } catch (_) {
+    return []; // la cuenta no es WhatsApp Business
+  }
+}
+
+async function avisarBackend(ruta, body, timeout = 20000) {
+  return axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/${ruta}`, { ...body, secret: SERVICE_SECRET }, {
+    headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' },
+    timeout
+  });
+}
+
+/* Texto de un mensaje entrante. En los multimedia el body es el epígrafe; si viene
+   algo que no parece texto (base64 de miniatura) no lo usamos. */
+function textoDe(msg) {
+  if (msg.type === 'chat') return String(msg.body || '');
+  const epigrafe = msg.body && msg.body.length < 1500 && !/^[A-Za-z0-9+/=]{200,}$/.test(msg.body) ? msg.body : '';
+  const tipos = { image: 'una imagen', video: 'un video', document: 'un archivo', audio: 'un audio', ptt: 'un audio', sticker: 'un sticker', location: 'una ubicación' };
+  const que = tipos[msg.type];
+  if (!que) return '';
+  return `[El cliente mandó ${que}]${epigrafe ? ' ' + epigrafe : ''}`;
+}
+
+// Inicializamos de a una: dos Chrome arrancando juntos se cuelgan.
+let initQueue = Promise.resolve();
+
+function ensureClient(clientId) {
+  if (sessions[clientId]) return sessions[clientId];
+  const rec = { client: null, status: 'starting', qr: null, phone: null, labelsCache: null };
+  sessions[clientId] = rec;
+
+  const client = new Client({
+    authStrategy: new LocalAuth({ clientId, dataPath: AUTH_DIR }),
+    puppeteer: {
+      headless: true,
+      executablePath: CHROME_PATH,
+      args: ['--no-sandbox', '--disable-setuid-sandbox', '--disable-dev-shm-usage', '--disable-gpu', '--no-first-run']
+    }
+  });
+  rec.client = client;
+
+  client.on('qr', async (qr) => {
+    rec.status = 'qr_ready';
+    rec.qr = await qrcode.toDataURL(qr);
+    console.log(`[${clientId}] QR generado`);
+  });
+  client.on('authenticated', () => { if (rec.status !== 'connected') rec.status = 'connecting'; });
+  client.on('ready', async () => {
+    rec.status = 'connected';
+    rec.qr = null;
+    rec.phone = client.info?.wid?.user || null;
+    console.log(`[${clientId}] Conectado - ${rec.phone}`);
+    avisarBackend('connected', { clientId, phone: rec.phone }).catch((e) => console.error(`[${clientId}] aviso connected:`, e.message));
+  });
+  client.on('auth_failure', (m) => { rec.status = 'auth_failure'; console.error(`[${clientId}] auth_failure:`, m); });
+  client.on('disconnected', (reason) => {
+    rec.status = 'disconnected';
+    console.log(`[${clientId}] Desconectado: ${reason}`);
   });
 
-  sessions[clientId] = { sock, qr: null, status: 'connecting', phone: null };
+  client.on('message', async (msg) => {
+    try {
+      if (msg.fromMe) return;
+      const from = String(msg.from || '');
+      if (!from || from === 'status@broadcast' || from.endsWith('@g.us') || from.endsWith('@newsletter')) return;
 
-  sock.ev.on('creds.update', saveCreds);
+      const text = textoDe(msg);
+      if (!text) return;
 
-  sock.ev.on('connection.update', async ({ connection, lastDisconnect, qr }) => {
-    if (qr) {
-      const qrImage = await QRCode.toDataURL(qr);
-      sessions[clientId].qr = qrImage;
-      sessions[clientId].status = 'qr_ready';
-      console.log(`[${clientId}] QR generado`);
-    }
+      const tel = await telefonoDe(client, from);
+      const phone = tel || soloDigitos(from);
+      if (!chatmap[clientId]) chatmap[clientId] = {};
+      chatmap[clientId][phone] = from;
+      guardarChatmap();
 
-    if (connection === 'open') {
-      const phone = sock.user?.id?.split(':')[0] || null;
-      sessions[clientId].status = 'connected';
-      sessions[clientId].phone = phone;
-      sessions[clientId].qr = null;
-      console.log(`[${clientId}] Conectado - ${phone}`);
-
-      // Notificar al backend de Railway
+      let labels = [];
       try {
-        await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/connected`, {
-          clientId,
-          phone,
-          secret: SERVICE_SECRET
-        });
-      } catch (err) {
-        console.error(`[${clientId}] Error notificando backend:`, err.message);
-      }
-    }
+        const chat = await msg.getChat();
+        const ids = (chat.labels || []).map(String);
+        if (ids.length) {
+          const todas = await etiquetasDe(rec);
+          labels = todas.filter((l) => ids.includes(l.id)).map((l) => l.name);
+        }
+      } catch (_) {}
 
-    if (connection === 'close') {
-      const code = lastDisconnect?.error?.output?.statusCode;
-      const shouldReconnect = code !== DisconnectReason.loggedOut;
-      console.log(`[${clientId}] Desconectado (código ${code}), reconectar: ${shouldReconnect}`);
-
-      if (shouldReconnect) {
-        setTimeout(() => createSession(clientId), 5000);
-      } else {
-        sessions[clientId].status = 'logged_out';
-        // Limpiar sesión
-        fs.rmSync(getSessionDir(clientId), { recursive: true, force: true });
-        delete sessions[clientId];
-      }
-    }
-  });
-
-  // Historial al conectar
-  sock.ev.on('messaging-history.set', async ({ chats, contacts, messages: histMsgs, isLatest }) => {
-    if (contacts?.length) sendContacts(contacts).catch(() => {});
-    // Chats archivados en WhatsApp → avisar al backend para marcarlos
-    const archivedPhones = (chats || [])
-      .filter(c => c.archived && c.id && !c.id.endsWith('@g.us'))
-      .map(c => c.id.replace('@s.whatsapp.net', ''));
-
-    if (!histMsgs?.length && !archivedPhones.length) return;
-    console.log(`[${clientId}] Historial recibido: ${histMsgs?.length || 0} mensajes, ${archivedPhones.length} chats archivados`);
-
-    const batch = [];
-    for (const msg of histMsgs || []) {
-      if (!msg.message) continue;
-      const jid = msg.key.remoteJid;
-      if (!jid || jid.endsWith('@g.us')) continue; // ignorar grupos
-
-      const phone = jid.replace('@s.whatsapp.net', '');
-      const innerMsg = msg.message?.ephemeralMessage?.message
-        || msg.message?.viewOnceMessage?.message
-        || msg.message?.viewOnceMessageV2?.message
-        || msg.message;
-      const text =
-        innerMsg?.conversation ||
-        innerMsg?.extendedTextMessage?.text ||
-        innerMsg?.imageMessage?.caption ||
-        innerMsg?.videoMessage?.caption ||
-        null;
-
-      if (!text) continue;
-
-      const role = msg.key.fromMe ? 'assistant' : 'user';
-      const timestamp = msg.messageTimestamp
-        ? new Date(Number(msg.messageTimestamp) * 1000).toISOString()
-        : new Date().toISOString();
-
-      batch.push({ phone, role, text, timestamp });
-    }
-
-    if (!batch.length && !archivedPhones.length) return;
-
-    try {
-      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/history`, {
-        clientId,
-        messages: batch,
-        archived_phones: archivedPhones,
-        secret: SERVICE_SECRET
-      }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
-      console.log(`[${clientId}] Historial enviado al backend: ${batch.length} mensajes`);
-    } catch (err) {
-      console.error(`[${clientId}] Error enviando historial:`, err.message);
-    }
-  });
-
-  // Etiquetas de WhatsApp Business → tags en Waibo
-  // labels.edit define las etiquetas (id → nombre); labels.association las asigna a chats.
-  const labelNames = {};   // labelId -> name
-  const pendingAssoc = []; // { chatJid, labelId }
-  let labelFlushTimer = null;
-
-  const flushLabels = async () => {
-    const assoc = pendingAssoc.splice(0);
-    const items = assoc
-      .filter(a => labelNames[a.labelId] && !a.chatJid.endsWith('@g.us'))
-      .map(a => ({
-        phone: a.chatJid.replace('@s.whatsapp.net', ''),
-        label: labelNames[a.labelId]
-      }));
-    if (!items.length) return;
-    try {
-      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/labels`, {
-        clientId, items, secret: SERVICE_SECRET
-      }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
-      console.log(`[${clientId}] Etiquetas enviadas: ${items.length} asignaciones`);
-    } catch (err) {
-      console.error(`[${clientId}] Error enviando etiquetas:`, err.message);
-    }
-  };
-
-  sock.ev.on('labels.edit', (label) => {
-    if (label?.id && label?.name && !label.deleted) labelNames[label.id] = label.name;
-  });
-
-  sock.ev.on('labels.association', ({ type, association }) => {
-    if (type !== 'add' || !association?.chatId || !association?.labelId) return;
-    pendingAssoc.push({ chatJid: association.chatId, labelId: association.labelId });
-    clearTimeout(labelFlushTimer);
-    labelFlushTimer = setTimeout(flushLabels, 5000);
-  });
-
-  sock.ev.on('messages.upsert', async ({ messages, type }) => {
-    if (type !== 'notify') return;
-    const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
-
-    const remoteJid = msg.key.remoteJid;
-    if (remoteJid?.endsWith('@g.us') || remoteJid === 'status@broadcast') return;
-    // Preservar el JID completo (puede ser @s.whatsapp.net o @lid)
-    const from = remoteJid?.endsWith('@s.whatsapp.net')
-      ? remoteJid.replace('@s.whatsapp.net', '')
-      : remoteJid; // conservar @lid u otros formatos tal cual
-
-    // Desenvolver mensajes temporales / ver una vez
-    const inner = msg.message.ephemeralMessage?.message
-      || msg.message.viewOnceMessage?.message
-      || msg.message.viewOnceMessageV2?.message
-      || msg.message;
-
-    const text =
-      inner?.conversation ||
-      inner?.extendedTextMessage?.text ||
-      inner?.imageMessage?.caption ||
-      inner?.videoMessage?.caption ||
-      '';
-
-    if (!from) return;
-    if (!text) {
-      console.log(`[${clientId}] Mensaje sin texto de ${from} (tipos: ${Object.keys(msg.message).join(',')})`);
-      return;
-    }
-
-    console.log(`[${clientId}] Mensaje entrante de ${from}: ${text.slice(0, 60)}`);
-
-    // Reenviar mensaje al backend de Railway para que lo procese la IA
-    try {
-      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/message`, {
-        clientId,
-        from,
-        name: msg.pushName || null,
-        text,
-        secret: SERVICE_SECRET
-      });
-      console.log(`[${clientId}] Mensaje reenviado al backend OK`);
+      const name = msg._data?.notifyName || null;
+      console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
+      await avisarBackend('message', { clientId, from: phone, name, text, labels }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
   });
 
-  // Contactos: mapear LID → número real y nombre
-  const sendContacts = async (contacts) => {
-    const items = (contacts || []).map(c => {
-      const phone = c.id?.endsWith('@s.whatsapp.net') ? c.id.replace('@s.whatsapp.net', '') : null;
-      const lid = c.lid || (c.id?.endsWith('@lid') ? c.id : null);
-      const name = c.name || c.notify || c.verifiedName || null;
-      return { phone, lid, name };
-    }).filter(i => i.phone || i.name);
-    if (!items.length) return;
-    try {
-      await axios.post(`${RAILWAY_BACKEND}/api/whatsapp-qr/contacts`, {
-        clientId, items, secret: SERVICE_SECRET
-      }, { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } });
-      console.log(`[${clientId}] Contactos enviados: ${items.length}`);
-    } catch (err) {
-      console.error(`[${clientId}] Error enviando contactos:`, err.message);
-    }
-  };
-
-  sock.ev.on('contacts.upsert', sendContacts);
-
-  return sock;
+  initQueue = initQueue.then(() => new Promise((resolve) => {
+    let listo = false;
+    const seguir = () => { if (!listo) { listo = true; resolve(); } };
+    client.once('qr', seguir);
+    client.once('ready', seguir);
+    client.once('auth_failure', seguir);
+    setTimeout(seguir, 60000);
+    client.initialize().catch((e) => {
+      rec.status = 'error';
+      console.error(`[${clientId}] no pudo iniciar:`, String(e).slice(0, 200));
+      seguir();
+    });
+  }));
+  return rec;
 }
 
-// ── Middleware de autenticación simple ─────────────────────────────
+function sesionLista(clientId) {
+  const rec = sessions[clientId];
+  return rec && rec.status === 'connected' ? rec : null;
+}
+
+/* Etiquetar sumando (sin pisar las que ya tenga). Va directo a los módulos internos
+   porque las funciones de etiquetas de la librería están rotas en esta versión de
+   WhatsApp Web. Copiado del Captador, que lo tiene probado. */
+async function etiquetar(client, chatId, telefono, nombreEtiqueta) {
+  return client.pupPage.evaluate(async (idExacto, digits, nombre) => {
+    const Coll = window.require('WAWebCollections');
+    const labels = window.WWebJS.getLabels();
+    const lab = labels.find((l) => String(l.name).toLowerCase() === String(nombre).toLowerCase());
+    if (!lab) return { ok: false, motivo: 'no existe la etiqueta «' + nombre + '»' };
+
+    const variantes = digits ? [digits] : [];
+    if (/^54(?!9)/.test(digits)) variantes.push('549' + digits.slice(2));
+    if (/^549/.test(digits)) variantes.push('54' + digits.slice(3));
+    const candidatos = [
+      idExacto,
+      ...variantes.map((v) => v + '@lid'),
+      ...variantes.map((v) => v + '@c.us')
+    ].filter(Boolean);
+
+    let chat = null;
+    for (let intento = 0; intento < 4 && !chat; intento++) {
+      if (intento) await new Promise((r) => setTimeout(r, 2500));
+      for (const id of candidatos) {
+        try {
+          const c = await window.WWebJS.getChat(id, { getAsModel: false });
+          if (c) { chat = c; break; }
+        } catch (e) {}
+      }
+    }
+    if (!chat) return { ok: false, motivo: 'no encontré el chat' };
+    if ((chat.labels || []).map(String).includes(String(lab.id))) return { ok: true, yaTenia: true };
+    await Coll.Label.addOrRemoveLabels([{ id: lab.id, type: 'add' }], [chat]);
+    return { ok: true };
+  }, chatId, soloDigitos(telefono), nombreEtiqueta);
+}
+
+async function archivar(client, chatId) {
+  for (let intento = 0; intento < 2; intento++) {
+    try { await client.archiveChat(chatId); return true; } catch (_) {}
+    try {
+      const ok = await client.pupPage.evaluate(async (id) => {
+        const chat = await window.WWebJS.getChat(id, { getAsModel: false });
+        if (!chat) return false;
+        await window.require('WAWebCmd').Cmd.archiveChat(chat, true);
+        return true;
+      }, chatId);
+      if (ok) return true;
+    } catch (_) {}
+    await wait(800);
+  }
+  return false;
+}
+
 function checkSecret(req, res, next) {
   const secret = req.headers['x-service-secret'] || req.body?.secret;
   if (secret !== SERVICE_SECRET) return res.status(401).json({ error: 'No autorizado' });
   next();
 }
 
-// ── Rutas ──────────────────────────────────────────────────────────
+app.get('/health', (req, res) => {
+  res.json({ ok: true, engine: 'whatsapp-web.js', sessions: Object.keys(sessions).length });
+});
 
-// Iniciar sesión / obtener QR
-app.post('/session/start', checkSecret, async (req, res) => {
+app.post('/session/start', checkSecret, (req, res) => {
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
-
-  if (sessions[clientId]?.status === 'connected') {
-    return res.json({ status: 'connected', phone: sessions[clientId].phone });
-  }
-
-  if (!sessions[clientId]) {
-    createSession(clientId).catch(console.error);
-  }
-
-  res.json({ status: 'starting' });
+  const rec = ensureClient(clientId);
+  res.json({ status: rec.status, phone: rec.phone });
 });
 
-// Estado de la sesión + QR
 app.get('/session/:clientId/status', checkSecret, (req, res) => {
-  const { clientId } = req.params;
-  const session = sessions[clientId];
-  if (!session) return res.json({ status: 'disconnected', qr: null });
-
-  res.json({
-    status: session.status,
-    qr: session.qr,
-    phone: session.phone
-  });
+  const rec = sessions[req.params.clientId];
+  if (!rec) return res.json({ status: 'disconnected', qr: null });
+  res.json({ status: rec.status, qr: rec.qr, phone: rec.phone });
 });
 
-// Enviar mensaje (llamado desde Railway)
 app.post('/session/:clientId/send', checkSecret, async (req, res) => {
-  const { clientId } = req.params;
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
   const { to, message } = req.body;
-
-  const session = sessions[clientId];
-  if (!session || session.status !== 'connected') {
-    return res.status(400).json({ error: 'Sesión no conectada' });
-  }
-
+  if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
-    const jid = to.includes('@') ? to : `${to}@s.whatsapp.net`;
-    await session.sock.sendMessage(jid, { text: message });
+    await wait(1200 + Math.random() * 1800); // pausa humana
+    await rec.client.sendMessage(chatIdPara(req.params.clientId, to), message);
     res.json({ ok: true });
+  } catch (err) {
+    console.error(`[${req.params.clientId}] error enviando:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const { to, mimetype, data, filename, caption } = req.body;
+  if (!to || !mimetype || !data) return res.status(400).json({ error: 'faltan to/mimetype/data' });
+  try {
+    await wait(1200 + Math.random() * 1800);
+    const media = new MessageMedia(mimetype, data, filename || undefined);
+    await rec.client.sendMessage(chatIdPara(req.params.clientId, to), media, { caption: caption || '' });
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/session/:clientId/labels', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado', labels: [] });
+  rec.labelsCache = null;
+  res.json({ labels: await etiquetasDe(rec) });
+});
+
+app.post('/session/:clientId/label', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const { to, label } = req.body;
+  if (!to || !label) return res.status(400).json({ error: 'faltan to/label' });
+  try {
+    const r = await etiquetar(rec.client, chatIdPara(req.params.clientId, to), to, label);
+    if (!r.ok) return res.status(422).json({ error: r.motivo });
+    res.json({ ok: true, yaTenia: !!r.yaTenia });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Desconectar sesión
-app.post('/session/:clientId/disconnect', checkSecret, async (req, res) => {
-  const { clientId } = req.params;
-  const session = sessions[clientId];
-  if (!session) return res.json({ ok: true });
-
-  try {
-    await session.sock.logout();
-  } catch {}
-
-  fs.rmSync(getSessionDir(clientId), { recursive: true, force: true });
-  delete sessions[clientId];
+app.post('/session/:clientId/archive', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const { to } = req.body;
+  if (!to) return res.status(400).json({ error: 'falta to' });
+  const ok = await archivar(rec.client, chatIdPara(req.params.clientId, to));
+  if (!ok) return res.status(500).json({ error: 'no se pudo archivar' });
   res.json({ ok: true });
 });
 
-// Health check
-app.get('/health', (req, res) => res.json({ ok: true, sessions: Object.keys(sessions).length }));
-
-// ── Auto-restauración de sesiones al iniciar ───────────────────────
-async function restoreExistingSessions() {
-  const sessionsDir = path.join(__dirname, 'sessions');
-  if (!fs.existsSync(sessionsDir)) return;
-
-  const clientIds = fs.readdirSync(sessionsDir).filter(name => {
-    const dir = path.join(sessionsDir, name);
-    return fs.statSync(dir).isDirectory() && fs.readdirSync(dir).length > 0;
-  });
-
-  if (!clientIds.length) {
-    console.log('   Sin sesiones guardadas para restaurar.');
-    return;
+app.post('/session/:clientId/disconnect', checkSecret, async (req, res) => {
+  const { clientId } = req.params;
+  const rec = sessions[clientId];
+  delete sessions[clientId];
+  if (rec?.client) {
+    try { await rec.client.logout(); } catch (_) {}
+    try { await rec.client.destroy(); } catch (_) {}
   }
+  try { fs.rmSync(path.join(AUTH_DIR, `session-${clientId}`), { recursive: true, force: true }); } catch (_) {}
+  res.json({ ok: true });
+});
 
-  console.log(`   Restaurando ${clientIds.length} sesión(es): ${clientIds.join(', ')}`);
-  for (const clientId of clientIds) {
+// Vigilante: una sesión puede decir "connected" con la página de Chrome muerta
+// ("detached Frame"). Cada 2 minutos la probamos y si no responde la reiniciamos.
+setInterval(async () => {
+  for (const [clientId, rec] of Object.entries(sessions)) {
+    if (rec.status !== 'connected') continue;
     try {
-      await createSession(clientId);
-      console.log(`   ↳ [${clientId}] sesión iniciando...`);
-    } catch (err) {
-      console.error(`   ↳ [${clientId}] error al restaurar:`, err.message);
+      await Promise.race([rec.client.getState(), wait(20000).then(() => { throw new Error('timeout'); })]);
+    } catch (e) {
+      console.log(`[${clientId}] la sesión no responde (${e.message}), reiniciando…`);
+      delete sessions[clientId];
+      try { await rec.client.destroy(); } catch (_) {}
+      ensureClient(clientId);
     }
   }
-}
+}, 2 * 60 * 1000);
 
-app.listen(PORT, async () => {
-  console.log(`✅ WhaBot QR Service corriendo en puerto ${PORT}`);
+app.listen(PORT, () => {
+  console.log(`✅ Waibo QR Service (whatsapp-web.js) en puerto ${PORT}`);
   console.log(`   Backend Railway: ${RAILWAY_BACKEND}`);
-  await restoreExistingSessions();
+  console.log(`   Chrome: ${CHROME_PATH || 'Chromium de puppeteer (no manda videos)'}`);
+  try {
+    const guardadas = fs.existsSync(AUTH_DIR)
+      ? fs.readdirSync(AUTH_DIR).filter((d) => d.startsWith('session-')).map((d) => d.slice('session-'.length))
+      : [];
+    if (guardadas.length) {
+      console.log(`   Restaurando ${guardadas.length} sesión(es): ${guardadas.join(', ')}`);
+      guardadas.forEach((id) => ensureClient(id));
+    } else {
+      console.log('   Sin sesiones guardadas para restaurar.');
+    }
+  } catch (e) {
+    console.error('   Error restaurando sesiones:', e.message);
+  }
 });

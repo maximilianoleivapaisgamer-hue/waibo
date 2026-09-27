@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import KnowledgePanel from '../components/KnowledgePanel';
+import ResourcesPanel from '../components/ResourcesPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -16,7 +17,7 @@ export default function Config() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (router.query.tab === 'knowledge') setMainTab('knowledge');
+    if (router.query.tab === 'knowledge' || router.query.tab === 'resources') setMainTab(router.query.tab);
   }, [router.query.tab]);
 
   useEffect(() => {
@@ -73,7 +74,8 @@ export default function Config() {
         <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
           {[
             { key: 'config', label: '🎭 Personalidad y comportamiento' },
-            { key: 'knowledge', label: '🧠 Base de conocimiento' }
+            { key: 'knowledge', label: '🧠 Base de conocimiento' },
+            { key: 'resources', label: '📎 Recursos y etiquetas' }
           ].map(t => (
             <button
               key={t.key}
@@ -87,6 +89,7 @@ export default function Config() {
         </div>
 
         {mainTab === 'knowledge' && <KnowledgePanel />}
+        {mainTab === 'resources' && <ResourcesPanel />}
 
         <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}

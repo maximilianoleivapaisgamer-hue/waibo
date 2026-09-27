@@ -262,34 +262,121 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
   }
 });
 
-// El QR es solo para importar/observar conversaciones — el bot NO responde
-// por este canal (las respuestas automáticas van por Cloud API).
+async function qrPost(clientId, accion, body) {
+  return axios.post(`${QR_SERVICE_URL}/session/${clientId}/${accion}`, { ...body, secret: SERVICE_SECRET }, { headers: qrHeaders(), timeout: 90000 });
+}
+
+// Etiquetas de WhatsApp Business de la línea, cacheadas 5 minutos por cliente.
+const labelsCache = {};
+async function labelsDeLinea(clientId) {
+  const c = labelsCache[clientId];
+  if (c && Date.now() - c.at < 5 * 60 * 1000) return c.list;
+  try {
+    const r = await axios.get(`${QR_SERVICE_URL}/session/${clientId}/labels`, { headers: qrHeaders(), timeout: 20000 });
+    const list = (r.data.labels || []).map((l) => l.name);
+    labelsCache[clientId] = { at: Date.now(), list };
+    return list;
+  } catch (_) {
+    return c ? c.list : [];
+  }
+}
+
+// Etiquetas disponibles de la línea (para el panel de configuración)
+router.get('/labels', authMiddleware, async (req, res) => {
+  if (!QR_SERVICE_URL) return res.json({ labels: [], connected: false });
+  delete labelsCache[req.client.id];
+  const list = await labelsDeLinea(req.client.id);
+  res.json({ labels: list, connected: list.length > 0 });
+});
+
+// Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
-  const { clientId, from, name, text } = req.body;
+  const { clientId, from, name, text, labels } = req.body;
+  if (!clientId || !from || !text) return res.status(400).json({ error: 'faltan datos' });
 
   try {
-    let convRes = await pool.query(
-      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+    const cr = await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [clientId]);
+    if (!cr.rows.length || cr.rows[0].whatsapp_mode !== 'qr') {
+      return res.json({ ok: true, skipped: 'el cliente no tiene el QR como canal activo' });
+    }
+
+    const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled FROM bot_configs WHERE client_id = $1', [clientId]);
+    const cfg = cfgRes.rows[0] || {};
+
+    // Las etiquetas que el chat ya tiene en WhatsApp se reflejan como tags en Waibo
+    if (Array.isArray(labels) && labels.length) {
+      await pool.query(
+        `UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $3::text[]))
+         WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp'`,
+        [clientId, from, labels]
+      );
+    }
+
+    const sendFn = (phone, message) => qrPost(clientId, 'send', { to: phone, message });
+
+    const extras = cfg.whatsapp_actions_enabled === false ? {} : {
+      buildInstructions: async (conversation) => {
+        const { buildInstructions } = require('../services/whatsappActions');
+        const recs = await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [clientId]);
+        return buildInstructions({
+          resources: recs.rows,
+          alreadySent: conversation.sent_resources || [],
+          labels: await labelsDeLinea(clientId),
+          labelInstructions: cfg.label_instructions || ''
+        });
+      },
+      onActions: async (actions, conversation) => {
+        for (const a of actions) {
+          try {
+            if (a.type === 'enviar') {
+              if ((conversation.sent_resources || []).includes(a.id)) continue;
+              const r = await pool.query('SELECT * FROM bot_resources WHERE id = $1 AND client_id = $2', [a.id, clientId]);
+              const rec = r.rows[0];
+              if (!rec) continue;
+              if (rec.kind === 'link') {
+                await qrPost(clientId, 'send', { to: from, message: rec.url });
+              } else {
+                await qrPost(clientId, 'send-media', {
+                  to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
+                  filename: rec.filename, caption: ''
+                });
+              }
+              await pool.query(
+                `UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`,
+                [conversation.id, a.id]
+              );
+              await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)',
+                [conversation.id, 'assistant', `📎 ${rec.name}`]);
+            } else if (a.type === 'etiqueta') {
+              await qrPost(clientId, 'label', { to: from, label: a.name });
+              await pool.query(
+                `UPDATE conversations SET tags = array_append(COALESCE(tags, '{}'), $2::text)
+                 WHERE id = $1 AND NOT (COALESCE(tags, '{}') @> ARRAY[$2::text])`,
+                [conversation.id, a.name]
+              );
+            } else if (a.type === 'archivar') {
+              await qrPost(clientId, 'archive', { to: from });
+              await pool.query('UPDATE conversations SET archived = true WHERE id = $1', [conversation.id]);
+            }
+            console.log(`[QR acción] ${clientId} ${from}: ${a.type} ${a.id || a.name || ''}`);
+          } catch (e) {
+            console.error(`[QR acción] ${a.type} falló:`, e.response?.data?.error || e.message);
+          }
+        }
+      }
+    };
+
+    // Si el cliente vuelve a escribir, el chat deja de estar archivado en Waibo
+    // (WhatsApp también lo desarchiva solo al recibir un mensaje).
+    await pool.query(
+      `UPDATE conversations SET archived = false WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND archived = true`,
       [clientId, from]
     );
-    let convId;
-    if (convRes.rows.length) {
-      convId = convRes.rows[0].id;
-    } else {
-      const newConv = await pool.query(
-        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, source) VALUES ($1,$2,$3,'whatsapp','bot','qr') RETURNING id`,
-        [clientId, from, name || from]
-      );
-      convId = newConv.rows[0].id;
-    }
-    await pool.query(
-      `INSERT INTO messages (conversation_id, role, content) VALUES ($1::uuid, 'user', $2::text)`,
-      [convId, text]
-    );
-    await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
+
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, extras);
     res.json({ ok: true });
   } catch (err) {
-    console.error('Error guardando mensaje QR:', err.message);
+    console.error('Error procesando mensaje QR:', err.stack || err.message);
     res.status(500).json({ error: err.message });
   }
 });
