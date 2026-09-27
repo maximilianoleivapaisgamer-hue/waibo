@@ -36,7 +36,8 @@ router.put('/config', authMiddleware, async (req, res) => {
     bot_tone, bot_tone_custom,
     instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply,
     payment_enabled, payment_alias, payment_cbu, payment_mp_link, payment_holder,
-    label_instructions, whatsapp_actions_enabled
+    label_instructions, whatsapp_actions_enabled,
+    bot_name, voice_enabled
   } = req.body;
 
   try {
@@ -74,6 +75,8 @@ router.put('/config', authMiddleware, async (req, res) => {
         payment_holder = $31,
         label_instructions = COALESCE($32, label_instructions),
         whatsapp_actions_enabled = COALESCE($33, whatsapp_actions_enabled),
+        bot_name = COALESCE(NULLIF($34, ''), bot_name),
+        voice_enabled = COALESCE($35, voice_enabled),
         updated_at = NOW()
        WHERE client_id = $22
        RETURNING *`,
@@ -87,7 +90,8 @@ router.put('/config', authMiddleware, async (req, res) => {
         req.client.id,
         instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply ?? null,
         payment_enabled, payment_alias ?? null, payment_cbu ?? null, payment_mp_link ?? null, payment_holder ?? null,
-        label_instructions ?? null, whatsapp_actions_enabled ?? null
+        label_instructions ?? null, whatsapp_actions_enabled ?? null,
+        bot_name ?? null, voice_enabled ?? null
       ]
     );
     res.json(result.rows[0]);
