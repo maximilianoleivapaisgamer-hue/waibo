@@ -52,7 +52,12 @@ const guardarChatmap = guardarLuego(CHATMAP_FILE, () => chatmap);
 const lidmap = leerJson(LIDMAP_FILE); // lid (dígitos) -> teléfono (dígitos)
 const guardarLidmap = guardarLuego(LIDMAP_FILE, () => lidmap);
 
+const IMPORTED_FILE = path.join(__dirname, 'imported.json');
+const imported = leerJson(IMPORTED_FILE); // clientId -> fecha de la última importación completa
+const guardarImported = guardarLuego(IMPORTED_FILE, () => imported);
+
 const sessions = {}; // clientId -> { client, status, qr, phone, labelsCache }
+const importJobs = {}; // clientId -> { estado, total, hechos, chats, error }
 
 /* Teléfono real de un remitente. Si viene @lid (id interno de WhatsApp, no es el
    teléfono) lo resolvemos contra WhatsApp y lo cacheamos. */
@@ -142,6 +147,13 @@ function ensureClient(clientId) {
     rec.phone = client.info?.wid?.user || null;
     console.log(`[${clientId}] Conectado - ${rec.phone}`);
     avisarBackend('connected', { clientId, phone: rec.phone }).catch((e) => console.error(`[${clientId}] aviso connected:`, e.message));
+    // Primera vez que se conecta esta cuenta: traemos sus chats. Esperamos a que
+    // WhatsApp Web termine de cargar la lista de chats.
+    if (!imported[clientId]) {
+      setTimeout(() => {
+        importarHistorial(clientId).catch((e) => console.error(`[${clientId}] importación:`, e.message));
+      }, 20000);
+    }
   });
   client.on('auth_failure', (m) => { rec.status = 'auth_failure'; console.error(`[${clientId}] auth_failure:`, m); });
   client.on('disconnected', (reason) => {
@@ -256,6 +268,125 @@ async function archivar(client, chatId) {
   return false;
 }
 
+/* Importar los chats existentes. WhatsApp Web tiene en memoria uno o dos mensajes por
+   chat hasta que se abre la conversación, así que pedimos el historial chat por chat
+   (loadEarlierMsgs) con una pausa entre uno y otro: tironear cientos de chats de golpe
+   es patrón de scraping. Mismo método que el Captador. Se manda a Railway en lotes. */
+const SISTEMA = ['e2e_notification', 'notification_template', 'call_log', 'revoked', 'gp2', 'protocol', 'ciphertext'];
+
+async function importarHistorial(clientId, { porChat = 30, demora = 400 } = {}) {
+  const rec = sesionLista(clientId);
+  if (!rec) throw new Error('WhatsApp no está conectado');
+  if (importJobs[clientId]?.estado === 'corriendo') return importJobs[clientId];
+
+  const job = { estado: 'corriendo', total: 0, hechos: 0, chats: 0, error: null, inicio: new Date().toISOString() };
+  importJobs[clientId] = job;
+
+  (async () => {
+    try {
+      const ids = await rec.client.pupPage.evaluate(() => {
+        const Coll = window.require('WAWebCollections');
+        const arr = Coll.Chat.getModelsArray ? Coll.Chat.getModelsArray() : (Coll.Chat.models || []);
+        return arr
+          .slice()
+          .sort((a, b) => (b.t || 0) - (a.t || 0))
+          .map((c) => c.id && c.id._serialized)
+          .filter((id) => id && !id.includes('@g.us') && !id.includes('status@') && !id.includes('@newsletter'));
+      });
+      job.total = ids.length;
+      console.log(`[${clientId}] Importando ${ids.length} chats…`);
+
+      rec.labelsCache = null;
+      const labelsList = await etiquetasDe(rec);
+      const labelName = (id) => (labelsList.find((l) => l.id === String(id)) || {}).name;
+
+      let lote = [];
+      const enviarLote = async () => {
+        if (!lote.length) return;
+        const chats = lote;
+        lote = [];
+        try {
+          await avisarBackend('history-chats', { clientId, chats }, 180000);
+          job.chats += chats.length;
+        } catch (e) {
+          console.error(`[${clientId}] error mandando lote de historial:`, e.response?.data?.error || e.message);
+        }
+      };
+
+      for (const id of ids) {
+        if (job.estado !== 'corriendo') break;
+        try {
+          const c = await rec.client.pupPage.evaluate(async (chatId, porChat, sistema) => {
+            const Coll = window.require('WAWebCollections');
+            const wid = window.require('WAWebWidFactory').createWid(chatId);
+            const chat = Coll.Chat.get(wid) || (await Coll.Chat.find(wid));
+            if (!chat || !chat.msgs) return null;
+
+            const utiles = () => chat.msgs.getModelsArray().filter((m) => !m.isNotification && !sistema.includes(m.type));
+            let vueltas = 0;
+            while (utiles().length < porChat && vueltas < 4) {
+              const mas = await window.require('WAWebChatLoadMessages').loadEarlierMsgs({ chat });
+              vueltas++;
+              if (!mas || !mas.length) break;
+            }
+
+            let tel = '';
+            try {
+              if (chatId.includes('@lid')) {
+                const p = window.require('WAWebApiContact').getPhoneNumber(chat.id);
+                tel = (p && p.user) || '';
+              } else {
+                tel = chat.id.user || '';
+              }
+            } catch (e) {}
+
+            const tipos = { image: '[imagen]', video: '[video]', document: '[archivo]', audio: '[audio]', ptt: '[audio]', sticker: '[sticker]', location: '[ubicación]', vcard: '[contacto]' };
+            // En los multimedia m.body trae el base64 de la miniatura: se usa el epígrafe.
+            const msgs = utiles().slice(-porChat).map((m) => {
+              let texto = m.type === 'chat' ? String(m.body || '') : [tipos[m.type] || `[${m.type}]`, m.caption || ''].join(' ').trim();
+              return { mio: !!(m.id && m.id.fromMe), ts: m.t || 0, texto: texto.slice(0, 4000) };
+            }).filter((m) => m.texto);
+
+            const ct = chat.contact || {};
+            let nombre = ct.pushname || ct.notifyName || chat.name || chat.formattedTitle || '';
+            if (nombre && !/[a-zA-ZÀ-ɏ]/.test(nombre)) nombre = '';
+
+            return { tel, nombre: String(nombre).trim().slice(0, 80), archivado: !!chat.archive, labels: (chat.labels || []).map(String), msgs };
+          }, id, porChat, SISTEMA);
+
+          if (c && c.tel && c.msgs.length) {
+            if (!chatmap[clientId]) chatmap[clientId] = {};
+            chatmap[clientId][c.tel] = id;
+            lote.push({
+              phone: c.tel,
+              name: c.nombre || null,
+              archived: c.archivado,
+              labels: c.labels.map(labelName).filter(Boolean),
+              messages: c.msgs.map((m) => ({ role: m.mio ? 'assistant' : 'user', text: m.texto, timestamp: new Date(m.ts * 1000).toISOString() }))
+            });
+          }
+        } catch (_) {}
+        job.hechos++;
+        if (lote.length >= 40) await enviarLote();
+        await wait(demora);
+      }
+      await enviarLote();
+      guardarChatmap();
+      if (job.estado === 'corriendo') {
+        job.estado = 'terminado';
+        imported[clientId] = new Date().toISOString();
+        guardarImported();
+      }
+      console.log(`[${clientId}] Importación ${job.estado}: ${job.chats} chats con mensajes de ${job.total}`);
+    } catch (e) {
+      job.estado = 'error';
+      job.error = e.message;
+      console.error(`[${clientId}] Error importando historial:`, e.message);
+    }
+  })();
+  return job;
+}
+
 function checkSecret(req, res, next) {
   const secret = req.headers['x-service-secret'] || req.body?.secret;
   if (secret !== SERVICE_SECRET) return res.status(401).json({ error: 'No autorizado' });
@@ -341,10 +472,26 @@ app.post('/session/:clientId/archive', checkSecret, async (req, res) => {
   res.json({ ok: true });
 });
 
+app.post('/session/:clientId/import-history', checkSecret, async (req, res) => {
+  try {
+    const job = await importarHistorial(req.params.clientId);
+    res.json(job);
+  } catch (e) {
+    res.status(409).json({ error: e.message });
+  }
+});
+
+app.get('/session/:clientId/import-status', checkSecret, (req, res) => {
+  res.json(importJobs[req.params.clientId] || { estado: imported[req.params.clientId] ? 'terminado' : 'nunca', ultima: imported[req.params.clientId] || null });
+});
+
 app.post('/session/:clientId/disconnect', checkSecret, async (req, res) => {
   const { clientId } = req.params;
   const rec = sessions[clientId];
   delete sessions[clientId];
+  if (importJobs[clientId]) importJobs[clientId].estado = 'cancelado';
+  delete imported[clientId];
+  guardarImported();
   if (rec?.client) {
     try { await rec.client.logout(); } catch (_) {}
     try { await rec.client.destroy(); } catch (_) {}

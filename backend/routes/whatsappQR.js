@@ -27,16 +27,46 @@ router.post('/connect', authMiddleware, async (req, res) => {
   }
 });
 
-// Estado + QR image
+// Estado + QR image (+ si el bot está respondiendo)
 router.get('/status', authMiddleware, async (req, res) => {
+  const cfg = await pool.query('SELECT qr_auto_reply FROM bot_configs WHERE client_id = $1', [req.client.id]);
+  const auto_reply = !!cfg.rows[0]?.qr_auto_reply;
   if (!QR_SERVICE_URL) {
-    return res.json({ status: 'unavailable', qr: null });
+    return res.json({ status: 'unavailable', qr: null, auto_reply });
   }
   try {
     const r = await axios.get(`${QR_SERVICE_URL}/session/${req.client.id}/status`, { headers: qrHeaders() });
+    res.json({ ...r.data, auto_reply });
+  } catch {
+    res.json({ status: 'disconnected', qr: null, auto_reply });
+  }
+});
+
+// Prender/apagar el bot en el canal QR
+router.post('/auto-reply', authMiddleware, async (req, res) => {
+  const enabled = !!req.body.enabled;
+  await pool.query('UPDATE bot_configs SET qr_auto_reply = $1, active = true WHERE client_id = $2', [enabled, req.client.id]);
+  res.json({ ok: true, auto_reply: enabled });
+});
+
+// Importar los chats existentes de WhatsApp (corre en segundo plano en el servicio QR)
+router.post('/import-history', authMiddleware, async (req, res) => {
+  if (!QR_SERVICE_URL) return res.status(503).json({ error: 'El servicio de QR no está configurado.' });
+  try {
+    const r = await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/import-history`, { secret: SERVICE_SECRET }, { headers: qrHeaders(), timeout: 30000 });
+    res.json(r.data);
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.error || 'No se pudo iniciar la importación.' });
+  }
+});
+
+router.get('/import-status', authMiddleware, async (req, res) => {
+  if (!QR_SERVICE_URL) return res.json({ estado: 'nunca' });
+  try {
+    const r = await axios.get(`${QR_SERVICE_URL}/session/${req.client.id}/import-status`, { headers: qrHeaders(), timeout: 15000 });
     res.json(r.data);
   } catch {
-    res.json({ status: 'disconnected', qr: null });
+    res.json({ estado: 'desconocido' });
   }
 });
 
@@ -114,6 +144,67 @@ router.post('/labels', checkServiceSecret, async (req, res) => {
   } catch (err) {
     console.error('[QR labels] error:', err.message);
   }
+});
+
+// Chats existentes importados desde WhatsApp Web (lotes de ~40 chats).
+// Son conversaciones normales del canal: se ven en el panel. created_at toma la fecha
+// del primer mensaje para no inflar "conversaciones de hoy".
+router.post('/history-chats', checkServiceSecret, async (req, res) => {
+  const { clientId, chats } = req.body;
+  if (!clientId || !Array.isArray(chats)) return res.status(400).json({ error: 'faltan datos' });
+  let convs = 0, guardados = 0;
+  for (const c of chats) {
+    try {
+      const phone = String(c.phone || '').replace(/\D/g, '');
+      const msgs = (c.messages || []).filter((m) => m.text && m.timestamp);
+      if (!phone || !msgs.length) continue;
+      const primero = msgs.reduce((a, m) => (m.timestamp < a ? m.timestamp : a), msgs[0].timestamp);
+
+      let conv = await pool.query(
+        `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+        [clientId, phone]
+      );
+      let convId = conv.rows[0]?.id;
+      if (!convId) {
+        const nc = await pool.query(
+          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, created_at)
+           VALUES ($1,$2,$3,'whatsapp','bot',$4::timestamp) RETURNING id`,
+          [clientId, phone, c.name || phone, primero]
+        );
+        convId = nc.rows[0].id;
+      } else if (c.name && (!conv.rows[0].customer_name || conv.rows[0].customer_name === phone || conv.rows[0].customer_name === 'Cliente')) {
+        await pool.query('UPDATE conversations SET customer_name = $1 WHERE id = $2', [c.name, convId]);
+      }
+      convs++;
+
+      for (const m of msgs) {
+        const ins = await pool.query(
+          `INSERT INTO messages (conversation_id, role, content, timestamp)
+           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp
+           WHERE NOT EXISTS (
+             SELECT 1 FROM messages
+             WHERE conversation_id = $1::uuid AND role = $2::varchar AND content = $3::text
+               AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5
+           )`,
+          [convId, m.role === 'assistant' ? 'assistant' : 'user', m.text, m.timestamp]
+        );
+        guardados += ins.rowCount;
+      }
+
+      await pool.query(
+        `UPDATE conversations SET
+           updated_at = GREATEST(updated_at, (SELECT MAX(timestamp) FROM messages WHERE conversation_id = $1::uuid)),
+           archived = $2,
+           tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $3::text[]))
+         WHERE id = $1::uuid`,
+        [convId, !!c.archived, Array.isArray(c.labels) ? c.labels : []]
+      );
+    } catch (e) {
+      console.error(`[QR history-chats] ${c.phone}:`, e.message);
+    }
+  }
+  console.log(`[QR history-chats] clientId=${clientId} — ${convs} chats, ${guardados} mensajes nuevos`);
+  res.json({ ok: true, chats: convs, guardados });
 });
 
 router.post('/history', checkServiceSecret, async (req, res) => {
@@ -300,8 +391,37 @@ router.post('/message', checkServiceSecret, async (req, res) => {
       return res.json({ ok: true, skipped: 'el cliente no tiene el QR como canal activo' });
     }
 
-    const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled FROM bot_configs WHERE client_id = $1', [clientId]);
+    const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply FROM bot_configs WHERE client_id = $1', [clientId]);
     const cfg = cfgRes.rows[0] || {};
+
+    // Si el cliente vuelve a escribir, el chat deja de estar archivado en Waibo
+    // (WhatsApp también lo desarchiva solo al recibir un mensaje).
+    await pool.query(
+      `UPDATE conversations SET archived = false WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND archived = true`,
+      [clientId, from]
+    );
+
+    // Bot apagado: solo guardamos el mensaje para verlo en el panel, nadie responde.
+    if (!cfg.qr_auto_reply) {
+      let conv = await pool.query(
+        `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+        [clientId, from]
+      );
+      let convId = conv.rows[0]?.id;
+      if (!convId) {
+        const nc = await pool.query(
+          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$3,'whatsapp','bot') RETURNING id`,
+          [clientId, from, name || from]
+        );
+        convId = nc.rows[0].id;
+      }
+      await pool.query(`INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)`, [convId, text]);
+      await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
+      if (Array.isArray(labels) && labels.length) {
+        await pool.query(`UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $2::text[])) WHERE id = $1`, [convId, labels]);
+      }
+      return res.json({ ok: true, stored: true });
+    }
 
     // Las etiquetas que el chat ya tiene en WhatsApp se reflejan como tags en Waibo
     if (Array.isArray(labels) && labels.length) {
@@ -365,13 +485,6 @@ router.post('/message', checkServiceSecret, async (req, res) => {
         }
       }
     };
-
-    // Si el cliente vuelve a escribir, el chat deja de estar archivado en Waibo
-    // (WhatsApp también lo desarchiva solo al recibir un mensaje).
-    await pool.query(
-      `UPDATE conversations SET archived = false WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND archived = true`,
-      [clientId, from]
-    );
 
     await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, extras);
     res.json({ ok: true });

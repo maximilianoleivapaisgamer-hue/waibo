@@ -500,6 +500,7 @@ async function initDB() {
 
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS label_instructions TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS whatsapp_actions_enabled BOOLEAN DEFAULT true;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS qr_auto_reply BOOLEAN DEFAULT false;
 
       CREATE TABLE IF NOT EXISTS bot_resources (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

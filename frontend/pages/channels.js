@@ -19,6 +19,7 @@ export default function Channels() {
   const [error, setError] = useState('');
   const [whatsappExpanded, setWhatsappExpanded] = useState(null); // 'cloud_api' | 'qr' | null
   const [qrStatus, setQrStatus] = useState(null);
+  const [importStatus, setImportStatus] = useState(null);
   const [qrPolling, setQrPolling] = useState(null);
   const [embeddedSignupLoading, setEmbeddedSignupLoading] = useState(false);
   const [showManualForm, setShowManualForm] = useState(false);
@@ -82,6 +83,9 @@ export default function Channels() {
           setWhatsappExpanded('qr');
           axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() })
             .then(s => setQrStatus(s.data))
+            .catch(() => {});
+          axios.get(`${API}/api/whatsapp-qr/import-status`, { headers: getHeaders() })
+            .then(s => { setImportStatus(s.data); if (s.data.estado === 'corriendo') pollImport(); })
             .catch(() => {});
         }
         else if (res.data.whatsapp_provider === 'cloud_api') setWhatsappExpanded('cloud_api');
@@ -232,6 +236,34 @@ export default function Channels() {
       setQrPolling(interval);
       setTimeout(() => { clearInterval(interval); setQrPolling(null); }, 300000);
     } catch { showError('No se pudo iniciar la conexión QR. Verificá que el servicio esté activo.'); }
+  };
+
+  const toggleAutoReply = async () => {
+    const enabled = !qrStatus?.auto_reply;
+    if (enabled && !confirm('¿Prender el bot? Va a contestar automáticamente todos los mensajes que entren a este número.')) return;
+    try {
+      await axios.post(`${API}/api/whatsapp-qr/auto-reply`, { enabled }, { headers: getHeaders() });
+      setQrStatus(prev => ({ ...prev, auto_reply: enabled }));
+      showSuccess(enabled ? '🤖 Bot prendido' : '⏸ Bot apagado — los mensajes se siguen guardando');
+    } catch { showError('No se pudo cambiar el estado del bot.'); }
+  };
+
+  const pollImport = () => {
+    const iv = setInterval(async () => {
+      try {
+        const r = await axios.get(`${API}/api/whatsapp-qr/import-status`, { headers: getHeaders() });
+        setImportStatus(r.data);
+        if (r.data.estado !== 'corriendo') clearInterval(iv);
+      } catch { clearInterval(iv); }
+    }, 4000);
+  };
+
+  const startImport = async () => {
+    try {
+      const r = await axios.post(`${API}/api/whatsapp-qr/import-history`, {}, { headers: getHeaders() });
+      setImportStatus(r.data);
+      pollImport();
+    } catch (err) { showError(err.response?.data?.error || 'No se pudo iniciar la importación.'); }
   };
 
   const disconnectQR = async () => {
@@ -572,8 +604,50 @@ export default function Channels() {
                 {isQRConnected && qrStatus?.status === 'connected' ? (
                   <div>
                     <div style={{ background: '#F5F3FF', border: '1px solid #DDD6FE', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 13 }}>
-                      ✅ <strong>WhatsApp conectado por QR</strong>{qrStatus.phone ? ` (+${qrStatus.phone})` : ''} — el bot está respondiendo en este número.
+                      ✅ <strong>WhatsApp conectado por QR</strong>{qrStatus.phone ? ` (+${qrStatus.phone})` : ''}
                     </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 10, marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>
+                          🤖 Bot {qrStatus.auto_reply ? 'respondiendo' : 'apagado'}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {qrStatus.auto_reply
+                            ? 'El bot contesta automáticamente los mensajes que entran.'
+                            : 'Los mensajes se guardan en Waibo pero nadie responde. Prendelo cuando el bot esté configurado.'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={toggleAutoReply}
+                        className={`btn ${qrStatus.auto_reply ? 'btn-secondary' : 'btn-primary'}`}
+                        style={{ width: 'auto', padding: '8px 16px' }}
+                      >
+                        {qrStatus.auto_reply ? '⏸ Apagar bot' : '▶ Prender bot'}
+                      </button>
+                    </div>
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: 12, border: '1px solid var(--border)', borderRadius: 10, marginBottom: 14 }}>
+                      <div style={{ flex: 1, fontSize: 13 }}>
+                        <div style={{ fontWeight: 700, fontSize: 14 }}>📥 Tus chats de WhatsApp</div>
+                        <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {importStatus?.estado === 'corriendo'
+                            ? `Importando… ${importStatus.hechos} de ${importStatus.total} chats`
+                            : importStatus?.estado === 'terminado'
+                              ? 'Importados. Se traen los últimos ~30 mensajes de cada chat, con etiquetas y archivados.'
+                              : 'Traé tus conversaciones existentes (últimos ~30 mensajes por chat, con etiquetas y archivados).'}
+                        </div>
+                      </div>
+                      <button
+                        onClick={startImport}
+                        disabled={importStatus?.estado === 'corriendo'}
+                        className="btn btn-secondary"
+                        style={{ width: 'auto', padding: '8px 16px' }}
+                      >
+                        {importStatus?.estado === 'corriendo' ? '⏳ Importando' : importStatus?.estado === 'terminado' ? '🔄 Volver a importar' : '📥 Importar chats'}
+                      </button>
+                    </div>
+
                     <button onClick={disconnectQR} className="btn btn-secondary" style={{ width: 'auto' }}>
                       🔌 Desconectar
                     </button>
