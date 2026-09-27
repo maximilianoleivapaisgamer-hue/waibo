@@ -485,12 +485,14 @@ app.post('/session/:clientId/send', checkSecret, async (req, res) => {
 app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
-  const { to, mimetype, data, filename, caption } = req.body;
+  const { to, mimetype, data, filename, caption, asVoice } = req.body;
   if (!to || !mimetype || !data) return res.status(400).json({ error: 'faltan to/mimetype/data' });
   try {
     await wait(1200 + Math.random() * 1800);
     const media = new MessageMedia(mimetype, data, filename || undefined);
-    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, { caption: caption || '' });
+    // asVoice: el audio llega como nota de voz (micrófono), no como archivo. Necesita ogg/opus.
+    const opciones = asVoice ? { sendAudioAsVoice: true } : { caption: caption || '' };
+    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones);
     res.json({ ok: true });
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
