@@ -22,7 +22,7 @@
 | Canal | Estado |
 |---|---|
 | WhatsApp Cloud API (Meta oficial) | ✅ Funcional |
-| WhatsApp Lite — QR vía Baileys (no oficial) | ✅ Funcional, uso transitorio |
+| WhatsApp por QR — whatsapp-web.js (no oficial) | ✅ Funcional: bot + multimedia + etiquetas + archivado |
 | Instagram DM + comentarios | ✅ Funcional |
 | Facebook Messenger + comentarios + reseñas | ✅ Funcional |
 | Mercado Libre (respuesta a preguntas) | ✅ Funcional |
@@ -77,7 +77,9 @@ El proyecto se llamó **WhaBot** y se renombró a **Waibo** (dominio waibochat.c
 
 ### Microservicio QR (corre en la PC del admin, no en Railway)
 - **Runtime:** Node.js + Express, puerto 3002
-- **Librería WhatsApp:** @whiskeysockets/baileys
+- **Librería WhatsApp:** whatsapp-web.js 1.34.7 (Chrome instalado vía puppeteer; el Chromium de puppeteer no manda videos). Baileys quedó como respaldo en `index.baileys.js`
+- **Base:** mismo código y rodeos que el bot del Captador de Clientes (`C:\Proyecto APP\Captador de Clientes\waibo-bot_1\waibo-bot`)
+- **Sesiones:** `whatsapp-qr-service/sessions-wweb/` (gitignored); `chatmap.json` guarda teléfono→chatId (a veces @lid)
 - **Exposición pública:** Cloudflare Tunnel (`cloudflared tunnel --url http://localhost:3002`)
 - **Ubicación:** `whatsapp-qr-service/index.js`
 - **Limitación:** URL del tunnel cambia en cada reinicio → hay que actualizar `QR_SERVICE_URL` en Railway manualmente
@@ -355,6 +357,10 @@ Corre en `localhost:3002`, expuesto vía Cloudflare Tunnel. Autenticado con head
 | GET | `/session/:clientId/status` | Estado + QR como Data URL |
 | POST | `/session/:clientId/send` | Envía mensaje (maneja @lid y @s.whatsapp.net) |
 | POST | `/session/:clientId/disconnect` | Cierra sesión y borra archivos |
+| POST | `/session/:clientId/send-media` | Manda imagen/video/PDF (base64) |
+| GET | `/session/:clientId/labels` | Etiquetas de WhatsApp Business |
+| POST | `/session/:clientId/label` | Etiqueta un chat (sin pisar las existentes) |
+| POST | `/session/:clientId/archive` | Archiva un chat |
 
 **Callbacks que hace el microservicio hacia Railway:**
 - `POST /api/whatsapp-qr/connected` — al conectarse
@@ -364,6 +370,9 @@ Corre en `localhost:3002`, expuesto vía Cloudflare Tunnel. Autenticado con head
 **Manejo de LID:** WhatsApp usa `@lid` para algunos números. El microservicio detecta si `to` contiene `@` y lo usa directo; sino agrega `@s.whatsapp.net`.
 
 ---
+
+### Acciones de la IA en el canal QR
+La IA puede escribir `[[enviar:ID]]` (recurso de `bot_resources`), `[[etiqueta:Nombre]]` y `[[archivar]]`. `services/whatsappActions.js` los saca del texto; `routes/whatsappQR.js` los ejecuta contra el servicio QR. Reglas por cliente en `bot_configs.label_instructions`; recursos ya mandados en `conversations.sent_resources`.
 
 ## Flujos principales
 
