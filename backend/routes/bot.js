@@ -112,7 +112,8 @@ router.get('/stats', authMiddleware, async (req, res) => {
     const totalMessages = await pool.query(
       `SELECT COUNT(*) FROM messages m
        JOIN conversations c ON m.conversation_id = c.id
-       WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'`,
+       WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
+         AND m.role = 'assistant' AND m.origin IS NULL`,
       [req.client.id]
     );
 
@@ -320,7 +321,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      'INSERT INTO messages (conversation_id, role, content) VALUES ($1, $2, $3)',
+      "INSERT INTO messages (conversation_id, role, content, origin) VALUES ($1, $2, $3, 'manual')",
       [conversation.id, 'assistant', message]
     );
 

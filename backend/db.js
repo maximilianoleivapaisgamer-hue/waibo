@@ -501,6 +501,9 @@ async function initDB() {
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS label_instructions TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS whatsapp_actions_enabled BOOLEAN DEFAULT true;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS qr_auto_reply BOOLEAN DEFAULT false;
+      -- NULL = lo escribió el bot/sistema; 'import' = historial importado,
+      -- 'manual' = enviado a mano desde el panel, 'phone' = enviado desde el celular.
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS origin VARCHAR(20);
 
       CREATE TABLE IF NOT EXISTS bot_resources (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

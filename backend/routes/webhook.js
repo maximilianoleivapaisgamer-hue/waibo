@@ -61,7 +61,7 @@ router.post('/whatsapp/cloud', async (req, res) => {
           convId = newConv.rows[0].id;
         }
         await pool.query(
-          'INSERT INTO messages (conversation_id, role, content) VALUES ($1, $2, $3)',
+          "INSERT INTO messages (conversation_id, role, content, origin) VALUES ($1, $2, $3, 'phone')",
           [convId, 'assistant', `📱 ${echo.text.body}`]
         );
         await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);

@@ -179,8 +179,8 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
 
       for (const m of msgs) {
         const ins = await pool.query(
-          `INSERT INTO messages (conversation_id, role, content, timestamp)
-           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp
+          `INSERT INTO messages (conversation_id, role, content, timestamp, origin)
+           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp, 'import'
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
              WHERE conversation_id = $1::uuid AND role = $2::varchar AND content = $3::text
@@ -252,8 +252,8 @@ router.post('/history', checkServiceSecret, async (req, res) => {
       // Insertar mensajes que no existan ya (evitar duplicados por timestamp+role+content)
       for (const m of msgs) {
         const ins = await pool.query(
-          `INSERT INTO messages (conversation_id, role, content, timestamp)
-           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp
+          `INSERT INTO messages (conversation_id, role, content, timestamp, origin)
+           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp, 'import'
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
              WHERE conversation_id = $1::uuid AND role = $2::varchar AND content = $3::text
