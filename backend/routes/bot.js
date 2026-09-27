@@ -142,13 +142,15 @@ router.get('/stats', authMiddleware, async (req, res) => {
 router.get('/conversations', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT c.*,
-        (SELECT content FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1) as last_message,
+      `SELECT c.*, lm.content AS last_message, lm.timestamp AS last_message_at, lm.role AS last_message_role,
         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
        FROM conversations c
+       LEFT JOIN LATERAL (
+         SELECT content, timestamp, role FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1
+       ) lm ON true
        WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
-       ORDER BY c.updated_at DESC
-       LIMIT 300`,
+       ORDER BY COALESCE(lm.timestamp, c.updated_at) DESC
+       LIMIT 1000`,
       [req.client.id]
     );
     res.json(result.rows);

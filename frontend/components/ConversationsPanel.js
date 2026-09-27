@@ -1,6 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import axios from 'axios';
 import ChannelLogo from './ChannelLogo';
+import { lastContactLabel, lastContactTitle } from '../lib/lastContact';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -97,7 +98,8 @@ export default function ConversationsPanel({ channel }) {
       try {
         const convRes = await axios.get(`${API}/api/bot/conversations`, { headers: getHeaders() });
         const list = byChannel(convRes.data);
-        setConversations([...list].sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)));
+        const cuando = (c) => new Date(c.last_message_at || c.updated_at).getTime();
+        setConversations([...list].sort((a, b) => cuando(b) - cuando(a)));
 
         // Al entrar, abrir directamente la primera conversación (no archivada)
         if (isInitial && !selected && list.length > 0) {
@@ -321,6 +323,11 @@ export default function ConversationsPanel({ channel }) {
                   )}
                 </div>
                 <div style={{ textAlign: 'right', flexShrink: 0, display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4 }}>
+                  {conv.last_message_at && (
+                    <span title={lastContactTitle(conv.last_message_at)} style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                      {lastContactLabel(conv.last_message_at)}
+                    </span>
+                  )}
                   <span className={`conv-badge ${conv.status === 'bot' ? 'badge-bot' : 'badge-human'}`}>
                     {conv.status === 'bot' ? '🤖' : '👤'}
                   </span>
@@ -350,7 +357,10 @@ export default function ConversationsPanel({ channel }) {
             </div>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{selected.customer_name || selected.customer_phone}</div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{selected.customer_phone}</div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {selected.customer_phone}
+                {selected.last_message_at && ` · ${lastContactTitle(selected.last_message_at)}`}
+              </div>
             </div>
 
             <div style={{ marginLeft: 'auto', display: 'flex', gap: 7 }}>

@@ -193,7 +193,7 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
 
       await pool.query(
         `UPDATE conversations SET
-           updated_at = GREATEST(updated_at, (SELECT MAX(timestamp) FROM messages WHERE conversation_id = $1::uuid)),
+           updated_at = COALESCE((SELECT MAX(timestamp) FROM messages WHERE conversation_id = $1::uuid), updated_at),
            archived = $2,
            tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $3::text[]))
          WHERE id = $1::uuid`,

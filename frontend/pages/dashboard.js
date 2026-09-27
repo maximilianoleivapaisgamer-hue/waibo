@@ -3,6 +3,7 @@ import { useRouter } from 'next/router';
 import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import ChannelLogo from '../components/ChannelLogo';
+import { lastContactLabel, lastContactTitle } from '../lib/lastContact';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -246,10 +247,24 @@ export default function Dashboard() {
                       {conv.customer_name || conv.customer_phone}
                     </div>
                     <div className="conv-last">{conv.last_message || 'Sin mensajes'}</div>
+                    {conv.tags?.length > 0 && (
+                      <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
+                        {conv.tags.map(tag => (
+                          <span key={tag} style={{ fontSize: 10, padding: '1px 7px', borderRadius: 10, fontWeight: 500, background: '#EDE9FE', color: '#5B21B6' }}>{tag}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
-                  <span className={`conv-badge ${conv.status === 'bot' ? 'badge-bot' : 'badge-human'}`}>
-                    {conv.status === 'bot' ? '🤖 Bot' : '👤 Humano'}
-                  </span>
+                  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 4, flexShrink: 0 }}>
+                    {conv.last_message_at && (
+                      <span title={lastContactTitle(conv.last_message_at)} style={{ fontSize: 11, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                        {lastContactLabel(conv.last_message_at)}
+                      </span>
+                    )}
+                    <span className={`conv-badge ${conv.status === 'bot' ? 'badge-bot' : 'badge-human'}`}>
+                      {conv.status === 'bot' ? '🤖 Bot' : '👤 Humano'}
+                    </span>
+                  </div>
                 </li>
               ))}
             </ul>
