@@ -10,11 +10,47 @@
  * quedó en index.baileys.js.
  */
 const express = require('express');
+const fs = require('fs');
+const path = require('path');
+
+/* Parche a whatsapp-web.js 1.34.7 (se aplica en cada arranque, así sobrevive a un
+   npm install). Al armar un mensaje con multimedia, la librería copia el objeto
+   interno del archivo entero (`...mediaOptions`) dentro del mensaje. Ese objeto trae
+   propiedades internas de WhatsApp (`__x_id` vacío, `parent`, `collection`…) y
+   `__x_id` le gana al id real del mensaje: el envío falla con "Data passed to getter
+   must include an id property". Copiamos solo los datos útiles del archivo.
+   Utils.js se inyecta en la página como texto, por eso se parchea el archivo antes
+   de cargar la librería. */
+(function parchearEnvioMultimedia() {
+  const archivo = path.join(__dirname, 'node_modules', 'whatsapp-web.js', 'src', 'util', 'Injected', 'Utils.js');
+  const parches = [
+    {
+      marca: '/* waibo: media sin props internas */',
+      ancla: '            ...mediaOptions,\n            ...(mediaOptions.toJSON ? mediaOptions.toJSON() : {}),',
+      nuevo: "            /* waibo: media sin props internas */ ...Object.fromEntries(Object.entries(mediaOptions).filter(([k]) => !k.startsWith('_') && !['parent', 'collection', 'mirror', 'revisionNumber'].includes(k))),\n            ...(mediaOptions.toJSON ? mediaOptions.toJSON() : {}),"
+    }
+  ];
+  try {
+    let src = fs.readFileSync(archivo, 'utf8');
+    let cambios = 0;
+    for (const p of parches) {
+      if (src.includes(p.marca)) continue;
+      if (!src.includes(p.ancla)) { console.warn('⚠️ No se pudo aplicar un parche de multimedia (cambió la librería)'); continue; }
+      src = src.replace(p.ancla, p.nuevo);
+      cambios++;
+    }
+    if (cambios) {
+      fs.writeFileSync(archivo, src);
+      console.log('🩹 Parche de envío multimedia aplicado a whatsapp-web.js');
+    }
+  } catch (e) {
+    console.warn('⚠️ Parche de multimedia:', e.message);
+  }
+})();
+
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode');
 const axios = require('axios');
-const fs = require('fs');
-const path = require('path');
 
 const app = express();
 app.use(express.json({ limit: '60mb' }));
@@ -85,6 +121,27 @@ function chatIdPara(clientId, to) {
   if (s.includes('@')) return s;
   const known = chatmap[clientId] && chatmap[clientId][soloDigitos(s)];
   return known || soloDigitos(s) + '@c.us';
+}
+
+/* Para un número con el que nunca se chateó, "549...@c.us" armado a mano falla
+   ("Data passed to getter must include an id property"): hay que pedirle a WhatsApp
+   el id real del número. En Argentina probamos también sin/con el 9. */
+async function resolverDestino(client, clientId, to) {
+  const s = String(to || '');
+  if (s.includes('@')) return s;
+  const digits = soloDigitos(s);
+  const known = chatmap[clientId] && chatmap[clientId][digits];
+  if (known) return known;
+  const variantes = [digits];
+  if (/^54(?!9)/.test(digits)) variantes.push('549' + digits.slice(2));
+  if (/^549/.test(digits)) variantes.push('54' + digits.slice(3));
+  for (const v of variantes) {
+    try {
+      const wid = await client.getNumberId(v);
+      if (wid && wid._serialized) return wid._serialized;
+    } catch (_) {}
+  }
+  throw new Error('ese número no tiene WhatsApp');
 }
 
 async function etiquetasDe(rec) {
@@ -417,7 +474,7 @@ app.post('/session/:clientId/send', checkSecret, async (req, res) => {
   if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
     await wait(1200 + Math.random() * 1800); // pausa humana
-    await rec.client.sendMessage(chatIdPara(req.params.clientId, to), message);
+    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message);
     res.json({ ok: true });
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando:`, err.message);
@@ -433,7 +490,7 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   try {
     await wait(1200 + Math.random() * 1800);
     const media = new MessageMedia(mimetype, data, filename || undefined);
-    await rec.client.sendMessage(chatIdPara(req.params.clientId, to), media, { caption: caption || '' });
+    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, { caption: caption || '' });
     res.json({ ok: true });
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
