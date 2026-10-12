@@ -459,7 +459,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
               } else {
                 await qrPost(clientId, 'send-media', {
                   to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
-                  filename: rec.filename, caption: ''
+                  filename: rec.filename, caption: '', asVoice: rec.kind === 'audio'
                 });
               }
               await pool.query(
@@ -467,7 +467,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
                 [conversation.id, a.id]
               );
               await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)',
-                [conversation.id, 'assistant', `📎 ${rec.name}`]);
+                [conversation.id, 'assistant', `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`]);
             } else if (a.type === 'etiqueta') {
               await qrPost(clientId, 'label', { to: from, label: a.name });
               await pool.query(

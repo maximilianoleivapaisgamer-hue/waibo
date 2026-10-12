@@ -70,6 +70,24 @@ process.on('unhandledRejection', (err) => console.error('⚠️ unhandledRejecti
 process.on('uncaughtException', (err) => console.error('⚠️ uncaughtException:', err?.message || err));
 
 const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Las notas de voz de WhatsApp tienen que ser OGG/Opus mono. Un audio subido puede ser
+// MP3, M4A (iPhone), WAV o WebM (grabado en el navegador): lo convertimos con ffmpeg.
+const FFMPEG = process.env.FFMPEG_PATH || 'ffmpeg';
+function aNotaDeVoz(base64) {
+  return new Promise((resolve, reject) => {
+    const { spawn } = require('child_process');
+    const p = spawn(FFMPEG, ['-hide_banner', '-loglevel', 'error', '-i', 'pipe:0', '-vn', '-ac', '1', '-ar', '48000',
+      '-c:a', 'libopus', '-b:a', '32k', '-application', 'voip', '-f', 'ogg', 'pipe:1']);
+    const out = [];
+    let err = '';
+    p.stdout.on('data', (d) => out.push(d));
+    p.stderr.on('data', (d) => { err += d; });
+    p.on('error', (e) => reject(new Error('no se encontró ffmpeg: ' + e.message)));
+    p.on('close', (code) => code === 0 ? resolve(Buffer.concat(out).toString('base64')) : reject(new Error('ffmpeg: ' + err.slice(0, 200))));
+    p.stdin.end(Buffer.from(base64, 'base64'));
+  });
+}
 const soloDigitos = (s) => String(s || '').replace(/\D/g, '');
 
 function leerJson(file) {
@@ -489,8 +507,10 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   if (!to || !mimetype || !data) return res.status(400).json({ error: 'faltan to/mimetype/data' });
   try {
     await wait(1200 + Math.random() * 1800);
-    const media = new MessageMedia(mimetype, data, filename || undefined);
-    // asVoice: el audio llega como nota de voz (micrófono), no como archivo. Necesita ogg/opus.
+    // asVoice: el audio llega como nota de voz (micrófono), no como archivo.
+    const media = asVoice
+      ? new MessageMedia('audio/ogg; codecs=opus', await aNotaDeVoz(data), 'audio.ogg')
+      : new MessageMedia(mimetype, data, filename || undefined);
     const opciones = asVoice ? { sendAudioAsVoice: true } : { caption: caption || '' };
     await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones);
     res.json({ ok: true });

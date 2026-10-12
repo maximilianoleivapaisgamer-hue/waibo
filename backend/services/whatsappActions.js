@@ -41,7 +41,7 @@ function buildInstructions({ resources, alreadySent, labels, labelInstructions }
 
   if (resources.length) {
     const lista = resources.map((r) => {
-      const tipo = { image: 'imagen', video: 'video', document: 'archivo', link: 'link' }[r.kind] || r.kind;
+      const tipo = { image: 'imagen', video: 'video', document: 'archivo', link: 'link', audio: 'nota de voz grabada por el negocio' }[r.kind] || r.kind;
       const ya = alreadySent.includes(r.id) ? ' [YA ENVIADO en este chat, no lo repitas]' : '';
       return `- ID "${r.id}" (${tipo}) ${r.name}${r.description ? ': ' + r.description : ''}${ya}`;
     }).join('\n');
@@ -51,7 +51,8 @@ ${lista}
 Para mandar un recurso, escribí en una línea aparte [[enviar:ID]] con el ID exacto. El sistema lo manda por vos.
 - Mandalos solo cuando viene al caso (piden ver algo, precio, cómo funciona). No los tires al primer "hola".
 - Como mucho 1 o 2 por mensaje, y nunca uno marcado como [YA ENVIADO].
-- Presentalo con una frase corta (ej: "Te paso un video cortito 👇").`);
+- Presentalo con una frase corta (ej: "Te paso un video cortito 👇").
+- Las notas de voz son audios grabados por el negocio: si una responde justo lo que preguntan, mandala en vez de escribir la explicación larga (ej: "Te mando un audio y te explico 👇").`);
   }
 
   if (labels.length) {

@@ -1,9 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import axios from 'axios';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
-const KIND_ICON = { image: '🖼️', video: '🎬', document: '📄', link: '🔗' };
+const KIND_ICON = { image: '🖼️', video: '🎬', document: '📄', link: '🔗', audio: '🎙️' };
+
+function mmss(s) {
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
 
 function tamano(bytes) {
   if (!bytes) return '';
@@ -25,8 +29,58 @@ export default function ResourcesPanel() {
   const [success, setSuccess] = useState('');
   const [error, setError] = useState('');
 
+  // Grabación desde el micrófono
+  const [recording, setRecording] = useState(false);
+  const [recordedBlob, setRecordedBlob] = useState(null);
+  const [recordedUrl, setRecordedUrl] = useState(null);
+  const [recordSeconds, setRecordSeconds] = useState(0);
+  const recorderRef = useRef(null);
+  const timerRef = useRef(null);
+
+  // Reproducción de audios guardados
+  const [playing, setPlaying] = useState(null); // { id, url }
+
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
   const flash = (setter, msg, ms = 4000) => { setter(msg); setTimeout(() => setter(''), ms); };
+
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const tipo = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo } : undefined);
+      const partes = [];
+      rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach((t) => t.stop());
+        const blob = new Blob(partes, { type: rec.mimeType || 'audio/webm' });
+        setRecordedBlob(blob);
+        setRecordedUrl(URL.createObjectURL(blob));
+      };
+      recorderRef.current = rec;
+      rec.start();
+      setRecordedBlob(null);
+      setRecordedUrl(null);
+      setRecordSeconds(0);
+      setRecording(true);
+      timerRef.current = setInterval(() => setRecordSeconds((s) => s + 1), 1000);
+    } catch {
+      flash(setError, 'No se pudo usar el micrófono. Revisá que el navegador tenga permiso.');
+    }
+  };
+
+  const stopRecording = () => {
+    clearInterval(timerRef.current);
+    recorderRef.current?.stop();
+    setRecording(false);
+  };
+
+  const playResource = async (r) => {
+    if (playing?.id === r.id) { setPlaying(null); return; }
+    try {
+      const res = await axios.get(`${API}/api/resources/${r.id}/file`, { headers: getHeaders(), responseType: 'blob' });
+      setPlaying({ id: r.id, url: URL.createObjectURL(res.data) });
+    } catch { flash(setError, 'No se pudo cargar el audio.'); }
+  };
 
   const loadResources = async () => {
     try {
@@ -66,13 +120,18 @@ export default function ResourcesPanel() {
     if (!form.name.trim()) { flash(setError, 'Poné un nombre para el recurso.'); return; }
     setBusy(true); setError('');
     try {
-      if (mode === 'file') {
-        if (!form.file) { flash(setError, 'Elegí un archivo.'); setBusy(false); return; }
+      if (mode === 'file' || mode === 'record') {
+        const archivo = mode === 'record'
+          ? (recordedBlob && new File([recordedBlob], 'grabacion.webm', { type: recordedBlob.type || 'audio/webm' }))
+          : form.file;
+        if (!archivo) { flash(setError, mode === 'record' ? 'Primero grabá el audio.' : 'Elegí un archivo.'); setBusy(false); return; }
         const fd = new FormData();
-        fd.append('file', form.file);
+        fd.append('file', archivo);
         fd.append('name', form.name);
         fd.append('description', form.description);
         await axios.post(`${API}/api/resources/file`, fd, { headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+        setRecordedBlob(null);
+        setRecordedUrl(null);
       } else {
         await axios.post(`${API}/api/resources/link`, { name: form.name, description: form.description, url: form.url }, { headers: getHeaders() });
       }
@@ -131,13 +190,13 @@ export default function ResourcesPanel() {
       </div>
 
       <div className="card">
-        <div className="card-title">📎 Fotos, videos y archivos para mandar</div>
+        <div className="card-title">📎 Fotos, videos, audios y archivos para mandar</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
           El bot decide cuándo mandar cada uno según la charla. Describí bien cada recurso: la IA lo elige por la descripción. Máximo 16 MB por archivo (límite de WhatsApp).
         </p>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
-          {[{ k: 'file', l: '📁 Subir archivo' }, { k: 'link', l: '🔗 Link' }].map(t => (
+          {[{ k: 'file', l: '📁 Subir archivo' }, { k: 'record', l: '🎙 Grabar audio' }, { k: 'link', l: '🔗 Link' }].map(t => (
             <button key={t.k} type="button" onClick={() => setMode(t.k)}
               className={`btn ${mode === t.k ? 'btn-primary' : 'btn-secondary'}`}
               style={{ width: 'auto', padding: '7px 14px', fontSize: 13 }}>{t.l}</button>
@@ -155,8 +214,29 @@ export default function ResourcesPanel() {
           </div>
           {mode === 'file' ? (
             <div className="form-group">
-              <label>Archivo (imagen, video o PDF)</label>
-              <input type="file" accept="image/*,video/*,application/pdf" onChange={e => setForm({ ...form, file: e.target.files[0] || null })} style={{ padding: '8px 0' }} />
+              <label>Archivo (imagen, video, audio o PDF)</label>
+              <input type="file" accept="image/*,video/*,audio/*,application/pdf,.ogg,.opus,.m4a,.mp3" onChange={e => setForm({ ...form, file: e.target.files[0] || null })} style={{ padding: '8px 0' }} />
+              <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>Los audios se mandan como nota de voz, como si los grabaras en el momento.</small>
+            </div>
+          ) : mode === 'record' ? (
+            <div className="form-group">
+              <label>Grabación</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', padding: 12, border: '1px solid var(--border)', borderRadius: 10 }}>
+                {recording ? (
+                  <>
+                    <span style={{ color: '#DC2626', fontWeight: 700, fontSize: 14 }}>● Grabando {mmss(recordSeconds)}</span>
+                    <button type="button" onClick={stopRecording} className="btn btn-primary" style={{ width: 'auto', padding: '8px 16px' }}>⏹ Terminar</button>
+                  </>
+                ) : (
+                  <>
+                    <button type="button" onClick={startRecording} className="btn btn-secondary" style={{ width: 'auto', padding: '8px 16px' }}>
+                      🎙 {recordedUrl ? 'Grabar de nuevo' : 'Empezar a grabar'}
+                    </button>
+                    {recordedUrl && <audio controls src={recordedUrl} style={{ height: 36 }} />}
+                  </>
+                )}
+              </div>
+              <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>Grabá con el micrófono de la compu, escuchalo y si te gusta agregalo. Hablá natural, como en un audio de WhatsApp.</small>
             </div>
           ) : (
             <div className="form-group">
@@ -178,9 +258,14 @@ export default function ResourcesPanel() {
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontWeight: 600, fontSize: 14 }}>{r.name}</div>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                  {r.description || 'sin descripción'}{r.size_bytes ? ` · ${tamano(r.size_bytes)}` : ''}{r.url ? ` · ${r.url}` : ''}
+                  {r.kind === 'audio' && 'Nota de voz · '}{r.description || 'sin descripción'}{r.size_bytes ? ` · ${tamano(r.size_bytes)}` : ''}{r.url ? ` · ${r.url}` : ''}
                 </div>
+                {playing?.id === r.id && <audio controls autoPlay src={playing.url} style={{ height: 32, marginTop: 6 }} />}
               </div>
+              {r.kind === 'audio' && (
+                <button onClick={() => playResource(r)} title={playing?.id === r.id ? 'Cerrar' : 'Escuchar'}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 18 }}>{playing?.id === r.id ? '⏹' : '▶️'}</button>
+              )}
               <button onClick={() => deleteResource(r.id)} title="Eliminar"
                 style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#DC2626', fontSize: 18 }}>🗑</button>
             </div>

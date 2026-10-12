@@ -8,9 +8,12 @@ const authMiddleware = require('../middleware/auth');
 const MAX_BYTES = 16 * 1024 * 1024;
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: MAX_BYTES } });
 
-function kindDe(mimetype) {
+function kindDe(mimetype, filename = '') {
   if (/^image\//.test(mimetype)) return 'image';
+  if (/^audio\//.test(mimetype)) return 'audio';
   if (/^video\//.test(mimetype)) return 'video';
+  // Algunos celulares mandan los audios como application/octet-stream
+  if (/\.(ogg|opus|mp3|m4a|aac|wav)$/i.test(filename)) return 'audio';
   return 'document';
 }
 
@@ -41,7 +44,7 @@ router.post('/file', authMiddleware, (req, res) => {
         `INSERT INTO bot_resources (client_id, name, description, kind, mimetype, filename, data, size_bytes)
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
          RETURNING id, name, description, kind, mimetype, filename, size_bytes, created_at`,
-        [req.client.id, name.trim(), description || '', kindDe(req.file.mimetype), req.file.mimetype,
+        [req.client.id, name.trim(), description || '', kindDe(req.file.mimetype, req.file.originalname), req.file.mimetype,
          req.file.originalname, req.file.buffer, req.file.size]
       );
       res.json(r.rows[0]);
@@ -66,6 +69,20 @@ router.post('/link', authMiddleware, async (req, res) => {
     res.json(r.rows[0]);
   } catch (e) {
     res.status(500).json({ error: 'Error guardando el link' });
+  }
+});
+
+// Para escuchar/ver el recurso desde el panel
+router.get('/:id/file', authMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT mimetype, filename, data FROM bot_resources WHERE id = $1 AND client_id = $2', [req.params.id, req.client.id]);
+    const rec = r.rows[0];
+    if (!rec || !rec.data) return res.status(404).json({ error: 'Recurso no encontrado' });
+    res.set('Content-Type', rec.mimetype || 'application/octet-stream');
+    res.set('Cache-Control', 'private, max-age=3600');
+    res.send(rec.data);
+  } catch (e) {
+    res.status(500).json({ error: 'Error leyendo el recurso' });
   }
 });
 
