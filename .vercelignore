@@ -1,0 +1,6 @@
+whatsapp-qr-service
+backend
+**/node_modules
+frontend/.next
+.env*
+**/.env*
