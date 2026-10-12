@@ -47,7 +47,7 @@ const FORMATO = `Respondé SOLO con un JSON válido, sin texto alrededor ni bloq
   "bot_name": "nombre con el que se presenta (el del dueño o el del negocio)",
   "system_prompt": "instrucciones completas del bot (ver abajo)",
   "sales_steps": [
-    { "title": "nombre corto", "instruction": "qué hace el bot en este paso, con el texto exacto si el negocio usa uno", "needs_file": "qué archivo convendría mandar en este paso (ej: video de cómo funciona, imagen de precios) o null", "caption": "texto que va junto al archivo o null", "after_text": "mensaje que va después del archivo o null", "label": "etiqueta que se pone al completarlo o null" }
+    { "title": "nombre corto", "instruction": "qué hace el bot en este paso, con el texto exacto si el negocio usa uno", "needs_file": "qué archivo convendría mandar en este paso (ej: video de cómo funciona, imagen de precios) o null", "caption": "texto que va junto al archivo o null", "after_text": "mensaje que va después del archivo o null", "label": "UNA sola etiqueta fija que se pone siempre al completarlo, o null. Si depende del cliente (ej: Local o Revendedor), va null y lo explicás en instruction con [[etiqueta:Nombre]]" }
   ],
   "label_instructions": "cuándo usar cada etiqueta y cuándo archivar, una regla por línea con guion",
   "recontact_guide": "cómo hacer el seguimiento de quien deja de contestar, según cada caso, una regla por línea con guion",
@@ -139,7 +139,7 @@ router.post('/apply', authMiddleware, async (req, res) => {
         resource_id: null,
         caption: s.caption ? String(s.caption).slice(0, 1000) : null,
         after_text: s.after_text ? String(s.after_text).slice(0, 1000) : null,
-        label: s.label ? String(s.label).slice(0, 60) : null
+        label: s.label && !/\s(o|\+|y)\s|\(|\//i.test(s.label) ? String(s.label).slice(0, 60) : null
       }));
       await pool.query('UPDATE bot_configs SET sales_steps = $2::jsonb, sales_steps_enabled = true WHERE client_id = $1', [id, JSON.stringify(pasos)]);
     }
