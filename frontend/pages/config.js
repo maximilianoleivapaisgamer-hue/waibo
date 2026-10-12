@@ -6,6 +6,7 @@ import KnowledgePanel from '../components/KnowledgePanel';
 import ResourcesPanel from '../components/ResourcesPanel';
 import SalesStepsPanel from '../components/SalesStepsPanel';
 import RecontactPanel from '../components/RecontactPanel';
+import SellerBuilderPanel from '../components/SellerBuilderPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -19,7 +20,7 @@ export default function Config() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps' || router.query.tab === 'recontact') setMainTab(router.query.tab);
+    if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps' || router.query.tab === 'recontact' || router.query.tab === 'builder') setMainTab(router.query.tab);
   }, [router.query.tab]);
 
   useEffect(() => {
@@ -73,8 +74,9 @@ export default function Config() {
           <p>Personalizá cómo responde tu asistente y qué información conoce</p>
         </div>
 
-        <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+        <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
+            { key: 'builder', label: '✨ Armá tu vendedor con IA' },
             { key: 'config', label: '🎭 Personalidad y comportamiento' },
             { key: 'knowledge', label: '🧠 Base de conocimiento' },
             { key: 'resources', label: '📎 Recursos y etiquetas' },
@@ -96,6 +98,7 @@ export default function Config() {
         {mainTab === 'resources' && <ResourcesPanel />}
         {mainTab === 'steps' && <SalesStepsPanel />}
         {mainTab === 'recontact' && <RecontactPanel />}
+        {mainTab === 'builder' && <SellerBuilderPanel />}
 
         <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}

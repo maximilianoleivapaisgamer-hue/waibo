@@ -59,6 +59,7 @@ const resourcesRoutes = require('./routes/resources');
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/clients', apiLimiter, clientRoutes);
 app.use('/api/bot', apiLimiter, botRoutes);
+app.use('/api/seller-builder', apiLimiter, require('./routes/sellerBuilder'));
 app.use('/api/instagram', apiLimiter, instagramRoutes);
 app.use('/api/facebook', apiLimiter, facebookRoutes);
 app.use('/api/knowledge', apiLimiter, knowledgeRoutes);
