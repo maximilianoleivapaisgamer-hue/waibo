@@ -837,4 +837,58 @@ router.put('/conversations/:id/sales-step', authMiddleware, async (req, res) => 
   }
 });
 
+// Seguimiento / recontacto de clientes que dejaron de contestar
+router.get('/recontact', authMiddleware, async (req, res) => {
+  try {
+    const cfg = (await pool.query(
+      `SELECT recontact_enabled, recontact_schedule, recontact_guide, recontact_start_hour, recontact_end_hour, recontact_daily_limit
+       FROM bot_configs WHERE client_id = $1`, [req.client.id])).rows[0] || {};
+    const esperando = (await pool.query(
+      `SELECT id, customer_name, customer_phone, recontact_hold_until, recontact_note
+       FROM conversations WHERE client_id = $1 AND recontact_hold_until > NOW() ORDER BY recontact_hold_until LIMIT 100`, [req.client.id])).rows;
+    const recientes = (await pool.query(
+      `SELECT c.id, c.customer_name, c.customer_phone, m.content, m.timestamp, c.recontact_count
+       FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.client_id = $1 AND m.origin = 'seguimiento' AND m.content NOT LIKE '📎%' AND m.content NOT LIKE '🎙️%'
+       ORDER BY m.timestamp DESC LIMIT 30`, [req.client.id])).rows;
+    res.json({ config: cfg, esperando, recientes });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/recontact', authMiddleware, async (req, res) => {
+  const { enabled, schedule, guide, start_hour, end_hour, daily_limit } = req.body;
+  const horas = (Array.isArray(schedule) ? schedule : []).map(Number).filter((h) => h > 0 && h <= 24 * 60).slice(0, 6);
+  if (!horas.length) return res.status(400).json({ error: 'Poné al menos un intento' });
+  try {
+    const r = await pool.query(
+      `UPDATE bot_configs SET recontact_enabled = $2, recontact_schedule = $3::jsonb, recontact_guide = $4,
+         recontact_start_hour = $5, recontact_end_hour = $6, recontact_daily_limit = $7
+       WHERE client_id = $1
+       RETURNING recontact_enabled, recontact_schedule, recontact_guide, recontact_start_hour, recontact_end_hour, recontact_daily_limit`,
+      [req.client.id, !!enabled, JSON.stringify(horas), String(guide || '').slice(0, 4000),
+       Math.max(0, Math.min(23, parseInt(start_hour, 10) || 9)), Math.max(1, Math.min(24, parseInt(end_hour, 10) || 21)),
+       Math.max(1, Math.min(200, parseInt(daily_limit, 10) || 40))]
+    );
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/conversations/:id/recontact', authMiddleware, async (req, res) => {
+  // stop = no escribirle más; resume = vuelve a entrar en el seguimiento
+  const stop = req.body.action === 'stop';
+  try {
+    await pool.query(
+      `UPDATE conversations SET recontact_count = $3, recontact_hold_until = NULL, recontact_note = $4 WHERE id = $1 AND client_id = $2`,
+      [req.params.id, req.client.id, stop ? 99 : 0, stop ? 'frenado a mano' : null]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

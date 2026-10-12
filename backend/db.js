@@ -506,6 +506,15 @@ async function initDB() {
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sales_step INTEGER DEFAULT 0;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER DEFAULT 120;
       ALTER TABLE bot_configs ALTER COLUMN reply_delay_seconds SET DEFAULT 120;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_enabled BOOLEAN DEFAULT false;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_schedule JSONB DEFAULT '[4, 24, 72]'::jsonb;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_guide TEXT;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_start_hour INTEGER DEFAULT 9;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_end_hour INTEGER DEFAULT 21;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS recontact_daily_limit INTEGER DEFAULT 40;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_count INTEGER DEFAULT 0;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_hold_until TIMESTAMP;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_note TEXT;
       -- NULL = lo escribió el bot/sistema; 'import' = historial importado,
       -- 'manual' = enviado a mano desde el panel, 'phone' = enviado desde el celular.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS origin VARCHAR(20);

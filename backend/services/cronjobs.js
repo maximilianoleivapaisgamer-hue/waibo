@@ -683,4 +683,9 @@ cron.schedule('0 8 * * 1', async () => {
 });
 
 console.log('✅ Cronjobs iniciados (recordatorios + morosidad + limpieza + seguimientos + retención + onboarding + resumen semanal)');
+// Recontacto de clientes que dejaron de contestar (un chat por línea cada 5 minutos)
+cron.schedule('*/5 * * * *', () => {
+  require('./recontact').runRecontact().catch((e) => console.error('[seguimiento]', e.message));
+});
+
 module.exports = { reactivateClient };

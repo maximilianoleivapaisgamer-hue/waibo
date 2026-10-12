@@ -425,7 +425,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
         convId = nc.rows[0].id;
       }
       await pool.query(`INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)`, [convId, text]);
-      await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
+      await pool.query('UPDATE conversations SET updated_at = NOW(), recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [convId]);
       if (Array.isArray(labels) && labels.length) {
         await pool.query(`UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $2::text[])) WHERE id = $1`, [convId, labels]);
       }

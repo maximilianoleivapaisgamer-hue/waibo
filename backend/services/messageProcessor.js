@@ -90,6 +90,9 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   // Demora antes de contestar: una respuesta instantánea parece un robot y, si el cliente
   // entra por un anuncio, ni la ve. Si en la espera el cliente manda más mensajes, contesta
   // solo la última llamada (con todo el historial); si alguien contestó a mano, no contesta.
+  // El cliente contestó: el seguimiento vuelve a empezar de cero.
+  await pool.query('UPDATE conversations SET recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [conversation.id]);
+
   let yaGuardado = false;
   const demora = Math.min(Number(config.reply_delay_seconds) || 0, 900);
   if (demora > 0) {
