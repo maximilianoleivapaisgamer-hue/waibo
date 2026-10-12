@@ -383,10 +383,18 @@ router.get('/labels', authMiddleware, async (req, res) => {
 
 // Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
-  const { clientId, from, name, text, labels } = req.body;
+  const { clientId, from, name, labels, audio } = req.body;
+  let { text } = req.body;
   if (!clientId || !from || !text) return res.status(400).json({ error: 'faltan datos' });
 
   try {
+    // Nota de voz que el servicio QR no pudo transcribir en la PC: la transcribimos en la nube
+    if (audio && audio.data) {
+      const { transcribeAudio } = require('../services/voice');
+      const dicho = await transcribeAudio(Buffer.from(audio.data, 'base64'), audio.mimetype || 'audio/ogg');
+      if (dicho) text = `[Audio del cliente]: ${dicho}`;
+    }
+
     const cr = await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [clientId]);
     if (!cr.rows.length || cr.rows[0].whatsapp_mode !== 'qr') {
       return res.json({ ok: true, skipped: 'el cliente no tiene el QR como canal activo' });

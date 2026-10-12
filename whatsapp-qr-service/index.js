@@ -181,6 +181,63 @@ async function avisarBackend(ruta, body, timeout = 20000) {
   });
 }
 
+/* Transcripción de notas de voz con el Whisper local del Captador de Clientes
+   (faster-whisper + modelo ya bajado en su carpeta): gratis, sin internet y sin mandar
+   el audio afuera. De a una por vez: cada transcripción carga el modelo en memoria. */
+const TRANSCRIBIR_PY = process.env.TRANSCRIBIR_PY
+  || 'C:\\Proyecto APP\\Captador de Clientes\\waibo-bot_1\\waibo-bot\\transcribir.py';
+const PYTHON = process.env.PYTHON_PATH || 'python';
+const MODO_TRANSCRIPCION = (process.env.TRANSCRIPCION || 'auto').toLowerCase();
+let colaTranscripcion = Promise.resolve();
+
+// msg.downloadMedia() falla con algunos audios en esta versión: vamos directo al gestor
+// de descargas de WhatsApp pasándole el mimetype (sin eso rechaza los ptt con
+// "Unexpected mimetype application/octet-stream"). Copiado de bajar-audio.js del Captador.
+async function bajarAudio(client, msgId) {
+  const r = await client.pupPage.evaluate(async (id) => {
+    const Coll = window.require('WAWebCollections');
+    let m = Coll.Msg.get(id);
+    if (!m) m = (await Coll.Msg.getMessagesById([id]))?.messages?.[0];
+    if (!m) return { error: 'no encuentro el mensaje' };
+    try {
+      if (m.mediaData && m.mediaData.mediaStage !== 'RESOLVED') await m.downloadMedia({ downloadEvenIfExpensive: true, rmrReason: 1 });
+      const qpl = { addAnnotations() { return this; }, addPoint() { return this; } };
+      const crudo = await window.require('WAWebDownloadManager').downloadManager.downloadAndMaybeDecrypt({
+        directPath: m.directPath, encFilehash: m.encFilehash, filehash: m.filehash,
+        mediaKey: m.mediaKey, mediaKeyTimestamp: m.mediaKeyTimestamp, type: m.type,
+        mimetype: m.mimetype || 'audio/ogg; codecs=opus',
+        signal: new AbortController().signal, downloadQpl: qpl
+      });
+      return { ok: true, b64: await window.WWebJS.arrayBufferToBase64Async(crudo) };
+    } catch (e) { return { error: String((e && e.message) || e).slice(0, 200) }; }
+  }, msgId);
+  if (!r || !r.ok) throw new Error((r && r.error) || 'no se pudo bajar el audio');
+  return r.b64;
+}
+
+function transcribir(base64) {
+  const tarea = colaTranscripcion.then(() => new Promise((resolve, reject) => {
+    const os = require('os');
+    const { execFile } = require('child_process');
+    const archivo = path.join(os.tmpdir(), `waibo-audio-${Date.now()}-${Math.random().toString(36).slice(2)}.ogg`);
+    fs.writeFileSync(archivo, Buffer.from(base64, 'base64'));
+    execFile(PYTHON, [TRANSCRIBIR_PY, archivo], {
+      timeout: 180000,
+      maxBuffer: 4 * 1024 * 1024,
+      env: { ...process.env, PYTHONIOENCODING: 'utf-8' } // sin esto los acentos llegan rotos
+    }, (err, stdout) => {
+      try { fs.unlinkSync(archivo); } catch (_) {}
+      const linea = String(stdout || '').trim().split('\n').reverse().find((l) => l.trim().startsWith('{'));
+      let out = null;
+      try { out = linea && JSON.parse(linea); } catch (_) {}
+      if (out && out.ok) return resolve(out.texto || '');
+      reject(new Error((out && out.error) || (err && err.message) || 'transcripción sin respuesta'));
+    });
+  }));
+  colaTranscripcion = tarea.catch(() => {});
+  return tarea;
+}
+
 /* Texto de un mensaje entrante. En los multimedia el body es el epígrafe; si viene
    algo que no parece texto (base64 de miniatura) no lo usamos. */
 function textoDe(msg) {
@@ -242,8 +299,33 @@ function ensureClient(clientId) {
       const from = String(msg.from || '');
       if (!from || from === 'status@broadcast' || from.endsWith('@g.us') || from.endsWith('@newsletter')) return;
 
-      const text = textoDe(msg);
+      let text = textoDe(msg);
       if (!text) return;
+
+      // Notas de voz: primero el Whisper local; si no está o falla, se manda el audio a
+      // Railway para que lo transcriba un proveedor en la nube (TRANSCRIPCION=auto|local|nube).
+      let audioParaNube = null;
+      if (msg.type === 'ptt' || msg.type === 'audio') {
+        let b64 = null;
+        try { b64 = await bajarAudio(client, msg.id._serialized); }
+        catch (e) { console.error(`[${clientId}] No se pudo bajar el audio:`, e.message); }
+        if (b64) {
+          let listo = false;
+          if (MODO_TRANSCRIPCION !== 'nube' && fs.existsSync(TRANSCRIBIR_PY)) {
+            try {
+              const t0 = Date.now();
+              const dicho = (await transcribir(b64)).trim();
+              if (dicho) { text = `[Audio del cliente]: ${dicho}`; listo = true; }
+              console.log(`[${clientId}] Audio transcripto en la PC en ${Math.round((Date.now() - t0) / 1000)}s: ${dicho.slice(0, 60)}`);
+            } catch (e) {
+              console.error(`[${clientId}] Whisper local falló:`, e.message);
+            }
+          }
+          if (!listo && MODO_TRANSCRIPCION !== 'local') {
+            audioParaNube = { data: b64, mimetype: msg._data?.mimetype || 'audio/ogg; codecs=opus' };
+          }
+        }
+      }
 
       const tel = await telefonoDe(client, from);
       const phone = tel || soloDigitos(from);
@@ -263,7 +345,7 @@ function ensureClient(clientId) {
 
       const name = msg._data?.notifyName || null;
       console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
-      await avisarBackend('message', { clientId, from: phone, name, text, labels }, 120000);
+      await avisarBackend('message', { clientId, from: phone, name, text, labels, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
