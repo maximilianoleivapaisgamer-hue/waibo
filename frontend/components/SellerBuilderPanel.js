@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import axios from 'axios';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 const FUENTES = [
+  { k: 'template', icon: '🗂️', t: 'Desde una plantilla', d: 'Elegí tu rubro y arrancá de una plantilla lista, que completás vos o con ayuda de la IA.' },
   { k: 'chats', icon: '💬', t: 'Desde mis chats', d: 'La IA lee tus conversaciones de WhatsApp guardadas en Waibo y aprende cómo vendés.' },
   { k: 'doc', icon: '📄', t: 'Desde un documento', d: 'Pegá o subí un texto o PDF con cómo vendés, precios y preguntas frecuentes.' },
   { k: 'questions', icon: '📝', t: 'Respondiendo preguntas', d: 'Contestá unas preguntas cortas sobre tu negocio y la IA arma el resto.' }
@@ -46,6 +47,25 @@ export default function SellerBuilderPanel() {
   const [parts, setParts] = useState(PARTES.map(p => p.k));
   const [applied, setApplied] = useState(false);
   const [error, setError] = useState('');
+  const [templates, setTemplates] = useState([]);
+  const [template, setTemplate] = useState('');
+
+  useEffect(() => {
+    axios.get(`${API}/api/seller-builder/templates`, { headers: getHeaders() })
+      .then(r => setTemplates(r.data.templates || []))
+      .catch(() => {});
+  }, []);
+
+  const usarPlantilla = async () => {
+    setError('');
+    try {
+      const r = await axios.get(`${API}/api/seller-builder/templates/${template}`, { headers: getHeaders() });
+      setProposal(r.data.proposal);
+      setApplied(false);
+    } catch (e) {
+      setError('No se pudo cargar la plantilla');
+    }
+  };
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
@@ -54,7 +74,8 @@ export default function SellerBuilderPanel() {
     setLoading(true);
     try {
       const fd = new FormData();
-      fd.append('source', source);
+      fd.append('source', source === 'template' ? 'doc' : source);
+      if (source === 'template') { fd.append('template', template); fd.append('text', text); }
       if (source === 'doc') { fd.append('text', text); if (file) fd.append('file', file); }
       if (source === 'questions') fd.append('answers', JSON.stringify(answers));
       const r = await axios.post(`${API}/api/seller-builder/propose`, fd, { headers: getHeaders(), timeout: 300000 });
@@ -80,7 +101,7 @@ export default function SellerBuilderPanel() {
 
   const editStep = (i, field, value) => setProposal({ ...proposal, sales_steps: proposal.sales_steps.map((s, j) => (j === i ? { ...s, [field]: value } : s)) });
   const toggle = (k) => setParts(prev => (prev.includes(k) ? prev.filter(x => x !== k) : [...prev, k]));
-  const puedeArmar = source === 'chats' || (source === 'doc' && (text.trim().length > 50 || file)) || (source === 'questions' && Object.values(answers).join('').length > 80);
+  const puedeArmar = (source === 'template' && template && text.trim().length > 150) || source === 'chats' || (source === 'doc' && (text.trim().length > 50 || file)) || (source === 'questions' && Object.values(answers).join('').length > 80);
 
   if (applied) {
     const archivos = (proposal.sales_steps || []).map((s, i) => s.needs_file ? `Paso ${i + 1} (${s.title}): ${s.needs_file}` : null).filter(Boolean);
@@ -198,6 +219,35 @@ export default function SellerBuilderPanel() {
           ))}
         </div>
 
+        {source === 'template' && (
+          <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(170px, 1fr))', gap: 8, marginBottom: 14 }}>
+              {templates.map(t => (
+                <button key={t.id} type="button" onClick={() => setTemplate(t.id)} title={t.description}
+                  style={{
+                    textAlign: 'left', padding: 10, borderRadius: 10, cursor: 'pointer', background: template === t.id ? '#F5F3FF' : 'var(--bg)',
+                    border: template === t.id ? '2px solid #7C3AED' : '1px solid var(--border)'
+                  }}>
+                  <div style={{ fontWeight: 600, fontSize: 13 }}>{t.icon} {t.name}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{t.description}</div>
+                </button>
+              ))}
+            </div>
+            {template && (
+              <>
+                <button type="button" onClick={usarPlantilla} className="btn btn-secondary" style={{ width: 'auto', padding: '8px 16px', marginBottom: 14 }}>
+                  Ver la plantilla y completarla yo
+                </button>
+                <div className="form-group">
+                  <label>O contale a la IA sobre tu negocio y la completa por vos</label>
+                  <textarea style={{ minHeight: 140 }} value={text} onChange={e => setText(e.target.value)}
+                    placeholder="Nombre del negocio, quién atiende, qué vendés, precios, zona, horarios, formas de pago, cómo vendés..." />
+                </div>
+              </>
+            )}
+          </div>
+        )}
+
         {source === 'chats' && (
           <p style={{ fontSize: 13 }}>Va a leer hasta 200 de tus chats más recientes donde contestaste vos. Necesitás tener WhatsApp conectado y los chats importados.</p>
         )}
@@ -225,7 +275,7 @@ export default function SellerBuilderPanel() {
 
         {source && (
           <button type="button" onClick={proponer} disabled={loading || !puedeArmar} className="btn btn-primary" style={{ width: 'auto', padding: '10px 22px' }}>
-            {loading ? '⏳ La IA está armando tu vendedor (1 a 3 minutos)…' : '✨ Armar mi vendedor'}
+            {loading ? '⏳ La IA está armando tu vendedor (1 a 3 minutos)…' : (source === 'template' ? '✨ Completar la plantilla con IA' : '✨ Armar mi vendedor')}
           </button>
         )}
       </div>

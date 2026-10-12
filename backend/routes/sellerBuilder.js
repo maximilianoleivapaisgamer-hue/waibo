@@ -5,6 +5,7 @@ const pdfParse = require('pdf-parse');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 const { callClaudeAPI } = require('../services/ai');
+const plantillas = require('../data/sellerTemplates');
 
 /*
  * "Armá tu vendedor con IA": a partir de un documento, de los chats ya guardados o de unas
@@ -65,6 +66,14 @@ Cómo escribir "system_prompt" (es lo más importante):
 
 Pasos de venta: entre 3 y 6, en el orden en que el negocio vende de verdad. El primero es la apertura para un contacto nuevo. El último suele ser pasarle el chat al dueño cuando el cliente quiere cerrar, salvo que el negocio cierre solo por chat.`;
 
+// Plantillas por rubro: se cargan al instante como propuesta, para revisar y aplicar
+router.get('/templates', authMiddleware, (req, res) => res.json({ templates: plantillas.list() }));
+router.get('/templates/:id', authMiddleware, (req, res) => {
+  const p = plantillas.get(req.params.id);
+  if (!p) return res.status(404).json({ error: 'No existe esa plantilla' });
+  res.json({ proposal: p });
+});
+
 // POST /api/seller-builder/propose  (multipart: file opcional; campos source, text, answers)
 router.post('/propose', authMiddleware, upload.single('file'), async (req, res) => {
   try {
@@ -95,6 +104,7 @@ router.post('/propose', authMiddleware, upload.single('file'), async (req, res) 
       return res.status(400).json({ error: 'Elegí de dónde sacar la información' });
     }
 
+    const base = req.body.template ? plantillas.get(req.body.template) : null;
     const cli = (await pool.query('SELECT business_name, name FROM clients WHERE id = $1', [req.client.id])).rows[0] || {};
     const raw = await callClaudeAPI({
       model: 'claude-sonnet-4-6',
@@ -104,7 +114,7 @@ router.post('/propose', authMiddleware, upload.single('file'), async (req, res) 
 Negocio: ${cli.business_name || cli.name || 'sin nombre'}.
 
 ${FORMATO}`,
-      messages: [{ role: 'user', content: `${tipo}:\n\n${material}` }]
+      messages: [{ role: 'user', content: `${base ? `PLANTILLA DEL RUBRO (partí de esta estructura, completá cada [COMPLETAR] con la información del negocio y adaptala a cómo vende; lo que no aparezca, dejalo en missing):\n${JSON.stringify(base)}\n\n` : ''}${tipo}:\n\n${material}` }]
     }, { timeout: 280000, maxRetries: 1 });
 
     const json = raw.slice(raw.indexOf('{'), raw.lastIndexOf('}') + 1);
