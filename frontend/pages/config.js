@@ -201,13 +201,13 @@ export default function Config() {
             <div className="form-group" style={{ marginTop: 12 }}>
               <label>⏱️ Demora antes de contestar</label>
               <select
-                value={String(config.reply_delay_seconds ?? 0)}
+                value={String(config.reply_delay_seconds ?? 120)}
                 onChange={e => setConfig({ ...config, reply_delay_seconds: parseInt(e.target.value, 10) })}
               >
                 <option value="0">Al instante</option>
                 <option value="30">30 segundos</option>
                 <option value="60">1 minuto</option>
-                <option value="120">2 minutos</option>
+                <option value="120">2 minutos (recomendado)</option>
                 <option value="180">3 minutos</option>
                 <option value="300">5 minutos</option>
                 <option value="600">10 minutos</option>
