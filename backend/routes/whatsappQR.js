@@ -448,9 +448,9 @@ router.post('/message', checkServiceSecret, async (req, res) => {
       clientId, to: from, cfg,
       channel: {
         sendText: (t) => qrPost(clientId, 'send', { to: from, message: t }),
-        sendMedia: (rec) => qrPost(clientId, 'send-media', {
+        sendMedia: (rec, caption) => qrPost(clientId, 'send-media', {
           to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
-          filename: rec.filename, caption: '', asVoice: rec.kind === 'audio'
+          filename: rec.filename, caption: caption || '', asVoice: rec.kind === 'audio'
         }),
         applyLabel: (name) => qrPost(clientId, 'label', { to: from, label: name }),
         archive: () => qrPost(clientId, 'archive', { to: from }),

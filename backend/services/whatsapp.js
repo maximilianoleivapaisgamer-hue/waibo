@@ -67,6 +67,7 @@ async function sendWhatsAppMedia(to, rec, apiKey, options = {}) {
   const media = { id: up.data.id };
   if (tipo === 'document') media.filename = filename;
   if (tipo === 'audio' && mimetype === 'audio/ogg') media.voice = true;
+  if (options.caption && tipo !== 'audio') media.caption = options.caption;
   const r = await axios.post(`${base}/messages`,
     { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: tipo, [tipo]: media },
     { headers: { ...auth, 'Content-Type': 'application/json' } });

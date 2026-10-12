@@ -25,6 +25,15 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
         labelInstructions: cfg.label_instructions || ''
       });
       if (!pasos.length) return base;
+      // El paso 1 es la apertura: solo va al que nunca recibió un mensaje nuestro. Si en el chat
+      // ya hay un saliente (del bot, importado o escrito a mano), se arranca desde el paso 2.
+      if (!(conversation.sales_step > 0) && pasos.length > 1) {
+        const saliente = await pool.query(`SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'assistant' LIMIT 1`, [conversation.id]);
+        if (saliente.rows.length) {
+          await pool.query('UPDATE conversations SET sales_step = 1 WHERE id = $1 AND COALESCE(sales_step, 0) = 0', [conversation.id]);
+          conversation.sales_step = 1;
+        }
+      }
       return base + buildSalesInstructions({ steps: pasos, current: conversation.sales_step || 0, resources: recs.rows });
     },
 
@@ -52,14 +61,19 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
             const r = await pool.query('SELECT * FROM bot_resources WHERE id = $1 AND client_id = $2', [a.id, clientId]);
             const rec = r.rows[0];
             if (!rec) continue;
+            const delPaso = paso && paso.resource_id === a.id ? paso : null;
             if (rec.kind === 'link') await channel.sendText(rec.url);
-            else await channel.sendMedia(rec);
+            else await channel.sendMedia(rec, delPaso?.caption || '');
             await pool.query(
               `UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`,
               [conversation.id, a.id]
             );
             await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)',
               [conversation.id, 'assistant', `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`]);
+            if (delPaso?.after_text) {
+              await channel.sendText(delPaso.after_text);
+              await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', delPaso.after_text]);
+            }
           } else if (a.type === 'etiqueta') {
             if (channel.applyLabel) await channel.applyLabel(a.name);
             await pool.query(
@@ -67,6 +81,11 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
                WHERE id = $1 AND NOT (COALESCE(tags, '{}') @> ARRAY[$2::text])`,
               [conversation.id, a.name]
             );
+          } else if (a.type === 'derivar') {
+            const { createAlert } = require('./alerts');
+            await pool.query(`UPDATE conversations SET status = 'human' WHERE id = $1`, [conversation.id]);
+            const quien = conversation.customer_name && conversation.customer_name !== to ? `${conversation.customer_name} (${to})` : to;
+            await createAlert(clientId, conversation.id, 'human_requested', `${quien} necesita que lo atiendas vos${a.name ? ': ' + a.name : ''}`);
           } else if (a.type === 'archivar') {
             if (channel.archive) await channel.archive();
             await pool.query('UPDATE conversations SET archived = true WHERE id = $1', [conversation.id]);

@@ -58,7 +58,9 @@ const DEFAULT_TONE_INSTRUCTIONS = {
 async function getAIResponse(messages, systemPrompt, businessInfo, knowledgeBase = '', botName = 'Asistente', botTone = 'amigable', aiModel = null, botToneCustom = null) {
   const tone = botToneCustom || DEFAULT_TONE_INSTRUCTIONS[botTone] || DEFAULT_TONE_INSTRUCTIONS['amigable'];
 
+  const ahora = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   const fullSystem = `Tu nombre es ${botName}. Atendés los mensajes de los clientes del negocio. Si te presentás, decí tu nombre tal cual (ej: "Soy ${botName}").
+Ahora en Argentina es ${ahora}. Usalo para el saludo (buen día, buenas tardes, buenas noches) y para el día de la semana; nunca lo supongas.
 
 PERSONALIDAD Y TONO:
 ${tone}

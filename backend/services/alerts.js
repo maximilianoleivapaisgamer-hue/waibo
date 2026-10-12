@@ -25,11 +25,21 @@ async function notifyOwnerIfEnabled(clientId, message) {
     const config = configResult.rows[0];
     if (!config?.owner_notifications_enabled || !config.owner_notification_phone) return;
 
-    const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id FROM clients WHERE id = $1', [clientId]);
+    const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id, whatsapp_mode FROM clients WHERE id = $1', [clientId]);
     const cr = clientResult.rows[0];
+    const ownerPhone = normalizePhone(config.owner_notification_phone);
+
+    // Con WhatsApp por QR el aviso sale por la misma línea, a través del servicio QR
+    if (cr?.whatsapp_mode === 'qr' && process.env.QR_SERVICE_URL) {
+      const axios = require('axios');
+      const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+      await axios.post(`${process.env.QR_SERVICE_URL}/session/${clientId}/send`,
+        { to: ownerPhone, message: `🔔 *Waibo*\n\n${message}`, secret },
+        { headers: { 'x-service-secret': secret }, timeout: 60000 });
+      return;
+    }
     if (!cr?.whatsapp_api_key) return;
 
-    const ownerPhone = normalizePhone(config.owner_notification_phone);
     await sendWhatsAppMessage(ownerPhone, `🔔 *Waibo*\n\n${message}`, cr.whatsapp_api_key, { provider: cr.whatsapp_provider || '360dialog', phoneNumberId: cr.whatsapp_phone_id });
   } catch (err) {
     console.error('Error notificando al dueño por WhatsApp:', err.message);

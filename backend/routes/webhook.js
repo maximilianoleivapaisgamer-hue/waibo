@@ -20,7 +20,7 @@ function extrasApi(client, config, to, opts) {
     clientId: client.id, to, cfg: config,
     channel: {
       sendText: (t) => sendWhatsAppMessage(to, t, client.whatsapp_api_key, opts),
-      sendMedia: (rec) => sendWhatsAppMedia(to, rec, client.whatsapp_api_key, opts),
+      sendMedia: (rec, caption) => sendWhatsAppMedia(to, rec, client.whatsapp_api_key, { ...opts, caption }),
       labels: () => waiboLabels(client.id)
     }
   });

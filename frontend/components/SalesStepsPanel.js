@@ -87,6 +87,7 @@ export default function SalesStepsPanel() {
         <div className="card-title">🪜 Pasos de venta</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
           El bot sigue estos pasos en orden, uno por respuesta, y Waibo recuerda en qué paso va cada chat.
+          El paso 1 es la apertura: solo va a quien nunca recibió un mensaje tuyo; los demás arrancan en el paso 2.
           Si el cliente pregunta otra cosa, el bot primero le contesta y después sigue con el paso. Funciona en WhatsApp conectado por QR.
         </p>
 
@@ -131,6 +132,20 @@ export default function SalesStepsPanel() {
                 <input list="etiquetas-wa" value={p.label} onChange={e => update(i, 'label', e.target.value)} placeholder="— ninguna —" />
               </div>
             </div>
+            {p.resource_id && (
+              <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
+                <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+                  <label>Texto junto al archivo (opcional)</label>
+                  <textarea style={{ minHeight: 50 }} value={p.caption || ''} onChange={e => update(i, 'caption', e.target.value)}
+                    placeholder="Ej: Te paso los precios 👇" />
+                </div>
+                <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+                  <label>Mensaje después del archivo (opcional)</label>
+                  <textarea style={{ minHeight: 50 }} value={p.after_text || ''} onChange={e => update(i, 'after_text', e.target.value)}
+                    placeholder="Ej: Comentame si te quedó alguna duda" />
+                </div>
+              </div>
+            )}
             {enPaso(i) > 0 && (
               <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{enPaso(i)} chat{enPaso(i) === 1 ? '' : 's'} en este paso</div>
             )}

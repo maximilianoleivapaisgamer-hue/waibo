@@ -769,6 +769,8 @@ router.put('/sales-steps', authMiddleware, async (req, res) => {
       title: String(p.title || '').trim().slice(0, 80),
       instruction: String(p.instruction || '').trim().slice(0, 1000),
       resource_id: p.resource_id || null,
+      caption: String(p.caption || '').trim().slice(0, 1000) || null,
+      after_text: String(p.after_text || '').trim().slice(0, 1000) || null,
       label: String(p.label || '').trim().slice(0, 60) || null
     }))
     .filter((p) => p.title);
