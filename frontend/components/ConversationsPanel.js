@@ -46,6 +46,8 @@ export default function ConversationsPanel({ channel }) {
   const [tagFilter, setTagFilter] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [savingFunnel, setSavingFunnel] = useState(false);
+  const [salesSteps, setSalesSteps] = useState([]);
+  const [savingStep, setSavingStep] = useState(false);
 
   const FUNNEL_STAGES = [
     { key: 'nuevo',           label: 'Nuevo',          bg: '#F3F4F6', color: '#6B7280' },
@@ -74,6 +76,26 @@ export default function ConversationsPanel({ channel }) {
   }, [messages]);
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
+
+  // Pasos de venta: solo se muestran si el negocio los tiene activados
+  useEffect(() => {
+    axios.get(`${API}/api/bot/sales-steps`, { headers: getHeaders() })
+      .then(r => setSalesSteps(r.data.enabled ? r.data.steps || [] : []))
+      .catch(() => {});
+  }, []);
+
+  const changeSalesStep = async (step) => {
+    if (!selected) return;
+    setSavingStep(true);
+    try {
+      await axios.put(`${API}/api/bot/conversations/${selected.id}/sales-step`, { step }, { headers: getHeaders() });
+      setSelected(prev => ({ ...prev, sales_step: step }));
+      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, sales_step: step } : c));
+    } catch (e) {
+      alert('No se pudo cambiar el paso. Intentá de nuevo.');
+    }
+    setSavingStep(false);
+  };
 
   const byChannel = (list) => channel ? list.filter(c => c.channel === channel) : list;
 
@@ -326,6 +348,11 @@ export default function ConversationsPanel({ channel }) {
                     {conv.archived && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#F3F4F6', color: '#6B7280', fontWeight: 500 }}>🗄 archivado</span>}
                   </div>
                   <div className="conv-last">{conv.last_message || '—'}</div>
+                  {salesSteps.length > 0 && (
+                    <div style={{ fontSize: 10, marginTop: 3, color: '#0E7490', fontWeight: 600 }}>
+                      🪜 {(conv.sales_step || 0) >= salesSteps.length ? 'Pasos completos' : `Paso ${(conv.sales_step || 0) + 1}/${salesSteps.length}: ${salesSteps[conv.sales_step || 0].title}`}
+                    </div>
+                  )}
                   {conv.tags?.length > 0 && (
                     <div style={{ display: 'flex', gap: 4, marginTop: 4, flexWrap: 'wrap' }}>
                       {conv.tags.map(tag => (
@@ -474,6 +501,37 @@ export default function ConversationsPanel({ channel }) {
                 })}
               </div>
             </div>
+
+            {salesSteps.length > 0 && (() => {
+              const actual = conversations.find(c => c.id === selected.id)?.sales_step ?? selected.sales_step ?? 0;
+              const opciones = [...salesSteps.map((p, i) => ({ i, label: `${i + 1}. ${p.title}` })), { i: salesSteps.length, label: '✅ Completo' }];
+              return (
+                <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    🪜 Paso de venta (el bot sigue desde el marcado)
+                  </div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
+                    {opciones.map(o => {
+                      const isActive = Math.min(actual, salesSteps.length) === o.i;
+                      return (
+                        <button
+                          key={o.i}
+                          onClick={() => changeSalesStep(o.i)}
+                          disabled={savingStep || isActive}
+                          style={{
+                            fontSize: 11, padding: '4px 12px', borderRadius: 20, cursor: 'pointer', fontWeight: 600,
+                            border: isActive ? '2px solid #0E7490' : '1px solid var(--border)',
+                            background: isActive ? '#CFFAFE' : 'var(--bg)',
+                            color: isActive ? '#0E7490' : 'var(--text-muted)',
+                            opacity: savingStep ? 0.6 : 1
+                          }}
+                        >{o.label}</button>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {contactVariables.length > 0 && (
               <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
