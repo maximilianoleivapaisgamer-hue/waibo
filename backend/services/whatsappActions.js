@@ -92,7 +92,7 @@ function buildSalesInstructions({ steps, current, resources }) {
     paso.resource_id && nombreRecurso(paso.resource_id) ? `En este paso se manda el recurso "${nombreRecurso(paso.resource_id)}": el sistema lo envía solo cuando marcás el paso como hecho, no escribas [[enviar]] para él.` : '',
     conRecurso && paso.caption ? `Junto con el recurso el sistema manda este texto, no lo repitas: "${paso.caption}"` : '',
     conRecurso && paso.after_text ? `Después del recurso el sistema manda este mensaje, no lo repitas: "${paso.after_text}"` : '',
-    !conRecurso && (paso.caption || paso.after_text) ? `Todavía no hay archivo cargado para este paso: incluí en tu mensaje, adaptado, este texto: "${[paso.caption, paso.after_text].filter(Boolean).join(' ')}"` : '',
+    !conRecurso && (paso.caption || paso.after_text) ? `Todavía no hay archivo cargado para este paso: incluí en tu mensaje, adaptado, este texto: "${[paso.caption, paso.after_text].filter(Boolean).join(' ')}". No pongas marcadores como [video] ni digas que falta el archivo.` : '',
     steps[current + 1] ? `Después viene el paso ${current + 2}: "${steps[current + 1].title}". No lo hagas todavía: se hace en tu próxima respuesta.` : 'Es el último paso.',
     `Cuando en esta respuesta cumplas el paso ${current + 1}, escribí [[paso_hecho]] en una línea aparte. Si el cliente pregunta otra cosa, respondele primero; si todavía no corresponde hacer el paso, no lo marques.`
   ];
