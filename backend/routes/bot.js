@@ -640,7 +640,7 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
     const paso = pasos[pasoActual];
     if (paso && actions.some((a) => a.type === 'paso' || (a.type === 'enviar' && a.id === paso.resource_id))) {
       if (paso.resource_id && !actions.some((a) => a.type === 'enviar' && a.id === paso.resource_id)) actions.push({ type: 'enviar', id: paso.resource_id });
-      if (paso.label) actions.push({ type: 'etiqueta', name: paso.label });
+      if (paso.label && !actions.some((a) => a.type === 'etiqueta' && a.name === paso.label)) actions.push({ type: 'etiqueta', name: paso.label });
       notas.push(`🪜 Paso ${pasoActual + 1} "${paso.title}" hecho`);
       pasoActual++;
     }
