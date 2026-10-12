@@ -198,6 +198,25 @@ export default function Config() {
                 Se envía automáticamente cuando alguien escribe por primera vez.
               </small>
             </div>
+            <div className="form-group" style={{ marginTop: 12 }}>
+              <label>⏱️ Demora antes de contestar</label>
+              <select
+                value={String(config.reply_delay_seconds ?? 0)}
+                onChange={e => setConfig({ ...config, reply_delay_seconds: parseInt(e.target.value, 10) })}
+              >
+                <option value="0">Al instante</option>
+                <option value="30">30 segundos</option>
+                <option value="60">1 minuto</option>
+                <option value="120">2 minutos</option>
+                <option value="180">3 minutos</option>
+                <option value="300">5 minutos</option>
+                <option value="600">10 minutos</option>
+                <option value="900">15 minutos</option>
+              </select>
+              <small style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                El bot espera antes de responder (con un poco de variación, para que parezca una persona). Si el cliente manda varios mensajes seguidos, contesta todo junto en una sola respuesta. Si mientras tanto contestás vos, el bot no responde.
+              </small>
+            </div>
           </div>
 
           <div className="card">

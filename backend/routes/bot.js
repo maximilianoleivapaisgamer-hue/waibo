@@ -37,7 +37,7 @@ router.put('/config', authMiddleware, async (req, res) => {
     instagram_comment_keywords, ig_comment_ai_reply, ig_comment_reply_all, ig_comment_public_reply,
     payment_enabled, payment_alias, payment_cbu, payment_mp_link, payment_holder,
     label_instructions, whatsapp_actions_enabled,
-    bot_name, voice_enabled
+    bot_name, voice_enabled, reply_delay_seconds
   } = req.body;
 
   try {
@@ -94,6 +94,11 @@ router.put('/config', authMiddleware, async (req, res) => {
         bot_name ?? null, voice_enabled ?? null
       ]
     );
+    if (reply_delay_seconds !== undefined && reply_delay_seconds !== null) {
+      const segundos = Math.max(0, Math.min(900, parseInt(reply_delay_seconds, 10) || 0));
+      const r2 = await pool.query('UPDATE bot_configs SET reply_delay_seconds = $2 WHERE client_id = $1 RETURNING *', [req.client.id, segundos]);
+      return res.json(r2.rows[0]);
+    }
     res.json(result.rows[0]);
   } catch (err) {
     res.status(500).json({ error: 'Error al actualizar configuración' });

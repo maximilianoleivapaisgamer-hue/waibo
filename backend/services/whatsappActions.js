@@ -60,6 +60,9 @@ Para mandar un recurso, escribí en una línea aparte [[enviar:ID]] con el ID ex
     partes.push(`ETIQUETAS DE WHATSAPP DISPONIBLES: ${labels.join(', ')}
 Para etiquetar el chat escribí [[etiqueta:Nombre]] con el nombre exacto de una etiqueta de la lista. Nunca inventes etiquetas.
 ${labelInstructions ? 'CUÁNDO USAR CADA ETIQUETA Y CUÁNDO ARCHIVAR:\n' + labelInstructions : 'Etiquetá solo cuando la conversación lo deje claro.'}`);
+  } else if (labelInstructions) {
+    partes.push(`ETIQUETAS: para etiquetar el chat escribí [[etiqueta:Nombre]] usando solo los nombres de etiqueta que aparecen en estas reglas:
+${labelInstructions}`);
   }
 
   partes.push(`Para archivar el chat escribí [[archivar]]. Hacelo solo cuando la conversación terminó${labelInstructions ? ' o según las reglas de arriba' : ''}. Nunca archives si el cliente todavía espera una respuesta.

@@ -504,6 +504,7 @@ async function initDB() {
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS sales_steps JSONB DEFAULT '[]'::jsonb;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS sales_steps_enabled BOOLEAN DEFAULT false;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS sales_step INTEGER DEFAULT 0;
+      ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reply_delay_seconds INTEGER DEFAULT 0;
       -- NULL = lo escribió el bot/sistema; 'import' = historial importado,
       -- 'manual' = enviado a mano desde el panel, 'phone' = enviado desde el celular.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS origin VARCHAR(20);

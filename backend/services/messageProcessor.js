@@ -64,6 +64,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   );
 
   let conversation;
+  let pendingWelcome = null;
   if (!convResult.rows.length) {
     const pastHistory = await pool.query(
       `SELECT COUNT(*) FROM appointments WHERE client_id = $1 AND customer_phone = $2 AND status != 'cancelled'`,
@@ -80,18 +81,41 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     const welcomeMsg = isReturningCustomer
       ? `¡Hola de nuevo, ${customerName}! 😊 Qué bueno verte por acá otra vez. ¿En qué puedo ayudarte hoy?`
       : config.welcome_message;
-    await sendFn(customerPhone, welcomeMsg);
+    pendingWelcome = welcomeMsg;
   } else {
     conversation = convResult.rows[0];
     if (conversation.status === 'human') return;
   }
+
+  // Demora antes de contestar: una respuesta instantánea parece un robot y, si el cliente
+  // entra por un anuncio, ni la ve. Si en la espera el cliente manda más mensajes, contesta
+  // solo la última llamada (con todo el historial); si alguien contestó a mano, no contesta.
+  let yaGuardado = false;
+  const demora = Math.min(Number(config.reply_delay_seconds) || 0, 900);
+  if (demora > 0) {
+    const ins = await pool.query(
+      'INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3) RETURNING timestamp',
+      [conversation.id, 'user', customerMessage]
+    );
+    yaGuardado = true;
+    await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
+    await new Promise((r) => setTimeout(r, demora * 1000 * (0.85 + Math.random() * 0.3)));
+    const despues = await pool.query(
+      `SELECT 1 FROM messages WHERE conversation_id = $1 AND timestamp > $2 AND (role = 'user' OR origin IN ('manual', 'phone')) LIMIT 1`,
+      [conversation.id, ins.rows[0].timestamp]
+    );
+    if (despues.rows.length) return;
+    const st = await pool.query('SELECT status FROM conversations WHERE id = $1', [conversation.id]);
+    if (st.rows[0]?.status === 'human') return;
+  }
+  if (pendingWelcome) await sendFn(customerPhone, pendingWelcome);
 
   await pool.query('UPDATE conversations SET is_typing = true WHERE id = $1', [conversation.id]);
 
   try {
     const bookingResult = await handleBookingFlow(clientId, customerPhone, customerName, customerMessage, conversation.id);
     if (bookingResult.handled) {
-      await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
       await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', bookingResult.response]);
       await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
       await sendFn(customerPhone, bookingResult.response);
@@ -100,14 +124,14 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
     const purchaseResult = await handlePurchaseConfirmation(clientId, customerMessage, conversation.id);
     if (purchaseResult.handled) {
-      await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
       await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', purchaseResult.response]);
       await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
       await sendFn(customerPhone, purchaseResult.response);
       return;
     }
 
-    await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+    if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
 
     const historyResult = await pool.query(
       `SELECT role, content FROM messages WHERE conversation_id = $1 AND role IN ('user','assistant') AND timestamp > NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT 10`,

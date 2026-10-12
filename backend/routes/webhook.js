@@ -10,6 +10,21 @@ const { isWithinBusinessHours } = require('../services/businessHours');
 const { createAlert } = require('../services/alerts');
 const { decrypt } = require('../services/crypto');
 const { processIncomingMessage } = require('../services/messageProcessor');
+const { buildSalesExtras, waiboLabels } = require('../services/salesActions');
+const { sendWhatsAppMedia } = require('../services/whatsapp');
+
+// Recursos, pasos de venta, etiquetas y archivado también en WhatsApp por API.
+// La API de Meta no tiene etiquetas ni archivado: quedan solo en Waibo.
+function extrasApi(client, config, to, opts) {
+  return buildSalesExtras({
+    clientId: client.id, to, cfg: config,
+    channel: {
+      sendText: (t) => sendWhatsAppMessage(to, t, client.whatsapp_api_key, opts),
+      sendMedia: (rec) => sendWhatsAppMedia(to, rec, client.whatsapp_api_key, opts),
+      labels: () => waiboLabels(client.id)
+    }
+  });
+}
 
 // ─────────────────────────────────────────
 // CLOUD API WEBHOOK (global — rutea por phone_number_id)
@@ -113,8 +128,9 @@ router.post('/whatsapp/cloud', async (req, res) => {
       return;
     }
 
-    const sendFn = (phone, message) => sendWhatsAppMessage(phone, message, client.whatsapp_api_key, { provider: 'cloud_api', phoneNumberId: client.whatsapp_phone_id });
-    await processIncomingMessage(client.id, customerPhone, customerName, customerMessage, sendFn);
+    const opts = { provider: 'cloud_api', phoneNumberId: client.whatsapp_phone_id };
+    const sendFn = (phone, message) => sendWhatsAppMessage(phone, message, client.whatsapp_api_key, opts);
+    await processIncomingMessage(client.id, customerPhone, customerName, customerMessage, sendFn, extrasApi(client, configResult.rows[0], customerPhone, opts));
 
   } catch (err) {
     console.error('❌ Error webhook Cloud API:', err.message);
@@ -181,8 +197,9 @@ router.post('/whatsapp/:clientId', async (req, res) => {
       return;
     }
 
-    const sendFn = (phone, message) => sendWhatsAppMessage(phone, message, client.whatsapp_api_key, { provider: client.whatsapp_provider || '360dialog', phoneNumberId: client.whatsapp_phone_id });
-    await processIncomingMessage(clientId, customerPhone, customerName, customerMessage, sendFn);
+    const opts = { provider: client.whatsapp_provider || '360dialog', phoneNumberId: client.whatsapp_phone_id };
+    const sendFn = (phone, message) => sendWhatsAppMessage(phone, message, client.whatsapp_api_key, opts);
+    await processIncomingMessage(clientId, customerPhone, customerName, customerMessage, sendFn, extrasApi(client, config, customerPhone, opts));
 
   } catch (err) {
     console.error('❌ Error webhook WhatsApp:', err.message);

@@ -443,83 +443,27 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     const sendFn = (phone, message) => qrPost(clientId, 'send', { to: phone, message });
 
-    const pasos = cfg.sales_steps_enabled && Array.isArray(cfg.sales_steps) ? cfg.sales_steps.filter((p) => p && p.title) : [];
-    const extras = cfg.whatsapp_actions_enabled === false ? {} : {
-      buildInstructions: async (conversation) => {
-        const { buildInstructions } = require('../services/whatsappActions');
-        const recs = await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [clientId]);
-        const base = buildInstructions({
-          resources: recs.rows,
-          alreadySent: conversation.sent_resources || [],
-          labels: await labelsDeLinea(clientId),
-          labelInstructions: cfg.label_instructions || ''
-        });
-        if (!pasos.length) return base;
-        const { buildSalesInstructions } = require('../services/whatsappActions');
-        return base + buildSalesInstructions({ steps: pasos, current: conversation.sales_step || 0, resources: recs.rows });
-      },
-      onActions: async (actions, conversation) => {
-        // Marcar el paso como hecho dispara su recurso y su etiqueta; mandar el recurso del
-        // paso también cuenta como hecho, por si la IA se olvidó del token.
-        const paso = pasos[conversation.sales_step || 0];
-        if (paso) {
-          const hecho = actions.some((a) => a.type === 'paso' || (a.type === 'enviar' && paso.resource_id && a.id === paso.resource_id));
-          if (hecho) {
-            const extra = [];
-            if (paso.resource_id && !actions.some((a) => a.type === 'enviar' && a.id === paso.resource_id)) extra.push({ type: 'enviar', id: paso.resource_id });
-            if (paso.label && !actions.some((a) => a.type === 'etiqueta' && a.name === paso.label)) extra.push({ type: 'etiqueta', name: paso.label });
-            const archivar = actions.filter((a) => a.type === 'archivar');
-            actions = [...actions.filter((a) => a.type !== 'archivar'), ...extra, ...archivar];
-            await pool.query('UPDATE conversations SET sales_step = COALESCE(sales_step, 0) + 1 WHERE id = $1', [conversation.id]);
-            console.log(`[QR pasos] ${clientId} ${from}: paso ${(conversation.sales_step || 0) + 1} "${paso.title}" hecho`);
-          }
-        }
-        for (const a of actions) {
-          if (a.type === 'paso') continue;
-          try {
-            if (a.type === 'enviar') {
-              if ((conversation.sent_resources || []).includes(a.id)) continue;
-              const r = await pool.query('SELECT * FROM bot_resources WHERE id = $1 AND client_id = $2', [a.id, clientId]);
-              const rec = r.rows[0];
-              if (!rec) continue;
-              if (rec.kind === 'link') {
-                await qrPost(clientId, 'send', { to: from, message: rec.url });
-              } else {
-                await qrPost(clientId, 'send-media', {
-                  to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
-                  filename: rec.filename, caption: '', asVoice: rec.kind === 'audio'
-                });
-              }
-              await pool.query(
-                `UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`,
-                [conversation.id, a.id]
-              );
-              await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)',
-                [conversation.id, 'assistant', `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`]);
-            } else if (a.type === 'etiqueta') {
-              await qrPost(clientId, 'label', { to: from, label: a.name });
-              await pool.query(
-                `UPDATE conversations SET tags = array_append(COALESCE(tags, '{}'), $2::text)
-                 WHERE id = $1 AND NOT (COALESCE(tags, '{}') @> ARRAY[$2::text])`,
-                [conversation.id, a.name]
-              );
-            } else if (a.type === 'archivar') {
-              await qrPost(clientId, 'archive', { to: from });
-              await pool.query('UPDATE conversations SET archived = true WHERE id = $1', [conversation.id]);
-            }
-            console.log(`[QR acción] ${clientId} ${from}: ${a.type} ${a.id || a.name || ''}`);
-          } catch (e) {
-            console.error(`[QR acción] ${a.type} falló:`, e.response?.data?.error || e.message);
-          }
-        }
+    const { buildSalesExtras } = require('../services/salesActions');
+    const extras = buildSalesExtras({
+      clientId, to: from, cfg,
+      channel: {
+        sendText: (t) => qrPost(clientId, 'send', { to: from, message: t }),
+        sendMedia: (rec) => qrPost(clientId, 'send-media', {
+          to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
+          filename: rec.filename, caption: '', asVoice: rec.kind === 'audio'
+        }),
+        applyLabel: (name) => qrPost(clientId, 'label', { to: from, label: name }),
+        archive: () => qrPost(clientId, 'archive', { to: from }),
+        labels: () => labelsDeLinea(clientId)
       }
-    };
+    });
 
-    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, extras);
+    // Se contesta al servicio QR enseguida: la respuesta puede tardar minutos por la demora configurada.
     res.json({ ok: true });
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, extras);
   } catch (err) {
     console.error('Error procesando mensaje QR:', err.stack || err.message);
-    res.status(500).json({ error: err.message });
+    if (!res.headersSent) res.status(500).json({ error: err.message });
   }
 });
 
