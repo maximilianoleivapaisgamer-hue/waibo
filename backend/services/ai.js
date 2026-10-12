@@ -61,6 +61,9 @@ async function getAIResponse(messages, systemPrompt, businessInfo, knowledgeBase
   const ahora = new Date().toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', weekday: 'long', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   const fullSystem = `Tu nombre es ${botName}. Atendés los mensajes de los clientes del negocio. Si te presentás, decí tu nombre tal cual (ej: "Soy ${botName}").
 Ahora en Argentina es ${ahora}. Usalo para el saludo (buen día, buenas tardes, buenas noches) y para el día de la semana; nunca lo supongas.
+Escribís por WhatsApp como una persona: sin signos de apertura (nada de ¿ ni ¡, va "Todo bien?"), frases cortas separadas con punto, sin la raya larga (—) y sin emojis en cada mensaje.
+Saludás una sola vez por conversación. Si en el historial ya hay un mensaje tuyo, no vuelvas a saludar (nada de "Hola", "Buen día", "Buenas tardes"): seguí la charla directo con lo que te preguntan.
+Nunca inventes datos, funciones ni detalles que no estén en tus instrucciones o en la información del negocio.
 
 PERSONALIDAD Y TONO:
 ${tone}
@@ -96,8 +99,13 @@ ${knowledgeBase}
 
 // WhatsApp marca la negrita con un asterisco; el modelo a veces escribe **doble** (markdown)
 // y el cliente vería los asteriscos.
+// Por WhatsApp una persona no abre signos: "Todo bien?" y no "¿Todo bien?".
+// ", ¿cómo estás?" pasa a ". Cómo estás?" para que no quede la coma pegada a la pregunta.
 function toWhatsAppFormat(text) {
-  return String(text || '').replace(/\*\*([^*\n]+?)\*\*/g, '*$1*');
+  return String(text || '')
+    .replace(/\*\*([^*\n]+?)\*\*/g, '*$1*')
+    .replace(/,\s*[¿¡]\s*(\S)/g, (_, c) => '. ' + c.toUpperCase())
+    .replace(/[¿¡]/g, '');
 }
 
 module.exports = { getAIResponse, callClaudeAPI, toWhatsAppFormat };

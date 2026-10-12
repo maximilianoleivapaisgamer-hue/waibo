@@ -607,21 +607,62 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
 
     const conversationHistory = [...(history || []), { role: 'user', content: message }].slice(-10);
 
+    // Mismas instrucciones que en WhatsApp (recursos, etiquetas, derivar y pasos de venta),
+    // pero sin mandar nada: se devuelve qué haría el bot. El paso lo lleva el navegador.
+    const { buildInstructions, buildSalesInstructions, extractActions } = require('../services/whatsappActions');
+    const { waiboLabels } = require('../services/salesActions');
+    const pasos = config.sales_steps_enabled && Array.isArray(config.sales_steps) ? config.sales_steps.filter((p) => p && p.title) : [];
+    const yaEnviados = Array.isArray(req.body.sent_resources) ? req.body.sent_resources : [];
+    let pasoActual = Math.max(0, parseInt(req.body.sales_step, 10) || 0);
+    let extra = '';
+    let recursos = [];
+    if (config.whatsapp_actions_enabled !== false) {
+      recursos = (await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [req.client.id])).rows;
+      const labels = [...new Set([...(await waiboLabels(req.client.id)), ...pasos.map((p) => p.label).filter(Boolean)])];
+      extra = buildInstructions({ resources: recursos, alreadySent: yaEnviados, labels, labelInstructions: config.label_instructions || '' });
+      if (pasos.length) extra += buildSalesInstructions({ steps: pasos, current: pasoActual, resources: recursos });
+    }
+
     let aiResponse;
     try {
       aiResponse = await getAIResponse(
-        conversationHistory, config.system_prompt, config.business_info,
-        knowledgeBase, config.bot_name, config.bot_tone, config.ai_model
+        conversationHistory, config.system_prompt, (config.business_info || '') + extra,
+        knowledgeBase, config.bot_name, config.bot_tone, config.ai_model, config.bot_tone_custom
       );
     } catch (aiErr) {
       return res.status(502).json({ error: 'El bot no pudo responder (error de la IA). Probá de nuevo en unos segundos.' });
     }
 
+    const { toWhatsAppFormat } = require('../services/ai');
+    const { clean, actions } = extractActions(toWhatsAppFormat(aiResponse));
+    const notas = [];
+    const enviados = [...yaEnviados];
+    const paso = pasos[pasoActual];
+    if (paso && actions.some((a) => a.type === 'paso' || (a.type === 'enviar' && a.id === paso.resource_id))) {
+      if (paso.resource_id && !actions.some((a) => a.type === 'enviar' && a.id === paso.resource_id)) actions.push({ type: 'enviar', id: paso.resource_id });
+      if (paso.label) actions.push({ type: 'etiqueta', name: paso.label });
+      notas.push(`🪜 Paso ${pasoActual + 1} "${paso.title}" hecho`);
+      pasoActual++;
+    }
+    for (const a of actions) {
+      if (a.type === 'enviar') {
+        const r = recursos.find((x) => x.id === a.id);
+        if (!r || enviados.includes(a.id)) continue;
+        enviados.push(a.id);
+        notas.push(`📎 Mandaría: ${r.name}`);
+        if (paso && paso.resource_id === a.id && paso.caption) notas.push(`   con el texto: ${paso.caption}`);
+        if (paso && paso.resource_id === a.id && paso.after_text) notas.push(`💬 Y después: ${paso.after_text}`);
+      } else if (a.type === 'etiqueta') notas.push(`🏷️ Etiqueta: ${a.name}`);
+      else if (a.type === 'archivar') notas.push('🗄 Archivaría el chat');
+      else if (a.type === 'derivar') notas.push(`🙋 No contesta y te lo pasa a vos${a.name ? ': ' + a.name : ''}`);
+    }
+    aiResponse = clean;
+
     if (!config.has_tested_bot) {
       await pool.query('UPDATE bot_configs SET has_tested_bot = true WHERE client_id = $1', [req.client.id]);
     }
 
-    res.json({ response: aiResponse });
+    res.json({ response: aiResponse, notes: notas, sales_step: pasoActual, sent_resources: enviados });
   } catch (err) {
     console.error('Error en test-chat:', err.message);
     res.status(500).json({ error: 'Error procesando el mensaje de prueba' });

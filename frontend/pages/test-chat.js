@@ -10,6 +10,8 @@ export default function TestChat() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
+  const [salesStep, setSalesStep] = useState(0);
+  const [sentResources, setSentResources] = useState([]);
   const scrollRef = useRef(null);
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
@@ -35,10 +37,16 @@ export default function TestChat() {
     try {
       const res = await axios.post(
         `${API}/api/bot/test-chat`,
-        { message: text, history: messages },
+        { message: text, history: messages.filter(m => !m.isNote && !m.isError), sales_step: salesStep, sent_resources: sentResources },
         { headers: getHeaders() }
       );
-      setMessages(prev => [...prev, { role: 'assistant', content: res.data.response }]);
+      setSalesStep(res.data.sales_step ?? salesStep);
+      setSentResources(res.data.sent_resources || sentResources);
+      setMessages(prev => [
+        ...prev,
+        ...(res.data.response ? [{ role: 'assistant', content: res.data.response }] : []),
+        ...(res.data.notes || []).map(n => ({ role: 'assistant', content: n, isNote: true }))
+      ]);
     } catch (err) {
       setMessages(prev => [...prev, {
         role: 'assistant',
@@ -53,6 +61,8 @@ export default function TestChat() {
   const resetChat = () => {
     if (messages.length && !confirm('¿Borrar esta conversación de prueba?')) return;
     setMessages([]);
+    setSalesStep(0);
+    setSentResources([]);
   };
 
   return (
@@ -65,7 +75,7 @@ export default function TestChat() {
         </div>
 
         <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', borderRadius: 10, padding: 12, marginBottom: 16, fontSize: 13, color: '#1D4ED8' }}>
-          💡 Esta conversación es solo para vos. No queda guardada como un chat real, y no dispara turnos ni links de compra — es para validar la personalidad y el conocimiento del bot.
+          💡 Esta conversación es solo para vos. No queda guardada como un chat real, no manda nada por WhatsApp. Sigue tus pasos de venta como un cliente nuevo, y en amarillo ves lo que haría el bot (mandar un video, etiquetar, pasarte el chat).
         </div>
 
         <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column', height: '65vh' }}>
@@ -82,7 +92,11 @@ export default function TestChat() {
                 Escribí algo como si fueras un cliente, para ver cómo responde tu bot 👇
               </div>
             )}
-            {messages.map((msg, i) => (
+            {messages.map((msg, i) => msg.isNote ? (
+              <div key={i} style={{ alignSelf: 'center', fontSize: 12, padding: '4px 12px', borderRadius: 8, background: '#FFF7D6', color: '#7C5E00', maxWidth: '85%', whiteSpace: 'pre-wrap' }}>
+                {msg.content}
+              </div>
+            ) : (
               <div key={i} style={{ display: 'flex', justifyContent: msg.role === 'user' ? 'flex-start' : 'flex-end' }}>
                 <div style={{
                   maxWidth: '78%',
