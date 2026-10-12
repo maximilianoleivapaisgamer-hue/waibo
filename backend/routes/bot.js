@@ -741,4 +741,52 @@ router.post('/learn-from-chats', authMiddleware, async (req, res) => {
   }
 });
 
+// Pasos de venta del canal QR: lista ordenada de { title, instruction, resource_id, label }
+router.get('/sales-steps', authMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query('SELECT sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [req.client.id]);
+    const row = r.rows[0] || {};
+    const counts = await pool.query(
+      `SELECT COALESCE(sales_step, 0) AS step, COUNT(*)::int AS total FROM conversations WHERE client_id = $1 GROUP BY 1`,
+      [req.client.id]
+    );
+    res.json({ steps: row.sales_steps || [], enabled: !!row.sales_steps_enabled, counts: counts.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/sales-steps', authMiddleware, async (req, res) => {
+  const { steps, enabled } = req.body;
+  if (!Array.isArray(steps) || steps.length > 15) return res.status(400).json({ error: 'Hasta 15 pasos' });
+  const limpios = steps
+    .map((p) => ({
+      title: String(p.title || '').trim().slice(0, 80),
+      instruction: String(p.instruction || '').trim().slice(0, 1000),
+      resource_id: p.resource_id || null,
+      label: String(p.label || '').trim().slice(0, 60) || null
+    }))
+    .filter((p) => p.title);
+  try {
+    await pool.query(
+      'UPDATE bot_configs SET sales_steps = $2::jsonb, sales_steps_enabled = $3 WHERE client_id = $1',
+      [req.client.id, JSON.stringify(limpios), !!enabled]
+    );
+    res.json({ steps: limpios, enabled: !!enabled });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/conversations/:id/sales-step', authMiddleware, async (req, res) => {
+  const step = Math.max(0, parseInt(req.body.step, 10) || 0);
+  try {
+    const r = await pool.query('UPDATE conversations SET sales_step = $3 WHERE id = $1 AND client_id = $2 RETURNING sales_step', [req.params.id, req.client.id, step]);
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

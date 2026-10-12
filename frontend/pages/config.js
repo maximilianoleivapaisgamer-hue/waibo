@@ -4,6 +4,7 @@ import axios from 'axios';
 import Sidebar from '../components/Sidebar';
 import KnowledgePanel from '../components/KnowledgePanel';
 import ResourcesPanel from '../components/ResourcesPanel';
+import SalesStepsPanel from '../components/SalesStepsPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -17,7 +18,7 @@ export default function Config() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (router.query.tab === 'knowledge' || router.query.tab === 'resources') setMainTab(router.query.tab);
+    if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps') setMainTab(router.query.tab);
   }, [router.query.tab]);
 
   useEffect(() => {
@@ -75,7 +76,8 @@ export default function Config() {
           {[
             { key: 'config', label: '🎭 Personalidad y comportamiento' },
             { key: 'knowledge', label: '🧠 Base de conocimiento' },
-            { key: 'resources', label: '📎 Recursos y etiquetas' }
+            { key: 'resources', label: '📎 Recursos y etiquetas' },
+            { key: 'steps', label: '🪜 Pasos de venta' }
           ].map(t => (
             <button
               key={t.key}
@@ -90,6 +92,7 @@ export default function Config() {
 
         {mainTab === 'knowledge' && <KnowledgePanel />}
         {mainTab === 'resources' && <ResourcesPanel />}
+        {mainTab === 'steps' && <SalesStepsPanel />}
 
         <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}

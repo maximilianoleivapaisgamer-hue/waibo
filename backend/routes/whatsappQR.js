@@ -400,7 +400,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
       return res.json({ ok: true, skipped: 'el cliente no tiene el QR como canal activo' });
     }
 
-    const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply FROM bot_configs WHERE client_id = $1', [clientId]);
+    const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply, sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [clientId]);
     const cfg = cfgRes.rows[0] || {};
 
     // Si el cliente vuelve a escribir, el chat deja de estar archivado en Waibo
@@ -443,19 +443,39 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     const sendFn = (phone, message) => qrPost(clientId, 'send', { to: phone, message });
 
+    const pasos = cfg.sales_steps_enabled && Array.isArray(cfg.sales_steps) ? cfg.sales_steps.filter((p) => p && p.title) : [];
     const extras = cfg.whatsapp_actions_enabled === false ? {} : {
       buildInstructions: async (conversation) => {
         const { buildInstructions } = require('../services/whatsappActions');
         const recs = await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [clientId]);
-        return buildInstructions({
+        const base = buildInstructions({
           resources: recs.rows,
           alreadySent: conversation.sent_resources || [],
           labels: await labelsDeLinea(clientId),
           labelInstructions: cfg.label_instructions || ''
         });
+        if (!pasos.length) return base;
+        const { buildSalesInstructions } = require('../services/whatsappActions');
+        return base + buildSalesInstructions({ steps: pasos, current: conversation.sales_step || 0, resources: recs.rows });
       },
       onActions: async (actions, conversation) => {
+        // Marcar el paso como hecho dispara su recurso y su etiqueta; mandar el recurso del
+        // paso también cuenta como hecho, por si la IA se olvidó del token.
+        const paso = pasos[conversation.sales_step || 0];
+        if (paso) {
+          const hecho = actions.some((a) => a.type === 'paso' || (a.type === 'enviar' && paso.resource_id && a.id === paso.resource_id));
+          if (hecho) {
+            const extra = [];
+            if (paso.resource_id && !actions.some((a) => a.type === 'enviar' && a.id === paso.resource_id)) extra.push({ type: 'enviar', id: paso.resource_id });
+            if (paso.label && !actions.some((a) => a.type === 'etiqueta' && a.name === paso.label)) extra.push({ type: 'etiqueta', name: paso.label });
+            const archivar = actions.filter((a) => a.type === 'archivar');
+            actions = [...actions.filter((a) => a.type !== 'archivar'), ...extra, ...archivar];
+            await pool.query('UPDATE conversations SET sales_step = COALESCE(sales_step, 0) + 1 WHERE id = $1', [conversation.id]);
+            console.log(`[QR pasos] ${clientId} ${from}: paso ${(conversation.sales_step || 0) + 1} "${paso.title}" hecho`);
+          }
+        }
         for (const a of actions) {
+          if (a.type === 'paso') continue;
           try {
             if (a.type === 'enviar') {
               if ((conversation.sent_resources || []).includes(a.id)) continue;

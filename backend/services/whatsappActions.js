@@ -15,6 +15,7 @@ function extractActions(text) {
   clean = clean.replace(/\[\[\s*enviar\s*:\s*([^\]]+?)\s*\]\]/gi, (_, id) => { actions.push({ type: 'enviar', id: id.trim() }); return ''; });
   clean = clean.replace(/\[\[\s*etiqueta\s*:\s*([^\]]+?)\s*\]\]/gi, (_, name) => { actions.push({ type: 'etiqueta', name: name.trim() }); return ''; });
   clean = clean.replace(/\[\[\s*archivar\s*\]\]/gi, () => { actions.push({ type: 'archivar' }); return ''; });
+  clean = clean.replace(/\[\[\s*paso[_ ]hecho\s*\]\]/gi, () => { actions.push({ type: 'paso' }); return ''; });
   clean = clean.replace(/\n{3,}/g, '\n\n').trim();
 
   // Máximo 2 recursos por mensaje y sin repetir; la etiqueta y el archivado, una vez cada uno.
@@ -67,4 +68,23 @@ Los tokens [[...]] nunca los ve el cliente: el sistema los saca del mensaje.`);
   return '\n\n' + partes.join('\n\n');
 }
 
-module.exports = { extractActions, buildInstructions };
+// Pasos de venta: la IA solo ve el paso en el que está el chat y el siguiente, así no se
+// saltea ni repite. Cuando cumple el paso escribe [[paso_hecho]] y el sistema avanza.
+function buildSalesInstructions({ steps, current, resources }) {
+  if (!Array.isArray(steps) || !steps.length) return '';
+  const nombreRecurso = (id) => resources.find((r) => r.id === id)?.name;
+  if (current >= steps.length) {
+    return `\n\nPASOS DE VENTA: este cliente ya completó todos los pasos (${steps.map((s) => s.title).join(' → ')}). Seguí la conversación con naturalidad y respondé lo que pregunte.`;
+  }
+  const paso = steps[current];
+  const lineas = [
+    `PASOS DE VENTA (${steps.length} en total). El cliente está en el PASO ${current + 1}: "${paso.title}".`,
+    paso.instruction ? `Qué hacer en este paso: ${paso.instruction}` : '',
+    paso.resource_id && nombreRecurso(paso.resource_id) ? `En este paso se manda el recurso "${nombreRecurso(paso.resource_id)}": el sistema lo envía solo cuando marcás el paso como hecho, no escribas [[enviar]] para él.` : '',
+    steps[current + 1] ? `Después viene el paso ${current + 2}: "${steps[current + 1].title}". No lo hagas todavía: se hace en tu próxima respuesta.` : 'Es el último paso.',
+    `Cuando en esta respuesta cumplas el paso ${current + 1}, escribí [[paso_hecho]] en una línea aparte. Si el cliente pregunta otra cosa, respondele primero; si todavía no corresponde hacer el paso, no lo marques.`
+  ];
+  return '\n\n' + lineas.filter(Boolean).join('\n');
+}
+
+module.exports = { extractActions, buildInstructions, buildSalesInstructions };
