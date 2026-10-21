@@ -688,4 +688,9 @@ cron.schedule('*/5 * * * *', () => {
   require('./recontact').runRecontact().catch((e) => console.error('[seguimiento]', e.message));
 });
 
+// WhatsApp por QR desconectado: avisa aunque la PC o el servicio estén apagados
+cron.schedule('*/5 * * * *', () => {
+  require('./qrHealth').chequearSesiones().catch((e) => console.error('[qr] chequeo:', e.message));
+});
+
 module.exports = { reactivateClient };

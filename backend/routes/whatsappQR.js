@@ -31,14 +31,17 @@ router.post('/connect', authMiddleware, async (req, res) => {
 router.get('/status', authMiddleware, async (req, res) => {
   const cfg = await pool.query('SELECT qr_auto_reply FROM bot_configs WHERE client_id = $1', [req.client.id]);
   const auto_reply = !!cfg.rows[0]?.qr_auto_reply;
+  // mode: el panel muestra el cartel de "WhatsApp desconectado" solo si el negocio usa el QR
+  const cm = await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [req.client.id]);
+  const mode = cm.rows[0]?.whatsapp_mode || null;
   if (!QR_SERVICE_URL) {
-    return res.json({ status: 'unavailable', qr: null, auto_reply });
+    return res.json({ status: 'unavailable', qr: null, auto_reply, mode });
   }
   try {
-    const r = await axios.get(`${QR_SERVICE_URL}/session/${req.client.id}/status`, { headers: qrHeaders() });
-    res.json({ ...r.data, auto_reply });
+    const r = await axios.get(`${QR_SERVICE_URL}/session/${req.client.id}/status`, { headers: qrHeaders(), timeout: 15000 });
+    res.json({ ...r.data, auto_reply, mode });
   } catch {
-    res.json({ status: 'disconnected', qr: null, auto_reply });
+    res.json({ status: 'service_down', qr: null, auto_reply, mode });
   }
 });
 
@@ -107,6 +110,16 @@ function checkServiceSecret(req, res, next) {
 }
 
 // El microservicio avisa que el cliente conectó
+// El servicio QR avisa que WhatsApp cerró la sesión
+router.post('/disconnected', checkServiceSecret, async (req, res) => {
+  try {
+    await require('../services/qrHealth').marcarDesconectado(req.body.clientId, req.body.reason || 'LOGOUT');
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/connected', checkServiceSecret, async (req, res) => {
   const { clientId, phone } = req.body;
   try {

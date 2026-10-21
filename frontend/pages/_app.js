@@ -9,6 +9,51 @@ const ALLOWED_WHILE_SUSPENDED = ['/billing'];
 const EMPLOYEE_ALLOWED = ['/conversations', '/orders', '/agenda'];
 const API = process.env.NEXT_PUBLIC_API_URL;
 
+// Cartel en todo el panel cuando el WhatsApp por QR está desconectado (el bot no contesta).
+function WhatsAppBanner() {
+  const router = useRouter();
+  const [caido, setCaido] = useState(null); // null = conectado o no usa QR
+
+  useEffect(() => {
+    if (PUBLIC_PAGES.includes(router.pathname)) return;
+    const token = localStorage.getItem('whabot_token');
+    if (!token) return;
+    let vivo = true;
+    const revisar = () => axios.get(`${API}/api/whatsapp-qr/status`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => {
+        if (!vivo) return;
+        const d = r.data;
+        if (d.mode !== 'qr' || ['connected', 'connecting', 'starting'].includes(d.status)) setCaido(null);
+        else setCaido(d.status === 'service_down' || d.status === 'unavailable' ? 'servicio' : 'sesion');
+      })
+      .catch(() => {});
+    revisar();
+    const t = setInterval(revisar, 60000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [router.pathname]);
+
+  if (!caido) return null;
+  return (
+    <div style={{
+      background: '#FEF2F2', borderBottom: '2px solid #F87171', color: '#991B1B',
+      padding: '12px 24px', fontSize: 14, fontWeight: 600, display: 'flex',
+      alignItems: 'center', justifyContent: 'space-between', gap: 12,
+      fontFamily: '-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif',
+      position: 'sticky', top: 0, zIndex: 201,
+    }}>
+      <span>
+        🔴 Tu WhatsApp está desconectado: el bot no está contestando.{' '}
+        {caido === 'servicio' ? 'El servicio de conexión no responde.' : 'Escaneá el QR de nuevo para volver a conectarlo.'}
+      </span>
+      {router.pathname !== '/channels' && (
+        <a href="/channels" style={{ padding: '6px 14px', borderRadius: 8, background: '#DC2626', color: 'white', textDecoration: 'none', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' }}>
+          Reconectar
+        </a>
+      )}
+    </div>
+  );
+}
+
 function BillingGuard({ children }) {
   const [status, setStatus] = useState(null); // null=loading, 'ok', 'suspended', 'warning'
   const [warningMsg, setWarningMsg] = useState('');
@@ -54,6 +99,7 @@ function BillingGuard({ children }) {
     <>
       {isSuspended && isProtectedPage ? null : (
         <>
+          <WhatsAppBanner />
           {warningMsg && (
             <div style={{
               background: '#FFFBEB', borderBottom: '2px solid #FCD34D', color: '#92400E',

@@ -287,10 +287,15 @@ function ensureClient(clientId) {
       }, 20000);
     }
   });
-  client.on('auth_failure', (m) => { rec.status = 'auth_failure'; console.error(`[${clientId}] auth_failure:`, m); });
+  client.on('auth_failure', (m) => {
+    rec.status = 'auth_failure';
+    console.error(`[${clientId}] auth_failure:`, m);
+    avisarBackend('disconnected', { clientId, reason: 'auth_failure' }).catch(() => {});
+  });
   client.on('disconnected', (reason) => {
     rec.status = 'disconnected';
     console.log(`[${clientId}] Desconectado: ${reason}`);
+    avisarBackend('disconnected', { clientId, reason: String(reason || 'LOGOUT') }).catch((e) => console.error(`[${clientId}] aviso disconnected:`, e.message));
   });
 
   client.on('message', async (msg) => {
