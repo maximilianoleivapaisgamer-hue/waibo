@@ -216,6 +216,21 @@ export default function Channels() {
     }
   };
 
+  // Con el QR a la vista, se refresca solo: el código de WhatsApp vence a los ~20 segundos
+  // y antes la página mostraba el primero hasta recargar, así que escanearlo fallaba.
+  useEffect(() => {
+    if (profile?.whatsapp_mode !== 'qr' || qrPolling) return;
+    if (!qrStatus || ['connected'].includes(qrStatus.status)) return;
+    const t = setInterval(async () => {
+      try {
+        const res = await axios.get(`${API}/api/whatsapp-qr/status`, { headers: getHeaders() });
+        setQrStatus(res.data);
+        if (res.data.status === 'connected') showSuccess('✅ WhatsApp conectado por QR');
+      } catch {}
+    }, 4000);
+    return () => clearInterval(t);
+  }, [profile?.whatsapp_mode, qrStatus?.status, qrPolling]);
+
   const startQR = async () => {
     try {
       await axios.post(`${API}/api/whatsapp-qr/connect`, {}, { headers: getHeaders() });
