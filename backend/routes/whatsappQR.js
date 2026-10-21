@@ -191,17 +191,28 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
       convs++;
 
       for (const m of msgs) {
+        const rol = m.role === 'assistant' ? 'assistant' : 'user';
         const ins = await pool.query(
-          `INSERT INTO messages (conversation_id, role, content, timestamp, origin)
-           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp, 'import'
+          `INSERT INTO messages (conversation_id, role, content, timestamp, origin, wa_id, media_type)
+           SELECT $1::uuid, $2::varchar, $3::text, $4::timestamp, 'import', $5::text, $6::varchar
            WHERE NOT EXISTS (
              SELECT 1 FROM messages
-             WHERE conversation_id = $1::uuid AND role = $2::varchar AND content = $3::text
-               AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5
+             WHERE conversation_id = $1::uuid AND ($5::text IS NOT NULL AND wa_id = $5::text
+               OR role = $2::varchar AND content = $3::text AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5)
            )`,
-          [convId, m.role === 'assistant' ? 'assistant' : 'user', m.text, m.timestamp]
+          [convId, rol, m.text, m.timestamp, m.waId || null, m.mediaType || null]
         );
         guardados += ins.rowCount;
+        // Mensajes guardados antes sin el id de WhatsApp: se completa para poder ver la foto o el audio
+        if (!ins.rowCount && m.waId) {
+          await pool.query(
+            `UPDATE messages SET wa_id = $5::text, media_type = COALESCE(media_type, $6::varchar)
+             WHERE id = (SELECT id FROM messages WHERE conversation_id = $1::uuid AND wa_id IS NULL AND role = $2::varchar
+                         AND (content = $3::text OR $6::varchar IS NOT NULL)
+                         AND ABS(EXTRACT(EPOCH FROM (timestamp - $4::timestamp))) < 5 LIMIT 1)`,
+            [convId, rol, m.text, m.timestamp, m.waId, m.mediaType || null]
+          );
+        }
       }
 
       await pool.query(
@@ -396,7 +407,7 @@ router.get('/labels', authMiddleware, async (req, res) => {
 
 // Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
-  const { clientId, from, name, labels, audio } = req.body;
+  const { clientId, from, name, labels, audio, waId, mediaType } = req.body;
   let { text } = req.body;
   if (!clientId || !from || !text) return res.status(400).json({ error: 'faltan datos' });
 
@@ -437,7 +448,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
         );
         convId = nc.rows[0].id;
       }
-      await pool.query(`INSERT INTO messages (conversation_id, role, content) VALUES ($1, 'user', $2)`, [convId, text]);
+      await pool.query(`INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1, 'user', $2, $3, $4)`, [convId, text, waId || null, mediaType || null]);
       await pool.query('UPDATE conversations SET updated_at = NOW(), recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [convId]);
       if (Array.isArray(labels) && labels.length) {
         await pool.query(`UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $2::text[])) WHERE id = $1`, [convId, labels]);
@@ -473,7 +484,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     // Se contesta al servicio QR enseguida: la respuesta puede tardar minutos por la demora configurada.
     res.json({ ok: true });
-    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, extras);
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType } });
   } catch (err) {
     console.error('Error procesando mensaje QR:', err.stack || err.message);
     if (!res.headersSent) res.status(500).json({ error: err.message });

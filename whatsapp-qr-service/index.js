@@ -193,7 +193,7 @@ let colaTranscripcion = Promise.resolve();
 // msg.downloadMedia() falla con algunos audios en esta versión: vamos directo al gestor
 // de descargas de WhatsApp pasándole el mimetype (sin eso rechaza los ptt con
 // "Unexpected mimetype application/octet-stream"). Copiado de bajar-audio.js del Captador.
-async function bajarAudio(client, msgId) {
+async function bajarMedia(client, msgId) {
   const r = await client.pupPage.evaluate(async (id) => {
     const Coll = window.require('WAWebCollections');
     let m = Coll.Msg.get(id);
@@ -208,12 +208,18 @@ async function bajarAudio(client, msgId) {
         mimetype: m.mimetype || 'audio/ogg; codecs=opus',
         signal: new AbortController().signal, downloadQpl: qpl
       });
-      return { ok: true, b64: await window.WWebJS.arrayBufferToBase64Async(crudo) };
+      return { ok: true, b64: await window.WWebJS.arrayBufferToBase64Async(crudo), mimetype: m.mimetype || 'application/octet-stream', filename: m.filename || null };
     } catch (e) { return { error: String((e && e.message) || e).slice(0, 200) }; }
   }, msgId);
-  if (!r || !r.ok) throw new Error((r && r.error) || 'no se pudo bajar el audio');
-  return r.b64;
+  if (!r || !r.ok) throw new Error((r && r.error) || 'no se pudo bajar el archivo');
+  return r;
 }
+
+async function bajarAudio(client, msgId) {
+  return (await bajarMedia(client, msgId)).b64;
+}
+
+const TIPOS_MEDIA = ['image', 'video', 'audio', 'ptt', 'document', 'sticker'];
 
 function transcribir(base64) {
   const tarea = colaTranscripcion.then(() => new Promise((resolve, reject) => {
@@ -351,7 +357,8 @@ function ensureClient(clientId) {
 
       const name = msg._data?.notifyName || null;
       console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
-      await avisarBackend('message', { clientId, from: phone, name, text, labels, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
+      const media = TIPOS_MEDIA.includes(msg.type) ? { waId: msg.id._serialized, mediaType: msg.type } : { waId: msg.id._serialized };
+      await avisarBackend('message', { clientId, from: phone, name, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
@@ -508,7 +515,7 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
             // En los multimedia m.body trae el base64 de la miniatura: se usa el epígrafe.
             const msgs = utiles().slice(-porChat).map((m) => {
               let texto = m.type === 'chat' ? String(m.body || '') : [tipos[m.type] || `[${m.type}]`, m.caption || ''].join(' ').trim();
-              return { mio: !!(m.id && m.id.fromMe), ts: m.t || 0, texto: texto.slice(0, 4000) };
+              return { mio: !!(m.id && m.id.fromMe), ts: m.t || 0, texto: texto.slice(0, 4000), waId: m.id && m.id._serialized, tipo: m.type };
             }).filter((m) => m.texto);
 
             const ct = chat.contact || {};
@@ -526,7 +533,7 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
               name: c.nombre || null,
               archived: c.archivado,
               labels: c.labels.map(labelName).filter(Boolean),
-              messages: c.msgs.map((m) => ({ role: m.mio ? 'assistant' : 'user', text: m.texto, timestamp: new Date(m.ts * 1000).toISOString() }))
+              messages: c.msgs.map((m) => ({ role: m.mio ? 'assistant' : 'user', text: m.texto, timestamp: new Date(m.ts * 1000).toISOString(), waId: m.waId || null, mediaType: TIPOS_MEDIA.includes(m.tipo) ? m.tipo : null }))
             });
           }
         } catch (_) {}
@@ -606,6 +613,18 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Baja una foto, audio, video o archivo de un mensaje para mostrarlo en el panel
+app.get('/session/:clientId/media', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  try {
+    const r = await bajarMedia(rec.client, String(req.query.waId || ''));
+    res.json({ mimetype: r.mimetype, data: r.b64, filename: r.filename });
+  } catch (e) {
+    res.status(404).json({ error: e.message });
   }
 });
 

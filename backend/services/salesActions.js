@@ -68,8 +68,8 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
               `UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`,
               [conversation.id, a.id]
             );
-            await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)',
-              [conversation.id, 'assistant', `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`]);
+            await pool.query('INSERT INTO messages (conversation_id, role, content, resource_id, media_type) VALUES ($1,$2,$3,$4,$5)',
+              [conversation.id, 'assistant', `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`, rec.id, rec.kind]);
             if (delPaso?.after_text) {
               await channel.sendText(delPaso.after_text);
               await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', delPaso.after_text]);

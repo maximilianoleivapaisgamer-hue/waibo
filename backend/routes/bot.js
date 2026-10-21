@@ -891,4 +891,45 @@ router.put('/conversations/:id/recontact', authMiddleware, async (req, res) => {
   }
 });
 
+// Foto, audio, video o archivo de un mensaje, para verlo en el panel
+router.get('/messages/:id/media', authMiddleware, async (req, res) => {
+  try {
+    const m = (await pool.query(
+      `SELECT m.id, m.wa_id, m.resource_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE m.id = $1 AND c.client_id = $2`, [req.params.id, req.client.id])).rows[0];
+    if (!m) return res.status(404).json({ error: 'No encontrado' });
+    const enviar = (mimetype, data) => {
+      res.set('Content-Type', (mimetype || 'application/octet-stream').split(';')[0]);
+      res.set('Cache-Control', 'private, max-age=86400');
+      res.send(data);
+    };
+    if (m.resource_id) {
+      const r = (await pool.query('SELECT mimetype, data FROM bot_resources WHERE id = $1 AND client_id = $2', [m.resource_id, req.client.id])).rows[0];
+      if (r && r.data) return enviar(r.mimetype, r.data);
+    }
+    const guardado = (await pool.query('SELECT mimetype, data FROM message_media WHERE message_id = $1', [m.id])).rows[0];
+    if (guardado) return enviar(guardado.mimetype, guardado.data);
+    if (!m.wa_id || !process.env.QR_SERVICE_URL) return res.status(404).json({ error: 'Este archivo no está disponible' });
+    const axios = require('axios');
+    const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+    let r;
+    try {
+      r = await axios.get(`${process.env.QR_SERVICE_URL}/session/${req.client.id}/media`, {
+        params: { waId: m.wa_id }, headers: { 'x-service-secret': secret }, timeout: 60000, maxContentLength: 60 * 1024 * 1024
+      });
+    } catch (e) {
+      return res.status(404).json({ error: e.response && e.response.status === 409 ? 'Tu WhatsApp está desconectado' : 'WhatsApp ya no tiene este archivo' });
+    }
+    const data = Buffer.from(r.data.data, 'base64');
+    await pool.query(
+      `INSERT INTO message_media (message_id, mimetype, filename, data) VALUES ($1,$2,$3,$4) ON CONFLICT (message_id) DO NOTHING`,
+      [m.id, r.data.mimetype, r.data.filename, data]
+    );
+    enviar(r.data.mimetype, data);
+  } catch (err) {
+    console.error('[media]', err.message);
+    res.status(500).json({ error: 'No se pudo traer el archivo' });
+  }
+});
+
 module.exports = router;

@@ -168,8 +168,8 @@ async function procesarCliente(cfg) {
       if (rec.kind === 'link') await canal.sendText(rec.url);
       else await canal.sendMedia(rec, '');
       await pool.query(`UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`, [conv.id, rec.id]);
-      await pool.query(`INSERT INTO messages (conversation_id, role, content, origin) VALUES ($1, 'assistant', $2, 'seguimiento')`,
-        [conv.id, `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`]);
+      await pool.query(`INSERT INTO messages (conversation_id, role, content, origin, resource_id, media_type) VALUES ($1, 'assistant', $2, 'seguimiento', $3, $4)`,
+        [conv.id, `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}`, rec.id, rec.kind]);
     }
   }
 

@@ -515,6 +515,18 @@ async function initDB() {
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_count INTEGER DEFAULT 0;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_hold_until TIMESTAMP;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS recontact_note TEXT;
+      -- Fotos, audios y archivos: wa_id para bajarlos de WhatsApp (QR) cuando se abren en el
+      -- panel, resource_id cuando es un recurso de la biblioteca, y la copia en message_media.
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS wa_id TEXT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS resource_id UUID;
+      CREATE TABLE IF NOT EXISTS message_media (
+        message_id UUID PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
+        mimetype VARCHAR(120),
+        filename TEXT,
+        data BYTEA NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
       -- NULL = lo escribió el bot/sistema; 'import' = historial importado,
       -- 'manual' = enviado a mano desde el panel, 'phone' = enviado desde el celular.
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS origin VARCHAR(20);

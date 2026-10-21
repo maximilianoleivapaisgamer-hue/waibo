@@ -17,6 +17,7 @@ const { extractActions } = require('./whatsappActions');
 //   onActions(actions, conversation) -> ejecuta lo que la IA pidió con [[...]]
 async function processIncomingMessage(clientId, customerPhoneRaw, customerName, rawMessage, sendFn, extras = {}) {
   const customerPhone = normalizePhone(customerPhoneRaw);
+  const meta = extras.messageMeta || {};
 
   const clientResult = await pool.query('SELECT * FROM clients WHERE id = $1 AND active = true', [clientId]);
   if (!clientResult.rows.length) return;
@@ -97,8 +98,8 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   const demora = Math.min(Number(config.reply_delay_seconds) || 0, 900);
   if (demora > 0) {
     const ins = await pool.query(
-      'INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3) RETURNING timestamp',
-      [conversation.id, 'user', customerMessage]
+      'INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5) RETURNING timestamp',
+      [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]
     );
     yaGuardado = true;
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
@@ -118,7 +119,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   try {
     const bookingResult = await handleBookingFlow(clientId, customerPhone, customerName, customerMessage, conversation.id);
     if (bookingResult.handled) {
-      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)', [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
       await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', bookingResult.response]);
       await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
       await sendFn(customerPhone, bookingResult.response);
@@ -127,14 +128,14 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
     const purchaseResult = await handlePurchaseConfirmation(clientId, customerMessage, conversation.id);
     if (purchaseResult.handled) {
-      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+      if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)', [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
       await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', purchaseResult.response]);
       await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
       await sendFn(customerPhone, purchaseResult.response);
       return;
     }
 
-    if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'user', customerMessage]);
+    if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)', [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
 
     const historyResult = await pool.query(
       `SELECT role, content FROM messages WHERE conversation_id = $1 AND role IN ('user','assistant') AND timestamp > NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT 10`,

@@ -28,6 +28,55 @@ function formatDateTime(ts) {
 
 // Panel de conversaciones reutilizable.
 // props.channel: si se pasa (ej. 'whatsapp'), filtra las conversaciones de ese canal.
+// Foto, audio, video o archivo de un mensaje. Se trae con la sesión del panel (por eso
+// no alcanza con un <img src>) y se muestra apenas se abre el chat.
+function MessageMedia({ msg }) {
+  const [url, setUrl] = useState(null);
+  const [err, setErr] = useState('');
+  const tipo = msg.media_type === 'ptt' ? 'audio' : msg.media_type;
+  const auto = ['image', 'sticker', 'audio', 'video'].includes(tipo);
+
+  const cargar = async () => {
+    setErr('');
+    try {
+      const r = await axios.get(`${API}/api/bot/messages/${msg.id}/media`, {
+        headers: { Authorization: `Bearer ${localStorage.getItem('whabot_token')}` }, responseType: 'blob', timeout: 90000
+      });
+      setUrl(URL.createObjectURL(r.data));
+    } catch (e) {
+      let texto = 'No se pudo traer el archivo';
+      try { texto = JSON.parse(await e.response.data.text()).error || texto; } catch (_) {}
+      setErr(texto);
+    }
+  };
+
+  useEffect(() => { if (auto) cargar(); return () => { if (url) URL.revokeObjectURL(url); }; }, [msg.id]);
+
+  if (err) return <div style={{ fontSize: 12, color: 'var(--text-muted)', fontStyle: 'italic', marginBottom: 4 }}>⚠️ {err}</div>;
+  if (!url) {
+    return auto
+      ? <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 4 }}>⏳ Cargando {tipo === 'audio' ? 'audio' : tipo === 'video' ? 'video' : 'imagen'}…</div>
+      : <button type="button" onClick={cargar} style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', marginBottom: 4 }}>📄 Abrir archivo</button>;
+  }
+  if (tipo === 'image' || tipo === 'sticker') {
+    return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" style={{ maxWidth: tipo === 'sticker' ? 120 : 260, maxHeight: 320, borderRadius: 8, display: 'block', marginBottom: 4 }} /></a>;
+  }
+  if (tipo === 'audio') return <audio controls src={url} style={{ width: 260, maxWidth: '100%', display: 'block', marginBottom: 4 }} />;
+  if (tipo === 'video') return <video controls src={url} style={{ maxWidth: 280, maxHeight: 320, borderRadius: 8, display: 'block', marginBottom: 4 }} />;
+  return <a href={url} target="_blank" rel="noreferrer" style={{ fontSize: 12, display: 'inline-block', marginBottom: 4 }}>📄 Ver archivo</a>;
+}
+
+// Con la foto o el audio a la vista, el texto de relleno ("[imagen]", "[El cliente mandó un
+// audio]") sobra; se deja el epígrafe y la transcripción del audio.
+function textoConMedia(msg) {
+  let t = String(msg.content || '');
+  if (!msg.media_type) return t;
+  t = t.replace(/^\[(imagen|video|archivo|audio|sticker)\]\s*/i, '')
+       .replace(/^\[El cliente mandó (una imagen|un video|un archivo|un audio|un sticker)\]\s*/i, '')
+       .replace(/^\[Audio del cliente\]:\s*/i, '🎙️ ');
+  return t;
+}
+
 export default function ConversationsPanel({ channel }) {
   const [conversations, setConversations] = useState([]);
   const [selected, setSelected] = useState(null);
@@ -593,7 +642,8 @@ export default function ConversationsPanel({ channel }) {
                   fontSize: 13,
                   lineHeight: 1.5
                 }}>
-                  <span dangerouslySetInnerHTML={{ __html: formatWhatsAppText(msg.content) }} />
+                  {msg.media_type && <MessageMedia msg={msg} />}
+                  <span dangerouslySetInnerHTML={{ __html: formatWhatsAppText(textoConMedia(msg)) }} />
                   <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, textAlign: 'right' }}>
                     {formatDateTime(msg.timestamp)}
                   </div>
