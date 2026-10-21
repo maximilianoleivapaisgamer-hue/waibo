@@ -303,6 +303,20 @@ function ensureClient(clientId) {
     rec.status = 'disconnected';
     console.log(`[${clientId}] Desconectado: ${reason}`);
     avisarBackend('disconnected', { clientId, reason: String(reason || 'LOGOUT') }).catch((e) => console.error(`[${clientId}] aviso disconnected:`, e.message));
+    // Se arranca una sesión nueva para que el panel muestre un QR fresco. Antes quedaba
+    // trabada en "disconnected" (Chrome todavía tenía tomados los archivos de la sesión vieja)
+    // y no había forma de volver a escanear sin reiniciar el servicio.
+    setTimeout(async () => {
+      if (sessions[clientId] !== rec) return;
+      try { await client.destroy(); } catch (_) {}
+      delete sessions[clientId];
+      const dir = path.join(AUTH_DIR, `session-${clientId}`);
+      for (let i = 0; i < 5 && fs.existsSync(dir); i++) {
+        try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) { await wait(3000); }
+      }
+      console.log(`[${clientId}] Sesión nueva para volver a escanear el QR`);
+      ensureClient(clientId);
+    }, 5000);
   });
 
   client.on('message', async (msg) => {
