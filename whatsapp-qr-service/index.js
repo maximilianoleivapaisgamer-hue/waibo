@@ -515,7 +515,7 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
             // En los multimedia m.body trae el base64 de la miniatura: se usa el epígrafe.
             const msgs = utiles().slice(-porChat).map((m) => {
               let texto = m.type === 'chat' ? String(m.body || '') : [tipos[m.type] || `[${m.type}]`, m.caption || ''].join(' ').trim();
-              return { mio: !!(m.id && m.id.fromMe), ts: m.t || 0, texto: texto.slice(0, 4000), waId: m.id && m.id._serialized, tipo: m.type };
+              return { mio: !!(m.id && m.id.fromMe), ts: m.t || 0, texto: texto.slice(0, 4000), waId: m.id ? (m.id._serialized || String(m.id)) : null, tipo: m.type };
             }).filter((m) => m.texto);
 
             const ct = chat.contact || {};
