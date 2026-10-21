@@ -101,4 +101,16 @@ function buildSalesInstructions({ steps, current, resources }) {
   return '\n\n' + lineas.filter(Boolean).join('\n');
 }
 
-module.exports = { extractActions, buildInstructions, buildSalesInstructions };
+// La IA a veces copia mal el ID (lo corta o pone el nombre): se busca exacto, por comienzo
+// del ID o por el nombre del recurso.
+function resolverRecurso(id, recursos) {
+  const x = String(id || '').trim().replace(/^"|"$/g, '').toLowerCase();
+  if (!x) return null;
+  return recursos.find((r) => r.id.toLowerCase() === x)
+    || (x.length >= 6 ? recursos.find((r) => r.id.toLowerCase().startsWith(x)) : null)
+    || recursos.find((r) => r.name.toLowerCase() === x)
+    || recursos.find((r) => x.length >= 5 && r.name.toLowerCase().includes(x))
+    || null;
+}
+
+module.exports = { extractActions, buildInstructions, buildSalesInstructions, resolverRecurso };

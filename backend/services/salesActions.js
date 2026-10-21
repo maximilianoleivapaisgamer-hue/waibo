@@ -51,6 +51,11 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
     },
 
     onActions: async (actions, conversation) => {
+      if (actions.some((a) => a.type === 'enviar')) {
+        const { resolverRecurso } = require('./whatsappActions');
+        const lista = (await pool.query('SELECT id, name FROM bot_resources WHERE client_id = $1', [clientId])).rows;
+        for (const a of actions) if (a.type === 'enviar') { const r = resolverRecurso(a.id, lista); if (r) a.id = r.id; }
+      }
       // Marcar el paso como hecho dispara su recurso y su etiqueta; mandar el recurso del
       // paso también cuenta como hecho, por si la IA se olvidó del token.
       const paso = pasos[conversation.sales_step || 0];

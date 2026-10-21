@@ -647,7 +647,8 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
     }
     for (const a of actions) {
       if (a.type === 'enviar') {
-        const r = recursos.find((x) => x.id === a.id);
+        const r = require('../services/whatsappActions').resolverRecurso(a.id, recursos);
+        if (r) a.id = r.id;
         if (!r || enviados.includes(a.id)) continue;
         enviados.push(a.id);
         // En el modo prueba el archivo se muestra de verdad, como le llegaría al cliente

@@ -64,6 +64,7 @@ Ahora en Argentina es ${ahora}. Usalo para el saludo (buen día, buenas tardes, 
 Escribís por WhatsApp como una persona: sin signos de apertura (nada de ¿ ni ¡, va "Todo bien?"), frases cortas separadas con punto, sin la raya larga (—) y sin emojis en cada mensaje.
 Saludás una sola vez por conversación. Si en el historial ya hay un mensaje tuyo, no vuelvas a saludar (nada de "Hola", "Buen día", "Buenas tardes"): seguí la charla directo con lo que te preguntan.
 Nunca inventes datos, funciones ni detalles que no estén en tus instrucciones o en la información del negocio.
+Escribí únicamente el mensaje para el cliente, en español. Nunca escribas razonamientos, dudas, correcciones ni notas para vos (nada de "Wait", "Let me", "Looking at", "Espera, debo..."): si te diste cuenta de algo, simplemente escribí el mensaje correcto.
 
 PERSONALIDAD Y TONO:
 ${tone}
@@ -105,7 +106,13 @@ function toWhatsAppFormat(text) {
   return String(text || '')
     .replace(/\*\*([^*\n]+?)\*\*/g, '*$1*')
     .replace(/,\s*[¿¡]\s*(\S)/g, (_, c) => '. ' + c.toUpperCase())
-    .replace(/[¿¡]/g, '');
+    .replace(/[¿¡]/g, '')
+    // A veces el modelo "piensa en voz alta" en inglés ("Wait, I need to reconsider..."): esos
+    // párrafos nunca le llegan al cliente.
+    .split(/\n{2,}/)
+    .filter((p) => !/^\s*(wait|actually|let me|looking at|hmm|note:|i need|i should|i will|i'll|okay,? so|so,? i)\b/i.test(p))
+    .join('\n\n')
+    .trim();
 }
 
 module.exports = { getAIResponse, callClaudeAPI, toWhatsAppFormat };
