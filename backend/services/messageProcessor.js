@@ -137,11 +137,17 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
     if (!yaGuardado) await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)', [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
 
+    // La charla entera reciente, sin límite de días: el que vuelve a los dos días tiene que
+    // encontrarse con alguien que se acuerda de lo que hablaron (precios ya pasados, video visto).
+    // Si pasó más de un día desde el último mensaje se le avisa a la IA, para que retome sin saludar de cero.
     const historyResult = await pool.query(
-      `SELECT role, content FROM messages WHERE conversation_id = $1 AND role IN ('user','assistant') AND timestamp > NOW() - INTERVAL '24 hours' ORDER BY timestamp DESC LIMIT 10`,
+      `SELECT role, content, timestamp FROM messages WHERE conversation_id = $1 AND role IN ('user','assistant') ORDER BY timestamp DESC LIMIT 30`,
       [conversation.id]
     );
-    const history = historyResult.rows.reverse().map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+    const filas = historyResult.rows.reverse();
+    const history = filas.map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
+    const previo = filas.length > 1 ? filas[filas.length - 2] : null;
+    const diasSinHablar = previo ? (Date.now() - new Date(previo.timestamp).getTime()) / 86400000 : 0;
 
     const kbResult = await pool.query('SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 10', [clientId]);
     const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
@@ -170,6 +176,9 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
     if (extras.buildInstructions) {
       try { productContext += await extras.buildInstructions(conversation); } catch (e) { console.error('[acciones] instrucciones:', e.message); }
+    }
+    if (diasSinHablar >= 1) {
+      productContext += `\n\nESTE CLIENTE VUELVE DESPUÉS DE ${Math.floor(diasSinHablar)} DÍA(S): ya hablaron antes (mirá el historial). No lo saludes como nuevo, no te vuelvas a presentar ni repitas lo que ya le mandaste (video, precios). Saludalo corto como a alguien conocido y respondé lo que pregunta ahora, retomando donde quedó la charla.`;
     }
 
     let aiResponse;
