@@ -18,6 +18,8 @@ function extractActions(text) {
   clean = clean.replace(/\[\[\s*paso[_ ]hecho\s*\]\]/gi, () => { actions.push({ type: 'paso' }); return ''; });
   clean = clean.replace(/\[\[\s*derivar\s*(?::\s*([^\]]*?))?\s*\]\]/gi, (_, motivo) => { actions.push({ type: 'derivar', name: (motivo || '').trim() }); return ''; });
   clean = clean.replace(/\n{3,}/g, '\n\n').trim();
+  // Si igual anuncia el audio ("te mando un audio y te explico"), esa frase se saca: el audio va directo.
+  if (actions.some((a) => a.type === 'enviar') && clean.length < 120 && /\b(te\s+(mando|paso|dejo|env[ií]o)\s+(un\s+)?audio|escuch[aá]\s+(este|el)\s+audio)/i.test(clean)) clean = '';
   // Si la IA deriva al dueño, al cliente no le sale nada.
   if (actions.some((a) => a.type === 'derivar')) clean = '';
 
@@ -55,8 +57,8 @@ ${lista}
 Para mandar un recurso, escribí en una línea aparte [[enviar:ID]] con el ID exacto. El sistema lo manda por vos.
 - Mandalos solo cuando viene al caso (piden ver algo, precio, cómo funciona). No los tires al primer "hola".
 - Como mucho 1 o 2 por mensaje, y nunca uno marcado como [YA ENVIADO].
-- Presentalo con una frase corta (ej: "Te paso un video cortito 👇").
-- Las notas de voz son audios grabados por el negocio: si una responde justo lo que preguntan, mandala en vez de escribir la explicación larga (ej: "Te mando un audio y te explico 👇").`);
+- Una imagen o un video podés presentarlo con una frase corta (ej: "Te paso un video cortito 👇").
+- Las notas de voz son audios grabados por el negocio: si una responde justo lo que preguntan, mandala en vez de escribir la explicación. La nota de voz va SOLA y directa: escribí únicamente [[enviar:ID]], sin ningún texto antes ni después (nada de "te mando un audio").`);
   }
 
   if (labels.length) {
