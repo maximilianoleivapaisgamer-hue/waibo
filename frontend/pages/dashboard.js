@@ -10,6 +10,15 @@ const API = process.env.NEXT_PUBLIC_API_URL;
 export default function Dashboard() {
   const router = useRouter();
   const [stats, setStats] = useState(null);
+  // "Primeros pasos" se puede ocultar; se recuerda en este navegador
+  const [pasosOcultos, setPasosOcultos] = useState(false);
+  useEffect(() => {
+    try { setPasosOcultos(localStorage.getItem('waibo_pasos_ocultos') === '1'); } catch (_) {}
+  }, []);
+  const ocultarPasos = () => {
+    setPasosOcultos(true);
+    try { localStorage.setItem('waibo_pasos_ocultos', '1'); } catch (_) {}
+  };
   const [conversations, setConversations] = useState([]);
   const [alerts, setAlerts] = useState([]);
   const [onboarding, setOnboarding] = useState(null);
@@ -131,10 +140,14 @@ export default function Dashboard() {
           </div>
         )}
 
-        {onboarding && !onboarding.all_done && (
+        {onboarding && !onboarding.all_done && !pasosOcultos && (
           <div className="card" style={{ borderLeft: '4px solid var(--green)', marginBottom: 20 }}>
-            <div className="card-title" style={{ border: 'none', marginBottom: 12 }}>
-              🚀 Primeros pasos ({onboarding.completed_count}/{onboarding.total_count})
+            <div className="card-title" style={{ border: 'none', marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ flex: 1 }}>🚀 Primeros pasos ({onboarding.completed_count}/{onboarding.total_count})</span>
+              <button type="button" onClick={ocultarPasos} title="Ocultar primeros pasos"
+                style={{ fontSize: 12, padding: '4px 10px', borderRadius: 8, border: '1px solid var(--border)', background: 'white', cursor: 'pointer', fontWeight: 500 }}>
+                Ocultar ✕
+              </button>
             </div>
             <div style={{ height: 6, background: 'var(--bg)', borderRadius: 10, marginBottom: 14, overflow: 'hidden' }}>
               <div style={{

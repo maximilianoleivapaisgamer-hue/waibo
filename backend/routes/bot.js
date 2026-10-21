@@ -381,8 +381,8 @@ router.get('/onboarding', authMiddleware, async (req, res) => {
     const clientId = req.client.id;
 
     const [clientRow, configRow, kbCount, hasAnyConversation] = await Promise.all([
-      pool.query('SELECT whatsapp_api_key FROM clients WHERE id = $1', [clientId]),
-      pool.query('SELECT business_info, welcome_message, has_tested_bot FROM bot_configs WHERE client_id = $1', [clientId]),
+      pool.query('SELECT whatsapp_api_key, whatsapp_mode FROM clients WHERE id = $1', [clientId]),
+      pool.query('SELECT business_info, system_prompt, welcome_message, has_tested_bot FROM bot_configs WHERE client_id = $1', [clientId]),
       pool.query('SELECT COUNT(*) FROM knowledge_base WHERE client_id = $1', [clientId]),
       pool.query("SELECT COUNT(*) FROM conversations WHERE client_id = $1 AND source IS DISTINCT FROM 'qr'", [clientId]),
     ]);
@@ -391,13 +391,13 @@ router.get('/onboarding', authMiddleware, async (req, res) => {
       {
         key: 'whatsapp',
         label: 'Conectá tu WhatsApp',
-        done: !!clientRow.rows[0]?.whatsapp_api_key,
+        done: !!clientRow.rows[0]?.whatsapp_api_key || clientRow.rows[0]?.whatsapp_mode === 'qr',
         href: '/channels'
       },
       {
         key: 'business_info',
         label: 'Contale a tu bot sobre tu negocio',
-        done: !!(configRow.rows[0]?.business_info && configRow.rows[0].business_info.trim().length > 20),
+        done: [configRow.rows[0]?.business_info, configRow.rows[0]?.system_prompt].some((t) => t && t.trim().length > 20),
         href: '/config'
       },
       {
