@@ -520,6 +520,17 @@ async function initDB() {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS wa_id TEXT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS resource_id UUID;
+      CREATE TABLE IF NOT EXISTS ai_jobs (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        payload JSONB NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        result TEXT,
+        error TEXT,
+        created_at TIMESTAMP DEFAULT NOW(),
+        taken_at TIMESTAMP,
+        done_at TIMESTAMP
+      );
+      CREATE INDEX IF NOT EXISTS ai_jobs_pending ON ai_jobs (status, created_at);
       CREATE TABLE IF NOT EXISTS message_media (
         message_id UUID PRIMARY KEY REFERENCES messages(id) ON DELETE CASCADE,
         mimetype VARCHAR(120),

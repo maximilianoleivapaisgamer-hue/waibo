@@ -16,7 +16,31 @@ function isRetryableError(err) {
 
 // options.timeout: las respuestas del bot tienen que ser rápidas (15 s), pero tareas
 // largas como analizar el historial de chats necesitan minutos.
+// AI_PROVIDER=max: la respuesta la escribe el runner del VPS con Claude Max (cola ai_jobs,
+// ver routes/aiRunner.js). Si el runner no contesta a tiempo se cae a la API paga.
+async function viaRunner(payload, esperaMs) {
+  const pool = require('../db');
+  const r = await pool.query(`INSERT INTO ai_jobs (payload) VALUES ($1) RETURNING id`, [JSON.stringify(payload)]);
+  const id = r.rows[0].id;
+  const hasta = Date.now() + esperaMs;
+  while (Date.now() < hasta) {
+    await sleep(600);
+    const j = (await pool.query('SELECT status, result, error FROM ai_jobs WHERE id = $1', [id])).rows[0];
+    if (j?.status === 'done') return j.result;
+    if (j?.status === 'error') throw new Error('runner: ' + j.error);
+  }
+  await pool.query(`UPDATE ai_jobs SET status = 'expired' WHERE id = $1 AND status IN ('pending', 'taken')`, [id]);
+  throw new Error('runner: no contestó a tiempo');
+}
+
 async function callClaudeAPI(payload, options = {}) {
+  if (process.env.AI_PROVIDER === 'max') {
+    try {
+      return await viaRunner(payload, Math.max(options.timeout || 0, 150000));
+    } catch (err) {
+      console.error('⚠️ Runner Claude Max falló, pruebo la API:', err.message);
+    }
+  }
   const timeout = options.timeout || 15000;
   const maxRetries = options.maxRetries ?? MAX_RETRIES;
   let lastError;
