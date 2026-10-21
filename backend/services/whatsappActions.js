@@ -28,7 +28,7 @@ function extractActions(text) {
   const filtradas = [];
   let recursos = 0;
   for (const a of actions) {
-    const key = a.type + ':' + (a.id || a.name || '');
+    const key = a.type + ':' + (a.id ? a.id.toLowerCase().replace(/[^0-9a-z]/g, '') : (a.name || ''));
     if (vistos.has(key)) continue;
     vistos.add(key);
     if (a.type === 'enviar') {
@@ -106,8 +106,11 @@ function buildSalesInstructions({ steps, current, resources }) {
 function resolverRecurso(id, recursos) {
   const x = String(id || '').trim().replace(/^"|"$/g, '').toLowerCase();
   if (!x) return null;
+  // Comparando solo los caracteres hex: la IA a veces se come un guion del UUID
+  const hex = (s) => s.toLowerCase().replace(/[^0-9a-f]/g, '');
+  const xh = hex(x);
   return recursos.find((r) => r.id.toLowerCase() === x)
-    || (x.length >= 6 ? recursos.find((r) => r.id.toLowerCase().startsWith(x)) : null)
+    || (xh.length >= 8 ? recursos.find((r) => hex(r.id) === xh || hex(r.id).startsWith(xh)) : null)
     || recursos.find((r) => r.name.toLowerCase() === x)
     || recursos.find((r) => x.length >= 5 && r.name.toLowerCase().includes(x))
     || null;
