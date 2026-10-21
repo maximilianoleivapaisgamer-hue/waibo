@@ -47,6 +47,7 @@ export default function ConversationsPanel({ channel }) {
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [savingFunnel, setSavingFunnel] = useState(false);
   const [salesSteps, setSalesSteps] = useState([]);
+  const [sync, setSync] = useState(null);
   const [savingStep, setSavingStep] = useState(false);
 
   const FUNNEL_STAGES = [
@@ -76,6 +77,17 @@ export default function ConversationsPanel({ channel }) {
   }, [messages]);
 
   const getHeaders = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
+
+  // Al reconectar el QR se ponen al día los chats desde WhatsApp: se muestra el avance
+  useEffect(() => {
+    let vivo = true;
+    const ver = () => axios.get(`${API}/api/whatsapp-qr/import-status`, { headers: getHeaders() })
+      .then(r => { if (vivo) setSync(r.data?.estado === 'corriendo' ? r.data : null); })
+      .catch(() => {});
+    ver();
+    const t = setInterval(ver, 5000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
 
   // Pasos de venta: solo se muestran si el negocio los tiene activados
   useEffect(() => {
@@ -254,6 +266,17 @@ export default function ConversationsPanel({ channel }) {
   };
 
   return (
+    <>
+    {sync && (
+      <div style={{ background: '#EFF6FF', border: '1px solid #BFDBFE', color: '#1D4ED8', borderRadius: 10, padding: '10px 14px', fontSize: 13, marginBottom: 12, fontWeight: 600 }}>
+        🔄 {sync.tipo === 'actualizacion' ? 'Actualizando tus chats con lo que llegó a WhatsApp' : 'Trayendo tus chats de WhatsApp'}… {sync.hechos} de {sync.total}
+        {sync.total > 0 && (
+          <div style={{ height: 4, background: '#DBEAFE', borderRadius: 4, marginTop: 6, overflow: 'hidden' }}>
+            <div style={{ height: '100%', width: `${Math.round((sync.hechos / sync.total) * 100)}%`, background: '#3B82F6' }} />
+          </div>
+        )}
+      </div>
+    )}
     <div style={{ display: 'grid', gridTemplateColumns: selected ? '1fr 1.4fr' : '1fr', gap: 20 }}>
       <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
         <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)' }}>
@@ -612,5 +635,6 @@ export default function ConversationsPanel({ channel }) {
         </div>
       )}
     </div>
+    </>
   );
 }

@@ -281,11 +281,12 @@ function ensureClient(clientId) {
     avisarBackend('connected', { clientId, phone: rec.phone }).catch((e) => console.error(`[${clientId}] aviso connected:`, e.message));
     // Primera vez que se conecta esta cuenta: traemos sus chats. Esperamos a que
     // WhatsApp Web termine de cargar la lista de chats.
-    if (!imported[clientId]) {
-      setTimeout(() => {
-        importarHistorial(clientId).catch((e) => console.error(`[${clientId}] importación:`, e.message));
-      }, 20000);
-    }
+    // Si ya se importó antes, al reconectar se ponen al día solo los chats con movimiento
+    // desde la última vez (lo que llegó mientras estuvo desconectado).
+    setTimeout(() => {
+      const ultima = imported[clientId] ? Math.floor(new Date(imported[clientId]).getTime() / 1000) - 3600 : 0;
+      importarHistorial(clientId, ultima ? { desde: ultima } : {}).catch((e) => console.error(`[${clientId}] importación:`, e.message));
+    }, 20000);
   });
   client.on('auth_failure', (m) => {
     rec.status = 'auth_failure';
@@ -436,25 +437,26 @@ async function archivar(client, chatId) {
    es patrón de scraping. Mismo método que el Captador. Se manda a Railway en lotes. */
 const SISTEMA = ['e2e_notification', 'notification_template', 'call_log', 'revoked', 'gp2', 'protocol', 'ciphertext'];
 
-async function importarHistorial(clientId, { porChat = 30, demora = 400 } = {}) {
+async function importarHistorial(clientId, { porChat = 30, demora = 400, desde = 0 } = {}) {
   const rec = sesionLista(clientId);
   if (!rec) throw new Error('WhatsApp no está conectado');
   if (importJobs[clientId]?.estado === 'corriendo') return importJobs[clientId];
 
-  const job = { estado: 'corriendo', total: 0, hechos: 0, chats: 0, error: null, inicio: new Date().toISOString() };
+  const job = { estado: 'corriendo', tipo: desde ? 'actualizacion' : 'completa', total: 0, hechos: 0, chats: 0, error: null, inicio: new Date().toISOString() };
   importJobs[clientId] = job;
 
   (async () => {
     try {
-      const ids = await rec.client.pupPage.evaluate(() => {
+      const ids = await rec.client.pupPage.evaluate((desde) => {
         const Coll = window.require('WAWebCollections');
         const arr = Coll.Chat.getModelsArray ? Coll.Chat.getModelsArray() : (Coll.Chat.models || []);
         return arr
+          .filter((c) => !desde || (c.t || 0) >= desde)
           .slice()
           .sort((a, b) => (b.t || 0) - (a.t || 0))
           .map((c) => c.id && c.id._serialized)
           .filter((id) => id && !id.includes('@g.us') && !id.includes('status@') && !id.includes('@newsletter'));
-      });
+      }, desde);
       job.total = ids.length;
       console.log(`[${clientId}] Importando ${ids.length} chats…`);
 
