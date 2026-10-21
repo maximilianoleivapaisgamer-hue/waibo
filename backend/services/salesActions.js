@@ -10,6 +10,19 @@ const { buildInstructions, buildSalesInstructions } = require('./whatsappActions
  *                                     ahí quedan solo en Waibo)
  *   labels()                        → etiquetas disponibles
  */
+// Un paso puede tener un epígrafe alternativo para un caso puntual (ej: el que vende iPhone):
+// si el cliente dijo alguna de las palabras en la charla, va ese en vez del común.
+async function epigrafeDelPaso(paso, conversationId) {
+  const claves = String(paso.alt_keywords || '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+  if (paso.alt_caption && claves.length) {
+    const dichos = await pool.query(`SELECT content FROM messages WHERE conversation_id = $1 AND role = 'user'`, [conversationId]);
+    const texto = dichos.rows.map((m) => m.content).join(' ').toLowerCase();
+    const escapar = (k) => k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    if (claves.some((k) => new RegExp(`(^|[^a-záéíóúñ])${escapar(k)}`, 'i').test(texto))) return paso.alt_caption;
+  }
+  return paso.caption || '';
+}
+
 function buildSalesExtras({ clientId, to, cfg, channel }) {
   if (cfg.whatsapp_actions_enabled === false) return {};
   const pasos = cfg.sales_steps_enabled && Array.isArray(cfg.sales_steps) ? cfg.sales_steps.filter((p) => p && p.title) : [];
@@ -63,7 +76,7 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
             if (!rec) continue;
             const delPaso = paso && paso.resource_id === a.id ? paso : null;
             if (rec.kind === 'link') await channel.sendText(rec.url);
-            else await channel.sendMedia(rec, delPaso?.caption || '');
+            else await channel.sendMedia(rec, delPaso ? await epigrafeDelPaso(delPaso, conversation.id) : '');
             await pool.query(
               `UPDATE conversations SET sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`,
               [conversation.id, a.id]
@@ -110,4 +123,4 @@ async function waiboLabels(clientId) {
   return r.rows.map((x) => x.t).filter(Boolean);
 }
 
-module.exports = { buildSalesExtras, waiboLabels };
+module.exports = { buildSalesExtras, waiboLabels, epigrafeDelPaso };

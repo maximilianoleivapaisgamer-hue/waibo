@@ -5,6 +5,25 @@ import Sidebar from '../components/Sidebar';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
+// El video, la foto o la nota de voz de la biblioteca, como le llega al cliente
+function PruebaMedia({ media }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let u = null;
+    axios.get(`${API}/api/resources/${media.id}/file`, {
+      headers: { Authorization: `Bearer ${localStorage.getItem('whabot_token')}` }, responseType: 'blob', timeout: 120000
+    }).then(r => { u = URL.createObjectURL(r.data); setUrl(u); }).catch(() => setUrl('error'));
+    return () => { if (u) URL.revokeObjectURL(u); };
+  }, [media.id]);
+  if (url === 'error') return <div style={{ fontSize: 12, fontStyle: 'italic' }}>⚠️ No se pudo cargar {media.name}</div>;
+  if (!url) return <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>⏳ Cargando {media.name}…</div>;
+  const estilo = { display: 'block', maxWidth: 300, maxHeight: 360, borderRadius: 8, marginBottom: media.caption ? 6 : 0 };
+  if (media.kind === 'image') return <img src={url} alt={media.name} style={estilo} />;
+  if (media.kind === 'video') return <video controls src={url} style={estilo} />;
+  if (media.kind === 'audio') return <audio controls src={url} style={{ width: 260, display: 'block', marginBottom: media.caption ? 6 : 0 }} />;
+  return <a href={url} target="_blank" rel="noreferrer">📄 {media.name}</a>;
+}
+
 export default function TestChat() {
   const router = useRouter();
   const [messages, setMessages] = useState([]);
@@ -37,14 +56,19 @@ export default function TestChat() {
     try {
       const res = await axios.post(
         `${API}/api/bot/test-chat`,
-        { message: text, history: messages.filter(m => !m.isNote && !m.isError), sales_step: salesStep, sent_resources: sentResources },
+        { message: text, history: messages.filter(m => !m.isNote && !m.isError).map(m => m.media ? { role: 'assistant', content: `📎 ${m.media.name}${m.content ? ' ' + m.content : ''}` } : { role: m.role, content: m.content }), sales_step: salesStep, sent_resources: sentResources },
         { headers: getHeaders() }
       );
       setSalesStep(res.data.sales_step ?? salesStep);
       setSentResources(res.data.sent_resources || sentResources);
+      const archivos = (res.data.media || []).flatMap(m => [
+        { role: 'assistant', media: m, content: m.caption || '' },
+        ...(m.after_text ? [{ role: 'assistant', content: m.after_text }] : [])
+      ]);
       setMessages(prev => [
         ...prev,
         ...(res.data.response ? [{ role: 'assistant', content: res.data.response }] : []),
+        ...archivos,
         ...(res.data.notes || []).map(n => ({ role: 'assistant', content: n, isNote: true }))
       ]);
     } catch (err) {
@@ -108,6 +132,7 @@ export default function TestChat() {
                   lineHeight: 1.5,
                   whiteSpace: 'pre-wrap'
                 }}>
+                  {msg.media && <PruebaMedia media={msg.media} />}
                   {msg.content}
                 </div>
               </div>

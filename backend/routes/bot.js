@@ -636,6 +636,7 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
     const { toWhatsAppFormat } = require('../services/ai');
     const { clean, actions } = extractActions(toWhatsAppFormat(aiResponse));
     const notas = [];
+    const media = [];
     const enviados = [...yaEnviados];
     const paso = pasos[pasoActual];
     if (paso && actions.some((a) => a.type === 'paso' || (a.type === 'enviar' && a.id === paso.resource_id))) {
@@ -649,9 +650,16 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
         const r = recursos.find((x) => x.id === a.id);
         if (!r || enviados.includes(a.id)) continue;
         enviados.push(a.id);
-        notas.push(`📎 Mandaría: ${r.name}`);
-        if (paso && paso.resource_id === a.id && paso.caption) notas.push(`   con el texto: ${paso.caption}`);
-        if (paso && paso.resource_id === a.id && paso.after_text) notas.push(`💬 Y después: ${paso.after_text}`);
+        // En el modo prueba el archivo se muestra de verdad, como le llegaría al cliente
+        let epigrafe = '';
+        let despues = '';
+        if (paso && paso.resource_id === a.id) {
+          const dicho = conversationHistory.filter((h) => h.role === 'user').map((h) => h.content).join(' ').toLowerCase();
+          const claves = String(paso.alt_keywords || '').split(',').map((k) => k.trim().toLowerCase()).filter(Boolean);
+          epigrafe = (paso.alt_caption && claves.some((k) => dicho.includes(k))) ? paso.alt_caption : (paso.caption || '');
+          despues = paso.after_text || '';
+        }
+        media.push({ id: r.id, kind: r.kind, name: r.name, caption: epigrafe, after_text: despues });
       } else if (a.type === 'etiqueta') notas.push(`🏷️ Etiqueta: ${a.name}`);
       else if (a.type === 'archivar') notas.push('🗄 Archivaría el chat');
       else if (a.type === 'derivar') notas.push(`🙋 No contesta y te lo pasa a vos${a.name ? ': ' + a.name : ''}`);
@@ -662,7 +670,7 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
       await pool.query('UPDATE bot_configs SET has_tested_bot = true WHERE client_id = $1', [req.client.id]);
     }
 
-    res.json({ response: aiResponse, notes: notas, sales_step: pasoActual, sent_resources: enviados });
+    res.json({ response: aiResponse, notes: notas, media, sales_step: pasoActual, sent_resources: enviados });
   } catch (err) {
     console.error('Error en test-chat:', err.message);
     res.status(500).json({ error: 'Error procesando el mensaje de prueba' });
@@ -812,6 +820,8 @@ router.put('/sales-steps', authMiddleware, async (req, res) => {
       resource_id: p.resource_id || null,
       caption: String(p.caption || '').trim().slice(0, 1000) || null,
       after_text: String(p.after_text || '').trim().slice(0, 1000) || null,
+      alt_caption: String(p.alt_caption || '').trim().slice(0, 1500) || null,
+      alt_keywords: String(p.alt_keywords || '').trim().slice(0, 200) || null,
       label: String(p.label || '').trim().slice(0, 60) || null
     }))
     .filter((p) => p.title);

@@ -140,6 +140,13 @@ export default function SalesStepsPanel() {
                     placeholder="Ej: Te paso los precios 👇" />
                 </div>
                 <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
+                  <label>Texto alternativo junto al archivo (opcional)</label>
+                  <textarea style={{ minHeight: 50 }} value={p.alt_caption || ''} onChange={e => update(i, 'alt_caption', e.target.value)}
+                    placeholder="Ej: el texto para el que vende iPhone" />
+                  <input value={p.alt_keywords || ''} onChange={e => update(i, 'alt_keywords', e.target.value)}
+                    placeholder="Va si el cliente dijo alguna de estas palabras: iphone, apple, ios" style={{ marginTop: 6, fontSize: 12 }} />
+                </div>
+                <div className="form-group" style={{ flex: 1, minWidth: 200 }}>
                   <label>Mensaje después del archivo (opcional)</label>
                   <textarea style={{ minHeight: 50 }} value={p.after_text || ''} onChange={e => update(i, 'after_text', e.target.value)}
                     placeholder="Ej: Comentame si te quedó alguna duda" />
