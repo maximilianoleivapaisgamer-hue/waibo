@@ -288,6 +288,7 @@ export default function Channels() {
   };
 
   const isQRConnected = profile?.whatsapp_mode === 'qr';
+  const qrCaido = isQRConnected && !!qrStatus && !['connected', 'connecting', 'starting'].includes(qrStatus.status);
   const isCloudAPIConnected = !!(profile?.whatsapp_api_key) && profile?.whatsapp_provider === 'cloud_api';
   const isConnected = isQRConnected || isCloudAPIConnected;
   const webhookUrl = `${API}/webhook/whatsapp/${profile?.id}`;
@@ -307,14 +308,15 @@ export default function Channels() {
       <div className="main-content">
         <div className="page-header">
           <h1 style={{ display: 'flex', alignItems: 'center', gap: 10 }}><ChannelLogo channel="whatsapp" size={28} /> WhatsApp</h1>
-          <p>{isConnected ? 'Tus conversaciones de WhatsApp — la configuración está abajo de todo' : 'Conectá tu número de WhatsApp al bot'}</p>
+          <p>{qrCaido ? 'Tu WhatsApp se desconectó: escaneá el QR de acá abajo para que el bot vuelva a contestar' : isConnected ? 'Tus conversaciones de WhatsApp — la configuración está abajo de todo' : 'Conectá tu número de WhatsApp al bot'}</p>
         </div>
 
         {success && <div className="success-msg">{success}</div>}
         {error && <div className="error-msg">{error}</div>}
 
         {/* ──────────────── CONVERSACIONES (si está conectado) ──────────────── */}
-        {isConnected && (
+        {/* Con el QR caído, primero va la conexión (para escanear) y las conversaciones abajo */}
+        {isConnected && !qrCaido && (
           <div style={{ marginBottom: 24 }}>
             <ConversationsPanel channel="whatsapp" />
           </div>
@@ -330,10 +332,10 @@ export default function Channels() {
             </div>
             <span style={{
               fontSize: 12, padding: '4px 14px', borderRadius: 20, fontWeight: 500,
-              background: isConnected ? '#EDE9FE' : '#FEF3C7',
-              color: isConnected ? '#5B21B6' : '#92400E'
+              background: qrCaido ? '#FEE2E2' : isConnected ? '#EDE9FE' : '#FEF3C7',
+              color: qrCaido ? '#B91C1C' : isConnected ? '#5B21B6' : '#92400E'
             }}>
-              {isQRConnected ? '✅ QR activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
+              {qrCaido ? '🔴 Desconectado: escaneá el QR' : isQRConnected ? '✅ QR activo' : isCloudAPIConnected ? '✅ Cloud API activa' : '⚠️ Sin configurar'}
             </span>
           </div>
 
@@ -682,6 +684,11 @@ export default function Channels() {
 
         </div>
         {/* ──────────────── FIN WHATSAPP ──────────────── */}
+        {isConnected && qrCaido && (
+          <div style={{ marginBottom: 24 }}>
+            <ConversationsPanel channel="whatsapp" />
+          </div>
+        )}
       </div>
     </div>
   );
