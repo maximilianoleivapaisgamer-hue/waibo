@@ -227,10 +227,12 @@ const TIPOS_MEDIA = ['image', 'video', 'audio', 'ptt', 'document', 'sticker'];
    - entre un mensaje y el siguiente, entre 8 y 16 segundos al azar (un intervalo fijo
      se ve como una máquina; a CeluLock ya la restringieron por mandar en ráfaga);
    - el mismo texto al mismo número dentro de 10 minutos no sale dos veces;
-   - tope por línea en 24 h (LIMITE_DIARIO, por defecto 350).
+   - tope por línea en 24 h (LIMITE_DIARIO, por defecto 500). Pasado el tope NO se descarta:
+     el mensaje espera en la cola hasta que se libere lugar, y se avisa en el panel a quién
+     le quedó demorado (perder gente en silencio es el error que más caro salió).
    Como este servicio es el único que habla con WhatsApp, esta cola es el candado de la
    línea. El candado de arranque (más abajo) impide que corran dos copias del servicio. */
-const LIMITE_DIARIO = Number(process.env.LIMITE_DIARIO || 350);
+const LIMITE_DIARIO = Number(process.env.LIMITE_DIARIO || 500);
 const ESPERA_MIN = Number(process.env.ESPERA_MIN_MS || 8000);
 const ESPERA_MAX = Number(process.env.ESPERA_MAX_MS || 16000);
 const colas = {};        // clientId -> promesa de la última tarea
@@ -239,7 +241,7 @@ const enviados24 = {};   // clientId -> [ms]
 const recientes = {};    // clientId -> Map(firma -> ms)
 const idsPropios = new Set(); // ids de lo que mandó este servicio (para no confundirlo con el celular)
 
-function enviarEnCola(clientId, firma, tarea) {
+function enviarEnCola(clientId, firma, tarea, to) {
   const previa = colas[clientId] || Promise.resolve();
   const esta = previa.catch(() => {}).then(async () => {
     const ahora = Date.now();
@@ -249,11 +251,15 @@ function enviarEnCola(clientId, firma, tarea) {
       console.log(`[${clientId}] envío repetido descartado`);
       return { duplicado: true };
     }
-    const lista = (enviados24[clientId] = (enviados24[clientId] || []).filter((t) => ahora - t < 24 * 3600 * 1000));
+    let lista = (enviados24[clientId] = (enviados24[clientId] || []).filter((t) => ahora - t < 24 * 3600 * 1000));
     if (lista.length >= LIMITE_DIARIO) {
-      const e = new Error(`tope diario de la línea alcanzado (${LIMITE_DIARIO} en 24 h)`);
-      e.status = 429;
-      throw e;
+      const libre = lista[0] + 24 * 3600 * 1000;
+      console.log(`[${clientId}] tope diario (${LIMITE_DIARIO}): el mensaje a ${to || '?'} espera hasta ${new Date(libre).toLocaleTimeString('es-AR')}`);
+      avisarBackend('line-limit', { clientId, to: to || null, limite: LIMITE_DIARIO, sale: new Date(libre).toISOString() }).catch(() => {});
+      while ((lista = enviados24[clientId].filter((t) => Date.now() - t < 24 * 3600 * 1000)).length >= LIMITE_DIARIO) {
+        await wait(Math.max(30000, lista[0] + 24 * 3600 * 1000 - Date.now()));
+      }
+      enviados24[clientId] = lista;
     }
     const espera = ESPERA_MIN + Math.random() * (ESPERA_MAX - ESPERA_MIN);
     const falta = (ultimoEnvio[clientId] || 0) + espera - Date.now();
@@ -702,7 +708,7 @@ app.post('/session/:clientId/send', checkSecret, async (req, res) => {
   if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
     const r = await enviarEnCola(req.params.clientId, firmaDe(to, message), async () =>
-      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message));
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message), to);
     res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando:`, err.message);
@@ -723,7 +729,7 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
     const opciones = asVoice ? { sendAudioAsVoice: true } : { caption: caption || '' };
     const firma = firmaDe(to, `media:${data.length}:${data.slice(0, 64)}:${caption || ''}`);
     const r = await enviarEnCola(req.params.clientId, firma, async () =>
-      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones));
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones), to);
     res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);

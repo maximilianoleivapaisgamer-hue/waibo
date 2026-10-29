@@ -141,6 +141,27 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
   }
 });
 
+// La línea llegó al tope diario de envíos: el mensaje quedó esperando en la cola del
+// servicio QR. Se deja una alerta en el panel por cada número demorado (sin aviso por
+// WhatsApp, que saldría por la misma línea trabada).
+router.post('/line-limit', checkServiceSecret, async (req, res) => {
+  const { clientId, to, limite, sale } = req.body;
+  try {
+    const conv = to ? (await pool.query(
+      `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 ORDER BY created_at DESC LIMIT 1`,
+      [clientId, to])).rows[0] : null;
+    const hora = sale ? new Date(sale).toLocaleString('es-AR', { timeZone: 'America/Argentina/Buenos_Aires', hour: '2-digit', minute: '2-digit', day: 'numeric', month: 'numeric' }) : 'más tarde';
+    const quien = conv?.customer_name && conv.customer_name !== to ? `${conv.customer_name} (${to})` : (to || 'un cliente');
+    await pool.query(
+      `INSERT INTO alerts (client_id, conversation_id, type, message) VALUES ($1, $2, 'line_limit', $3)`,
+      [clientId, conv?.id || null, `La línea llegó al tope de ${limite} mensajes en 24 h. El mensaje a ${quien} quedó en espera y sale cerca de las ${hora}.`]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // El servicio QR avisa que WhatsApp cerró la sesión
 router.post('/disconnected', checkServiceSecret, async (req, res) => {
   try {
