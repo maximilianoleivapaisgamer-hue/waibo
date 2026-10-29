@@ -145,8 +145,15 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
 // servicio QR. Se deja una alerta en el panel por cada número demorado (sin aviso por
 // WhatsApp, que saldría por la misma línea trabada).
 router.post('/line-limit', checkServiceSecret, async (req, res) => {
-  const { clientId, to, limite, sale } = req.body;
+  const { clientId, to, limite, sale, manual, enviados } = req.body;
   try {
+    if (manual) {
+      await pool.query(
+        `INSERT INTO alerts (client_id, type, message) VALUES ($1, 'line_limit', $2)`,
+        [clientId, `Ojo: por la línea ya salieron ${enviados || limite} mensajes en 24 h (el tope es ${limite}) y siguen saliendo mensajes escritos a mano. WhatsApp puede restringir el número por este ritmo: conviene bajar el volumen hasta mañana.`]
+      );
+      return res.json({ ok: true });
+    }
     const conv = to ? (await pool.query(
       `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 ORDER BY created_at DESC LIMIT 1`,
       [clientId, to])).rows[0] : null;

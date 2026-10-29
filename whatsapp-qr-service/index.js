@@ -254,6 +254,7 @@ function dentroDeHorario() {
 const pendientes = {}; // clientId -> [{ prioridad, llegada, firma, tarea, to, resolve, reject }]
 const trabajando = {};
 let avisoTope = {};    // clientId -> Set(to) ya avisados en esta ventana
+const avisoManual = {}; // clientId -> ya se avisó que los manuales pasaron el tope
 
 function puedeSalir(item) {
   if (item.prioridad === 0) return true;
@@ -297,6 +298,13 @@ async function trabajarCola(clientId) {
         continue;
       }
       const item = fila.splice(idx, 1)[0];
+      // Lo escrito a mano pasa aunque la línea esté en el tope (y suma al contador igual),
+      // pero se avisa una vez por ventana: es el ritmo que hizo restringir a CeluLock.
+      if (enTope && item.prioridad === 0 && !avisoManual[clientId]) {
+        avisoManual[clientId] = true;
+        console.log(`[${clientId}] mensajes escritos a mano por arriba del tope diario`);
+        avisarBackend('line-limit', { clientId, to: null, limite: LIMITE_DIARIO, manual: true, enviados: lista.length }).catch(() => {});
+      }
       const rec = (recientes[clientId] = recientes[clientId] || new Map());
       for (const [f, t] of rec) if (Date.now() - t > 10 * 60 * 1000) rec.delete(f);
       if (item.firma && rec.has(item.firma)) {
@@ -313,7 +321,7 @@ async function trabajarCola(clientId) {
         ultimoEnvio[clientId] = Date.now();
         lista.push(Date.now());
         if (item.firma) rec.set(item.firma, Date.now());
-        if (lista.length < LIMITE_DIARIO) avisoTope[clientId] = new Set();
+        if (lista.length < LIMITE_DIARIO) { avisoTope[clientId] = new Set(); avisoManual[clientId] = false; }
         item.resolve({ ok: true });
       } catch (e) {
         item.reject(e);
