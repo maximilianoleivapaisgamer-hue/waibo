@@ -35,7 +35,7 @@ async function notifyOwnerIfEnabled(clientId, message) {
       const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
       await axios.post(`${process.env.QR_SERVICE_URL}/session/${clientId}/send`,
         { to: ownerPhone, message: `🔔 *Waibo*\n\n${message}`, secret },
-        { headers: { 'x-service-secret': secret }, timeout: 60000 });
+        { headers: { 'x-service-secret': secret }, timeout: 300000 });
       return;
     }
     if (!cr?.whatsapp_api_key) return;

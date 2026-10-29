@@ -24,7 +24,7 @@ const ULTIMOS_DIAS = 10; // los chats más viejos que esto no entran, para no de
 
 function qrPost(clientId, accion, body) {
   return axios.post(`${QR_URL()}/session/${clientId}/${accion}`, { ...body, secret: QR_SECRET() },
-    { headers: { 'x-service-secret': QR_SECRET() }, timeout: 90000 });
+    { headers: { 'x-service-secret': QR_SECRET() }, timeout: 300000 });
 }
 
 function horaArgentina() {

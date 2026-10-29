@@ -110,6 +110,37 @@ function checkServiceSecret(req, res, next) {
 }
 
 // El microservicio avisa que el cliente conectó
+// Mensaje que el dueño mandó desde el celular: se guarda en el momento (origin 'phone').
+// El bot y el seguimiento lo usan para saber que esa charla la está llevando una persona.
+router.post('/outgoing', checkServiceSecret, async (req, res) => {
+  const { clientId, to, text, waId, mediaType } = req.body;
+  if (!clientId || !to || !text) return res.status(400).json({ error: 'faltan datos' });
+  try {
+    let conv = await pool.query(
+      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+      [clientId, to]
+    );
+    let convId = conv.rows[0]?.id;
+    if (!convId) {
+      const nc = await pool.query(
+        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$2,'whatsapp','bot') RETURNING id`,
+        [clientId, to]
+      );
+      convId = nc.rows[0].id;
+    }
+    const ins = await pool.query(
+      `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type)
+       SELECT $1, 'assistant', $2, 'phone', $3, $4
+       WHERE NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND wa_id = $3)`,
+      [convId, text, waId || null, mediaType || null]
+    );
+    await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
+    res.json({ ok: true, guardado: ins.rowCount > 0 });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // El servicio QR avisa que WhatsApp cerró la sesión
 router.post('/disconnected', checkServiceSecret, async (req, res) => {
   try {
@@ -379,7 +410,7 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
 });
 
 async function qrPost(clientId, accion, body) {
-  return axios.post(`${QR_SERVICE_URL}/session/${clientId}/${accion}`, { ...body, secret: SERVICE_SECRET }, { headers: qrHeaders(), timeout: 90000 });
+  return axios.post(`${QR_SERVICE_URL}/session/${clientId}/${accion}`, { ...body, secret: SERVICE_SECRET }, { headers: qrHeaders(), timeout: 300000 });
 }
 
 // Etiquetas de WhatsApp Business de la línea, cacheadas 5 minutos por cliente.

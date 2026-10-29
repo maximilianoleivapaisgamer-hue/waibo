@@ -221,6 +221,78 @@ async function bajarAudio(client, msgId) {
 
 const TIPOS_MEDIA = ['image', 'video', 'audio', 'ptt', 'document', 'sticker'];
 
+/* ── Cola de envíos por línea ───────────────────────────────────────────────
+   Todo lo que sale por una línea (bot, panel, vendedores, seguimiento) pasa por acá:
+   - de a uno por línea, en orden de llegada;
+   - entre un mensaje y el siguiente, entre 8 y 16 segundos al azar (un intervalo fijo
+     se ve como una máquina; a CeluLock ya la restringieron por mandar en ráfaga);
+   - el mismo texto al mismo número dentro de 10 minutos no sale dos veces;
+   - tope por línea en 24 h (LIMITE_DIARIO, por defecto 350).
+   Como este servicio es el único que habla con WhatsApp, esta cola es el candado de la
+   línea. El candado de arranque (más abajo) impide que corran dos copias del servicio. */
+const LIMITE_DIARIO = Number(process.env.LIMITE_DIARIO || 350);
+const ESPERA_MIN = Number(process.env.ESPERA_MIN_MS || 8000);
+const ESPERA_MAX = Number(process.env.ESPERA_MAX_MS || 16000);
+const colas = {};        // clientId -> promesa de la última tarea
+const ultimoEnvio = {};  // clientId -> ms del último envío
+const enviados24 = {};   // clientId -> [ms]
+const recientes = {};    // clientId -> Map(firma -> ms)
+const idsPropios = new Set(); // ids de lo que mandó este servicio (para no confundirlo con el celular)
+
+function enviarEnCola(clientId, firma, tarea) {
+  const previa = colas[clientId] || Promise.resolve();
+  const esta = previa.catch(() => {}).then(async () => {
+    const ahora = Date.now();
+    const rec = (recientes[clientId] = recientes[clientId] || new Map());
+    for (const [f, t] of rec) if (ahora - t > 10 * 60 * 1000) rec.delete(f);
+    if (firma && rec.has(firma)) {
+      console.log(`[${clientId}] envío repetido descartado`);
+      return { duplicado: true };
+    }
+    const lista = (enviados24[clientId] = (enviados24[clientId] || []).filter((t) => ahora - t < 24 * 3600 * 1000));
+    if (lista.length >= LIMITE_DIARIO) {
+      const e = new Error(`tope diario de la línea alcanzado (${LIMITE_DIARIO} en 24 h)`);
+      e.status = 429;
+      throw e;
+    }
+    const espera = ESPERA_MIN + Math.random() * (ESPERA_MAX - ESPERA_MIN);
+    const falta = (ultimoEnvio[clientId] || 0) + espera - Date.now();
+    if (falta > 0) await wait(falta);
+    const r = await tarea();
+    if (r && r.id && r.id._serialized) idsPropios.add(r.id._serialized);
+    ultimoEnvio[clientId] = Date.now();
+    lista.push(Date.now());
+    if (firma) rec.set(firma, Date.now());
+    return { ok: true };
+  });
+  colas[clientId] = esta;
+  return esta;
+}
+
+function firmaDe(to, contenido) {
+  return require('crypto').createHash('sha1').update(`${String(to).replace(/\D/g, '')}|${contenido}`).digest('hex');
+}
+
+// Una sola copia del servicio a la vez: dos procesos escribiendo sobre la misma línea
+// fue lo que en el Captador mandó el mismo mensaje tres veces.
+const CANDADO = path.join(__dirname, 'servicio.lock');
+(function tomarCandado() {
+  try {
+    const previo = JSON.parse(fs.readFileSync(CANDADO, 'utf8'));
+    let vivo = false;
+    try { process.kill(previo.pid, 0); vivo = previo.pid !== process.pid; } catch (_) {}
+    if (vivo && Date.now() - previo.ts < 45 * 60 * 1000) {
+      console.error(`Ya hay otra copia del servicio corriendo (pid ${previo.pid}). Me cierro.`);
+      process.exit(1);
+    }
+  } catch (_) {}
+  const marcar = () => { try { fs.writeFileSync(CANDADO, JSON.stringify({ pid: process.pid, ts: Date.now() })); } catch (_) {} };
+  marcar();
+  setInterval(marcar, 5 * 60 * 1000).unref();
+  process.on('exit', () => { try { const p = JSON.parse(fs.readFileSync(CANDADO, 'utf8')); if (p.pid === process.pid) fs.unlinkSync(CANDADO); } catch (_) {} });
+})();
+
+
 function transcribir(base64) {
   const tarea = colaTranscripcion.then(() => new Promise((resolve, reject) => {
     const os = require('os');
@@ -317,6 +389,34 @@ function ensureClient(clientId) {
       console.log(`[${clientId}] Sesión nueva para volver a escanear el QR`);
       ensureClient(clientId);
     }, 5000);
+  });
+
+  // Lo que se escribe desde el celular (los cierres que hace el dueño) se guarda en el
+  // momento. WhatsApp no devuelve después la propia historia, así que si no se guarda acá
+  // se pierde. Lo de este servicio se reconoce por el id: la sesión web arma ids que
+  // empiezan con "3EB0"; los del celular son 32 caracteres hex (deviceType viene vacío).
+  client.on('message_create', async (msg) => {
+    try {
+      if (!msg.fromMe) return;
+      const idCompleto = msg.id && msg.id._serialized;
+      const idCorto = String((msg.id && msg.id.id) || '');
+      if (!idCompleto || idsPropios.has(idCompleto) || idCorto.startsWith('3EB0')) return;
+      const to = String(msg.to || '');
+      if (!to || to === 'status@broadcast' || to.endsWith('@g.us') || to.endsWith('@newsletter')) return;
+      const tipos = { image: '[imagen]', video: '[video]', document: '[archivo]', audio: '[audio]', ptt: '[audio]', sticker: '[sticker]', location: '[ubicación]', vcard: '[contacto]' };
+      const epigrafe = msg.body && msg.body.length < 1500 && !/^[A-Za-z0-9+/=]{200,}$/.test(msg.body) ? msg.body : '';
+      const text = msg.type === 'chat' ? String(msg.body || '') : [tipos[msg.type] || `[${msg.type}]`, epigrafe].join(' ').trim();
+      if (!text) return;
+      const tel = await telefonoDe(client, to);
+      const phone = tel || soloDigitos(to);
+      if (!chatmap[clientId]) chatmap[clientId] = {};
+      chatmap[clientId][phone] = to;
+      guardarChatmap();
+      console.log(`[${clientId}] Enviado desde el celular a ${phone}: ${text.slice(0, 60)}`);
+      await avisarBackend('outgoing', { clientId, to: phone, text, waId: idCompleto, mediaType: TIPOS_MEDIA.includes(msg.type) ? msg.type : null }, 60000);
+    } catch (err) {
+      console.error(`[${clientId}] No se pudo guardar lo enviado desde el celular:`, err.response?.data?.error || err.message);
+    }
   });
 
   client.on('message', async (msg) => {
@@ -601,12 +701,12 @@ app.post('/session/:clientId/send', checkSecret, async (req, res) => {
   const { to, message } = req.body;
   if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
-    await wait(1200 + Math.random() * 1800); // pausa humana
-    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message);
-    res.json({ ok: true });
+    const r = await enviarEnCola(req.params.clientId, firmaDe(to, message), async () =>
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message));
+    res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando:`, err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
@@ -616,17 +716,18 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   const { to, mimetype, data, filename, caption, asVoice } = req.body;
   if (!to || !mimetype || !data) return res.status(400).json({ error: 'faltan to/mimetype/data' });
   try {
-    await wait(1200 + Math.random() * 1800);
     // asVoice: el audio llega como nota de voz (micrófono), no como archivo.
     const media = asVoice
       ? new MessageMedia('audio/ogg; codecs=opus', await aNotaDeVoz(data), 'audio.ogg')
       : new MessageMedia(mimetype, data, filename || undefined);
     const opciones = asVoice ? { sendAudioAsVoice: true } : { caption: caption || '' };
-    await rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones);
-    res.json({ ok: true });
+    const firma = firmaDe(to, `media:${data.length}:${data.slice(0, 64)}:${caption || ''}`);
+    const r = await enviarEnCola(req.params.clientId, firma, async () =>
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones));
+    res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
-    res.status(500).json({ error: err.message });
+    res.status(err.status || 500).json({ error: err.message });
   }
 });
 
