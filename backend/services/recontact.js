@@ -23,7 +23,7 @@ const QR_SECRET = () => process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024'
 const ULTIMOS_DIAS = 10; // los chats más viejos que esto no entran, para no despertar todo el historial importado
 
 function qrPost(clientId, accion, body) {
-  return axios.post(`${QR_URL()}/session/${clientId}/${accion}`, { ...body, secret: QR_SECRET() },
+  return axios.post(`${QR_URL()}/session/${clientId}/${accion}`, { ...body, secret: QR_SECRET(), prioridad: 2 },
     { headers: { 'x-service-secret': QR_SECRET() }, timeout: 300000 });
 }
 

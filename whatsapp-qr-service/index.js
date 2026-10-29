@@ -235,44 +235,103 @@ const TIPOS_MEDIA = ['image', 'video', 'audio', 'ptt', 'document', 'sticker'];
 const LIMITE_DIARIO = Number(process.env.LIMITE_DIARIO || 500);
 const ESPERA_MIN = Number(process.env.ESPERA_MIN_MS || 8000);
 const ESPERA_MAX = Number(process.env.ESPERA_MAX_MS || 16000);
-const colas = {};        // clientId -> promesa de la última tarea
 const ultimoEnvio = {};  // clientId -> ms del último envío
 const enviados24 = {};   // clientId -> [ms]
 const recientes = {};    // clientId -> Map(firma -> ms)
 const idsPropios = new Set(); // ids de lo que mandó este servicio (para no confundirlo con el celular)
 
-function enviarEnCola(clientId, firma, tarea, to) {
-  const previa = colas[clientId] || Promise.resolve();
-  const esta = previa.catch(() => {}).then(async () => {
-    const ahora = Date.now();
-    const rec = (recientes[clientId] = recientes[clientId] || new Map());
-    for (const [f, t] of rec) if (ahora - t > 10 * 60 * 1000) rec.delete(f);
-    if (firma && rec.has(firma)) {
-      console.log(`[${clientId}] envío repetido descartado`);
-      return { duplicado: true };
-    }
-    let lista = (enviados24[clientId] = (enviados24[clientId] || []).filter((t) => ahora - t < 24 * 3600 * 1000));
-    if (lista.length >= LIMITE_DIARIO) {
-      const libre = lista[0] + 24 * 3600 * 1000;
-      console.log(`[${clientId}] tope diario (${LIMITE_DIARIO}): el mensaje a ${to || '?'} espera hasta ${new Date(libre).toLocaleTimeString('es-AR')}`);
-      avisarBackend('line-limit', { clientId, to: to || null, limite: LIMITE_DIARIO, sale: new Date(libre).toISOString() }).catch(() => {});
-      while ((lista = enviados24[clientId].filter((t) => Date.now() - t < 24 * 3600 * 1000)).length >= LIMITE_DIARIO) {
-        await wait(Math.max(30000, lista[0] + 24 * 3600 * 1000 - Date.now()));
+// Prioridades: 0 = lo escribe una persona en el panel (pasa primero y no espera el tope),
+// 1 = el bot le contesta a alguien que acaba de escribir, 2 = seguimiento y masivos.
+// El espaciado de 8 a 16 s se respeta siempre; la prioridad solo decide quién va primero.
+// Ventana horaria (VENTANA_HORARIA, por defecto 8-22, hora argentina): lo masivo nunca sale
+// fuera de hora, y una respuesta del bot que quedó demorada más de 15 minutos (por el tope)
+// tampoco: no se le escribe a nadie a las 3 de la mañana.
+const VENTANA = String(process.env.VENTANA_HORARIA || '8-22').split('-').map(Number);
+function dentroDeHorario() {
+  const h = Number(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false })) % 24;
+  return h >= VENTANA[0] && h < VENTANA[1];
+}
+const pendientes = {}; // clientId -> [{ prioridad, llegada, firma, tarea, to, resolve, reject }]
+const trabajando = {};
+let avisoTope = {};    // clientId -> Set(to) ya avisados en esta ventana
+
+function puedeSalir(item) {
+  if (item.prioridad === 0) return true;
+  if (item.prioridad >= 2 || Date.now() - item.llegada > 15 * 60 * 1000) return dentroDeHorario();
+  return true;
+}
+
+async function trabajarCola(clientId) {
+  if (trabajando[clientId]) return;
+  trabajando[clientId] = true;
+  try {
+    const fila = pendientes[clientId];
+    while (fila && fila.length) {
+      fila.sort((a, b) => a.prioridad - b.prioridad || a.llegada - b.llegada);
+      // Los repetidos se descartan antes de mirar el tope: no tienen que ocupar lugar ni avisar
+      const yaSalio = recientes[clientId] || new Map();
+      for (let i = fila.length - 1; i >= 0; i--) {
+        const f = fila[i].firma;
+        if (f && yaSalio.has(f) && Date.now() - yaSalio.get(f) < 10 * 60 * 1000) {
+          console.log(`[${clientId}] envío repetido descartado`);
+          fila.splice(i, 1)[0].resolve({ duplicado: true });
+        }
       }
-      enviados24[clientId] = lista;
+      if (!fila.length) break;
+      let lista = (enviados24[clientId] = (enviados24[clientId] || []).filter((t) => Date.now() - t < 24 * 3600 * 1000));
+      const enTope = lista.length >= LIMITE_DIARIO;
+      const idx = fila.findIndex((it) => puedeSalir(it) && (!enTope || it.prioridad === 0));
+      if (idx === -1) {
+        if (enTope) {
+          const libre = lista[0] + 24 * 3600 * 1000;
+          const avisados = (avisoTope[clientId] = avisoTope[clientId] || new Set());
+          for (const it of fila) {
+            if (it.to && !avisados.has(it.to)) {
+              avisados.add(it.to);
+              console.log(`[${clientId}] tope diario (${LIMITE_DIARIO}): el mensaje a ${it.to} queda esperando`);
+              avisarBackend('line-limit', { clientId, to: it.to, limite: LIMITE_DIARIO, sale: new Date(libre).toISOString() }).catch(() => {});
+            }
+          }
+        }
+        await wait(60000);
+        continue;
+      }
+      const item = fila.splice(idx, 1)[0];
+      const rec = (recientes[clientId] = recientes[clientId] || new Map());
+      for (const [f, t] of rec) if (Date.now() - t > 10 * 60 * 1000) rec.delete(f);
+      if (item.firma && rec.has(item.firma)) {
+        console.log(`[${clientId}] envío repetido descartado`);
+        item.resolve({ duplicado: true });
+        continue;
+      }
+      const espera = ESPERA_MIN + Math.random() * (ESPERA_MAX - ESPERA_MIN);
+      const falta = (ultimoEnvio[clientId] || 0) + espera - Date.now();
+      if (falta > 0) await wait(falta);
+      try {
+        const r = await item.tarea();
+        if (r && r.id && r.id._serialized) idsPropios.add(r.id._serialized);
+        ultimoEnvio[clientId] = Date.now();
+        lista.push(Date.now());
+        if (item.firma) rec.set(item.firma, Date.now());
+        if (lista.length < LIMITE_DIARIO) avisoTope[clientId] = new Set();
+        item.resolve({ ok: true });
+      } catch (e) {
+        item.reject(e);
+      }
     }
-    const espera = ESPERA_MIN + Math.random() * (ESPERA_MAX - ESPERA_MIN);
-    const falta = (ultimoEnvio[clientId] || 0) + espera - Date.now();
-    if (falta > 0) await wait(falta);
-    const r = await tarea();
-    if (r && r.id && r.id._serialized) idsPropios.add(r.id._serialized);
-    ultimoEnvio[clientId] = Date.now();
-    lista.push(Date.now());
-    if (firma) rec.set(firma, Date.now());
-    return { ok: true };
+  } finally {
+    trabajando[clientId] = false;
+  }
+}
+
+function enviarEnCola(clientId, firma, tarea, to, prioridad = 1) {
+  return new Promise((resolve, reject) => {
+    (pendientes[clientId] = pendientes[clientId] || []).push({
+      prioridad: [0, 1, 2].includes(Number(prioridad)) ? Number(prioridad) : 1,
+      llegada: Date.now(), firma, tarea, to, resolve, reject
+    });
+    trabajarCola(clientId);
   });
-  colas[clientId] = esta;
-  return esta;
 }
 
 function firmaDe(to, contenido) {
@@ -704,11 +763,11 @@ app.get('/session/:clientId/status', checkSecret, (req, res) => {
 app.post('/session/:clientId/send', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
-  const { to, message } = req.body;
+  const { to, message, prioridad } = req.body;
   if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
     const r = await enviarEnCola(req.params.clientId, firmaDe(to, message), async () =>
-      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message), to);
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message), to, prioridad);
     res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando:`, err.message);
@@ -719,7 +778,7 @@ app.post('/session/:clientId/send', checkSecret, async (req, res) => {
 app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
-  const { to, mimetype, data, filename, caption, asVoice } = req.body;
+  const { to, mimetype, data, filename, caption, asVoice, prioridad } = req.body;
   if (!to || !mimetype || !data) return res.status(400).json({ error: 'faltan to/mimetype/data' });
   try {
     // asVoice: el audio llega como nota de voz (micrófono), no como archivo.
@@ -729,7 +788,7 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
     const opciones = asVoice ? { sendAudioAsVoice: true } : { caption: caption || '' };
     const firma = firmaDe(to, `media:${data.length}:${data.slice(0, 64)}:${caption || ''}`);
     const r = await enviarEnCola(req.params.clientId, firma, async () =>
-      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones), to);
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), media, opciones), to, prioridad);
     res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);

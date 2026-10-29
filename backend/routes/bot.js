@@ -310,7 +310,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
         if (!QR_SERVICE_URL) return res.status(400).json({ error: 'Servicio QR no disponible' });
         const axios = require('axios');
         await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/send`,
-          { to: conversation.customer_phone, message, secret: SERVICE_SECRET },
+          { to: conversation.customer_phone, message, secret: SERVICE_SECRET, prioridad: 0 },
           { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } }
         );
       } else {
