@@ -93,6 +93,11 @@ export default function ConversationsPanel({ channel }) {
   const [showArchived, setShowArchived] = useState(false);
   const [searchText, setSearchText] = useState('');
   const [tagFilter, setTagFilter] = useState('');
+  // Vendedores: el dueño ve a quién está asignado cada chat, filtra y asigna;
+  // un vendedor solo recibe sus chats (lo filtra el backend).
+  const [sellers, setSellers] = useState([]);
+  const [soyVendedor, setSoyVendedor] = useState(false);
+  const [sellerFilter, setSellerFilter] = useState('');
   const [unreadOnly, setUnreadOnly] = useState(false);
   const [savingFunnel, setSavingFunnel] = useState(false);
   const [salesSteps, setSalesSteps] = useState([]);
@@ -138,6 +143,24 @@ export default function ConversationsPanel({ channel }) {
     return () => { vivo = false; clearInterval(t); };
   }, []);
 
+  useEffect(() => {
+    axios.get(`${API}/api/bot/sellers`, { headers: getHeaders() })
+      .then(r => { setSellers(r.data.sellers || []); setSoyVendedor(!!r.data.me); })
+      .catch(() => {});
+  }, []);
+
+  const assignTo = async (employeeId) => {
+    if (!selected) return;
+    try {
+      await axios.put(`${API}/api/bot/conversations/${selected.id}/assign`, { employee_id: employeeId || null }, { headers: getHeaders() });
+      const nombre = sellers.find(v => v.id === employeeId)?.name || null;
+      setSelected(prev => ({ ...prev, assigned_to: employeeId || null, assigned_name: nombre }));
+      setConversations(prev => prev.map(c => c.id === selected.id ? { ...c, assigned_to: employeeId || null, assigned_name: nombre } : c));
+    } catch (e) {
+      alert(e.response?.data?.error || 'No se pudo asignar');
+    }
+  };
+
   // Pasos de venta: solo se muestran si el negocio los tiene activados
   useEffect(() => {
     axios.get(`${API}/api/bot/sales-steps`, { headers: getHeaders() })
@@ -168,6 +191,8 @@ export default function ConversationsPanel({ channel }) {
     if (unreadOnly && !c.unread) return false;
     if (funnelFilter && c.funnel_stage !== funnelFilter) return false;
     if (tagFilter && !(c.tags || []).includes(tagFilter)) return false;
+    if (sellerFilter === 'none' && c.assigned_to) return false;
+    if (sellerFilter && sellerFilter !== 'none' && c.assigned_to !== sellerFilter) return false;
     if (searchText.trim()) {
       const q = searchText.trim().toLowerCase();
       const hay = `${c.customer_name || ''} ${c.customer_phone || ''}`.toLowerCase();
@@ -371,6 +396,17 @@ export default function ConversationsPanel({ channel }) {
                 {allTags.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             )}
+            {!soyVendedor && sellers.length > 0 && (
+              <select
+                value={sellerFilter}
+                onChange={e => setSellerFilter(e.target.value)}
+                style={{ fontSize: 12, padding: '6px 8px', borderRadius: 8, border: '1px solid var(--border)', maxWidth: 150, color: sellerFilter ? 'inherit' : 'var(--text-muted)' }}
+              >
+                <option value="">👤 Todos los vendedores</option>
+                <option value="none">Sin asignar</option>
+                {sellers.map(v => <option key={v.id} value={v.id}>{v.name} ({v.chats})</option>)}
+              </select>
+            )}
           </div>
           <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
             <button
@@ -420,6 +456,9 @@ export default function ConversationsPanel({ channel }) {
                     {conv.archived && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 8, background: '#F3F4F6', color: '#6B7280', fontWeight: 500 }}>🗄 archivado</span>}
                   </div>
                   <div className="conv-last">{conv.last_message || '—'}</div>
+                  {conv.assigned_name && !soyVendedor && (
+                    <div style={{ fontSize: 10, marginTop: 3, color: '#7C3AED', fontWeight: 600 }}>👤 {conv.assigned_name}</div>
+                  )}
                   {salesSteps.length > 0 && (
                     <div style={{ fontSize: 10, marginTop: 3, color: '#0E7490', fontWeight: 600 }}>
                       🪜 {(conv.sales_step || 0) >= salesSteps.length ? 'Pasos completos' : `Paso ${(conv.sales_step || 0) + 1}/${salesSteps.length}: ${salesSteps[conv.sales_step || 0].title}`}
@@ -573,6 +612,20 @@ export default function ConversationsPanel({ channel }) {
                 })}
               </div>
             </div>
+
+            {!soyVendedor && sellers.length > 0 && (
+              <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>👤 Vendedor</span>
+                <select
+                  value={(conversations.find(c => c.id === selected.id)?.assigned_to) || selected.assigned_to || ''}
+                  onChange={e => assignTo(e.target.value)}
+                  style={{ fontSize: 12, padding: '4px 8px', borderRadius: 8, border: '1px solid var(--border)' }}
+                >
+                  <option value="">Sin asignar</option>
+                  {sellers.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                </select>
+              </div>
+            )}
 
             {salesSteps.length > 0 && (() => {
               const actual = conversations.find(c => c.id === selected.id)?.sales_step ?? selected.sales_step ?? 0;

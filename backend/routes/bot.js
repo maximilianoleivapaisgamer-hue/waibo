@@ -163,15 +163,18 @@ router.get('/conversations', authMiddleware, async (req, res) => {
     const result = await pool.query(
       `SELECT c.*, lm.content AS last_message, lm.timestamp AS last_message_at, lm.role AS last_message_role,
         (lm.role = 'user' AND (c.last_read_at IS NULL OR lm.timestamp > c.last_read_at)) AS unread,
-        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count
+        (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count,
+        v.name AS assigned_name
        FROM conversations c
        LEFT JOIN LATERAL (
          SELECT content, timestamp, role FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1
        ) lm ON true
+       LEFT JOIN clients v ON v.id = c.assigned_to
        WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
+         AND ($2::uuid IS NULL OR c.assigned_to = $2::uuid)
        ORDER BY COALESCE(lm.timestamp, c.updated_at) DESC
        LIMIT 1000`,
-      [req.client.id]
+      [req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     res.json(result.rows);
   } catch (err) {
@@ -182,8 +185,8 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 router.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
   try {
     const conv = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2',
-      [req.params.id, req.client.id]
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (conv.rows.length === 0) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
@@ -293,8 +296,8 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
 
   try {
     const convResult = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2',
-      [req.params.id, req.client.id]
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (!convResult.rows.length) {
       return res.status(404).json({ error: 'Conversación no encontrada' });
@@ -342,8 +345,8 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO messages (conversation_id, role, content, origin) VALUES ($1, $2, $3, 'manual')",
-      [conversation.id, 'assistant', message]
+      "INSERT INTO messages (conversation_id, role, content, origin, sent_by) VALUES ($1, $2, $3, 'manual', $4)",
+      [conversation.id, 'assistant', message, req.client.own_id || req.client.id]
     );
 
     const updated = await pool.query(
@@ -940,6 +943,54 @@ router.get('/messages/:id/media', authMiddleware, async (req, res) => {
   } catch (err) {
     console.error('[media]', err.message);
     res.status(500).json({ error: 'No se pudo traer el archivo' });
+  }
+});
+
+// ── Vendedores ───────────────────────────────────────────────────────────────
+// Asignar un chat a un vendedor (empleado del negocio) o dejarlo sin asignar. Solo el dueño.
+router.put('/conversations/:id/assign', authMiddleware, async (req, res) => {
+  if (req.client.role === 'employee') return res.status(403).json({ error: 'Solo el dueño asigna chats' });
+  const empleado = req.body.employee_id || null;
+  try {
+    if (empleado) {
+      const ok = await pool.query(`SELECT 1 FROM clients WHERE id = $1 AND owner_id = $2 AND role = 'employee'`, [empleado, req.client.id]);
+      if (!ok.rows.length) return res.status(400).json({ error: 'Ese vendedor no es de tu equipo' });
+    }
+    const r = await pool.query(
+      `UPDATE conversations SET assigned_to = $3, assigned_at = CASE WHEN $3::uuid IS NULL THEN NULL ELSE NOW() END
+       WHERE id = $1 AND client_id = $2 RETURNING id, assigned_to`,
+      [req.params.id, req.client.id, empleado]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Vendedores del equipo con cuántos chats tiene cada uno (para el panel; los ve todo el equipo)
+router.get('/sellers', authMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT e.id, e.name, e.email,
+         (SELECT COUNT(*)::int FROM conversations c WHERE c.assigned_to = e.id AND COALESCE(c.archived, false) = false) AS chats
+       FROM clients e WHERE e.owner_id = $1 AND e.role = 'employee' ORDER BY e.name`,
+      [req.client.id]
+    );
+    const cfg = await pool.query('SELECT auto_assign FROM bot_configs WHERE client_id = $1', [req.client.id]);
+    res.json({ sellers: r.rows, auto_assign: !!cfg.rows[0]?.auto_assign, me: req.client.role === 'employee' ? req.client.own_id : null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/sellers/settings', authMiddleware, async (req, res) => {
+  if (req.client.role === 'employee') return res.status(403).json({ error: 'Sin acceso' });
+  try {
+    await pool.query('UPDATE bot_configs SET auto_assign = $2 WHERE client_id = $1', [req.client.id, !!req.body.auto_assign]);
+    res.json({ ok: true, auto_assign: !!req.body.auto_assign });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

@@ -13,6 +13,8 @@ export default function Team() {
   const [showForm, setShowForm] = useState(false);
   const [form, setForm] = useState({ name: '', email: '', password: '' });
   const [msg, setMsg] = useState(null);
+  const [autoAssign, setAutoAssign] = useState(false);
+  const [chatsPor, setChatsPor] = useState({}); // vendedor -> chats asignados
 
   const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
@@ -23,7 +25,24 @@ export default function Team() {
     const client = JSON.parse(localStorage.getItem('whabot_client') || '{}');
     if (client.role === 'employee') { router.push('/conversations'); return; }
     load();
+    axios.get(`${API}/api/bot/sellers`, { headers: headers() })
+      .then(r => {
+        setAutoAssign(!!r.data.auto_assign);
+        setChatsPor(Object.fromEntries((r.data.sellers || []).map(v => [v.id, v.chats])));
+      })
+      .catch(() => {});
   }, []);
+
+  async function toggleAutoAssign(v) {
+    setAutoAssign(v);
+    try {
+      await axios.put(`${API}/api/bot/sellers/settings`, { auto_assign: v }, { headers: headers() });
+      setMsg({ type: 'ok', text: v ? 'Reparto automático activado' : 'Reparto automático desactivado' });
+    } catch (e) {
+      setAutoAssign(!v);
+      setMsg({ type: 'err', text: 'No se pudo guardar el reparto' });
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -79,6 +98,19 @@ export default function Team() {
           >
             {showForm ? 'Cancelar' : '+ Agregar empleado'}
           </button>
+        </div>
+
+        <div style={{ background: 'white', border: '1px solid #E5E7EB', borderRadius: 14, padding: '18px 24px', marginBottom: 20 }}>
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+            <input type="checkbox" checked={autoAssign} onChange={e => toggleAutoAssign(e.target.checked)} style={{ width: 'auto', marginTop: 3 }} />
+            <span>
+              <span style={{ fontWeight: 700, fontSize: 15 }}>Repartir chats entre los vendedores</span>
+              <span style={{ display: 'block', fontSize: 13, color: '#6B7280', marginTop: 4 }}>
+                Cuando el bot pasa un chat a una persona (por ejemplo, alguien que quiere comprar), se lo asigna al vendedor que menos chats abiertos tiene.
+                Cada vendedor ve solo sus chats en Conversaciones y los atiende desde ahí. Vos ves todos y podés reasignar a mano desde cada chat.
+              </span>
+            </span>
+          </label>
         </div>
 
         {msg && (
@@ -170,7 +202,7 @@ export default function Team() {
                 {employees.map(emp => (
                   <tr key={emp.id} style={{ borderTop: '1px solid #F3F4F6' }}>
                     <td style={{ padding: '12px 16px', fontWeight: 600 }}>{emp.name}</td>
-                    <td style={{ padding: '12px 16px', color: '#6B7280' }}>{emp.email}</td>
+                    <td style={{ padding: '12px 16px', color: '#6B7280' }}>{emp.email}{chatsPor[emp.id] != null && <span style={{ marginLeft: 8, fontSize: 12, color: '#7C3AED' }}>· {chatsPor[emp.id]} chats</span>}</td>
                     <td style={{ padding: '12px 16px' }}>
                       <span style={{ fontSize: 11, padding: '3px 10px', borderRadius: 20, background: '#EDE9FE', color: '#5B21B6', fontWeight: 600 }}>
                         Conversaciones · Pedidos · Agenda

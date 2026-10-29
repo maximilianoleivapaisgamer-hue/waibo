@@ -23,6 +23,27 @@ async function epigrafeDelPaso(paso, conversationId) {
   return paso.caption || '';
 }
 
+// Reparto automático: cuando el bot pasa un chat a una persona y el negocio tiene vendedores
+// con el reparto prendido, va al que menos chats abiertos tiene (y entre iguales, al que hace
+// más que no recibe uno). Si el chat ya tenía dueño, se queda con él.
+async function asignarPorTurno(clientId, conversationId) {
+  const cfg = await pool.query('SELECT auto_assign FROM bot_configs WHERE client_id = $1', [clientId]);
+  if (!cfg.rows[0]?.auto_assign) return null;
+  const ya = await pool.query(
+    `SELECT v.id, v.name FROM conversations c JOIN clients v ON v.id = c.assigned_to WHERE c.id = $1`, [conversationId]);
+  if (ya.rows.length) return ya.rows[0];
+  const v = (await pool.query(
+    `SELECT e.id, e.name,
+       (SELECT COUNT(*) FROM conversations c WHERE c.assigned_to = e.id AND COALESCE(c.archived, false) = false
+          AND c.updated_at > NOW() - INTERVAL '7 days') AS abiertos,
+       (SELECT MAX(assigned_at) FROM conversations c WHERE c.assigned_to = e.id) AS ultimo
+     FROM clients e WHERE e.owner_id = $1 AND e.role = 'employee'
+     ORDER BY abiertos ASC, ultimo ASC NULLS FIRST LIMIT 1`, [clientId])).rows[0];
+  if (!v) return null;
+  await pool.query('UPDATE conversations SET assigned_to = $2, assigned_at = NOW() WHERE id = $1', [conversationId, v.id]);
+  return v;
+}
+
 function buildSalesExtras({ clientId, to, cfg, channel }) {
   if (cfg.whatsapp_actions_enabled === false) return {};
   const pasos = cfg.sales_steps_enabled && Array.isArray(cfg.sales_steps) ? cfg.sales_steps.filter((p) => p && p.title) : [];
@@ -103,7 +124,9 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
             const { createAlert } = require('./alerts');
             await pool.query(`UPDATE conversations SET status = 'human' WHERE id = $1`, [conversation.id]);
             const quien = conversation.customer_name && conversation.customer_name !== to ? `${conversation.customer_name} (${to})` : to;
-            await createAlert(clientId, conversation.id, 'human_requested', `${quien} necesita que lo atiendas vos${a.name ? ': ' + a.name : ''}`);
+            const vendedor = await asignarPorTurno(clientId, conversation.id);
+            await createAlert(clientId, conversation.id, 'human_requested',
+              vendedor ? `${quien} quedó asignado a ${vendedor.name}${a.name ? ': ' + a.name : ''}` : `${quien} necesita que lo atiendas vos${a.name ? ': ' + a.name : ''}`);
           } else if (a.type === 'archivar') {
             if (channel.archive) await channel.archive();
             await pool.query('UPDATE conversations SET archived = true WHERE id = $1', [conversation.id]);

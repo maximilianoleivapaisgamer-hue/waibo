@@ -147,10 +147,14 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
 router.post('/line-limit', checkServiceSecret, async (req, res) => {
   const { clientId, to, limite, sale, manual, enviados } = req.body;
   try {
+    // WhatsApp restringe por el ritmo de la línea, sin importar el canal: se suma lo del celular
+    const celu = (await pool.query(
+      `SELECT COUNT(*)::int AS n FROM messages m JOIN conversations c ON c.id = m.conversation_id
+       WHERE c.client_id = $1 AND m.origin = 'phone' AND m.timestamp > NOW() - INTERVAL '24 hours'`, [clientId])).rows[0].n;
     if (manual) {
       await pool.query(
         `INSERT INTO alerts (client_id, type, message) VALUES ($1, 'line_limit', $2)`,
-        [clientId, `Ojo: por la línea ya salieron ${enviados || limite} mensajes en 24 h (el tope es ${limite}) y siguen saliendo mensajes escritos a mano. WhatsApp puede restringir el número por este ritmo: conviene bajar el volumen hasta mañana.`]
+        [clientId, `Ojo: por la línea ya salieron ${enviados || limite} mensajes en 24 h por Waibo${celu ? ` + ${celu} desde el celular` : ''} (el tope es ${limite}) y siguen saliendo mensajes escritos a mano. WhatsApp puede restringir el número por este ritmo: conviene bajar el volumen hasta mañana.`]
       );
       return res.json({ ok: true });
     }
