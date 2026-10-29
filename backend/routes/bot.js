@@ -666,7 +666,8 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
         media.push({ id: r.id, kind: r.kind, name: r.name, caption: epigrafe, after_text: despues });
       } else if (a.type === 'etiqueta') notas.push(`🏷️ Etiqueta: ${a.name}`);
       else if (a.type === 'archivar') notas.push('🗄 Archivaría el chat');
-      else if (a.type === 'derivar') notas.push(`🙋 No contesta y te lo pasa a vos${a.name ? ': ' + a.name : ''}`);
+      else if (a.type === 'derivar') notas.push(`🙋 No contesta y queda en tus pendientes${a.name ? ': ' + a.name : ''}`);
+      else if (a.type === 'vender') notas.push(`💰 Interés de compra: pasa a un vendedor${a.name ? ': ' + a.name : ''}`);
     }
     aiResponse = clean;
 
@@ -989,6 +990,26 @@ router.put('/sellers/settings', authMiddleware, async (req, res) => {
   try {
     await pool.query('UPDATE bot_configs SET auto_assign = $2 WHERE client_id = $1', [req.client.id, !!req.body.auto_assign]);
     res.json({ ok: true, auto_assign: !!req.body.auto_assign });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Pendientes del dueño: lo que el bot no supo contestar, agrupado por tema, para responder
+// una vez y destrabar a todos los que preguntaron lo mismo.
+router.get('/owner-pending', authMiddleware, async (req, res) => {
+  if (req.client.role === 'employee') return res.status(403).json({ error: 'Sin acceso' });
+  try {
+    const r = await pool.query(
+      `SELECT COALESCE(a.topic, 'sin tema') AS tema, COUNT(*)::int AS cantidad,
+         json_agg(json_build_object('alert_id', a.id, 'conversation_id', a.conversation_id, 'nombre', c.customer_name,
+           'telefono', c.customer_phone, 'cuando', a.created_at) ORDER BY a.created_at DESC) AS chats
+       FROM alerts a LEFT JOIN conversations c ON c.id = a.conversation_id
+       WHERE a.client_id = $1 AND a.type = 'human_requested' AND a.resolved = false
+       GROUP BY 1 ORDER BY 2 DESC`,
+      [req.client.id]
+    );
+    res.json(r.rows);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

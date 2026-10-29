@@ -519,6 +519,7 @@ async function initDB() {
       -- panel, resource_id cuando es un recurso de la biblioteca, y la copia en message_media.
       -- Vendedores: cada chat puede tener un dueño (un empleado del negocio)
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_to UUID;
+      ALTER TABLE alerts ADD COLUMN IF NOT EXISTS topic TEXT;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by UUID;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN DEFAULT false;

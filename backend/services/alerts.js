@@ -2,12 +2,12 @@ const pool = require('../db');
 const { sendWhatsAppMessage } = require('./whatsapp');
 const { normalizePhone } = require('./phone');
 
-async function createAlert(clientId, conversationId, type, message) {
+async function createAlert(clientId, conversationId, type, message, topic = null) {
   try {
     await pool.query(
-      `INSERT INTO alerts (client_id, conversation_id, type, message)
-       VALUES ($1, $2, $3, $4)`,
-      [clientId, conversationId, type, message]
+      `INSERT INTO alerts (client_id, conversation_id, type, message, topic)
+       VALUES ($1, $2, $3, $4, $5)`,
+      [clientId, conversationId, type, message, topic]
     );
 
     await notifyOwnerIfEnabled(clientId, message);

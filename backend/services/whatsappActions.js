@@ -17,6 +17,7 @@ function extractActions(text) {
   clean = clean.replace(/\[\[\s*archivar\s*\]\]/gi, () => { actions.push({ type: 'archivar' }); return ''; });
   clean = clean.replace(/\[\[\s*paso[_ ]hecho\s*\]\]/gi, () => { actions.push({ type: 'paso' }); return ''; });
   clean = clean.replace(/\[\[\s*derivar\s*(?::\s*([^\]]*?))?\s*\]\]/gi, (_, motivo) => { actions.push({ type: 'derivar', name: (motivo || '').trim() }); return ''; });
+  clean = clean.replace(/\[\[\s*vender\s*(?::\s*([^\]]*?))?\s*\]\]/gi, (_, motivo) => { actions.push({ type: 'vender', name: (motivo || '').trim() }); return ''; });
   clean = clean.replace(/\n{3,}/g, '\n\n').trim();
   // Si igual anuncia el audio ("te mando un audio y te explico"), esa frase se saca: el audio va directo.
   if (actions.some((a) => a.type === 'enviar') && clean.length < 120 && /\b(te\s+(mando|paso|dejo|env[ií]o)\s+(un\s+)?audio|escuch[aá]\s+(este|el)\s+audio)/i.test(clean)) clean = '';
@@ -73,7 +74,10 @@ ${labelInstructions}`);
   partes.push(`Para archivar el chat escribí [[archivar]]. Hacelo solo cuando la conversación terminó${labelInstructions ? ' o según las reglas de arriba' : ''}. Nunca archives si el cliente todavía espera una respuesta.
 Los tokens [[...]] nunca los ve el cliente: el sistema los saca del mensaje.`);
 
-  partes.push(`PASAR AL DUEÑO: si la respuesta no está en tus instrucciones, o el caso es de los que las instrucciones dicen que se frenan o pasan al dueño, NO contestes nada al cliente. Escribí solamente [[derivar:motivo corto]]. El chat pasa a atención humana y se le avisa al dueño. Es mejor que espere unos minutos a que le inventes una respuesta.`);
+  partes.push(`PASAR A UNA PERSONA (dos casos distintos, no los mezcles):
+- [[derivar:tema]] cuando NO sabés la respuesta o es un tema que solo define el dueño (algo que no está en tus instrucciones, pagos del exterior, contratos, casos que las instrucciones dicen que se frenan). El "tema" tiene que ser corto y genérico para poder agruparlo (ej: "cómo se paga", "contrato", "bloqueo por IMEI"). NO contestes nada al cliente: escribí solamente el token.
+- [[vender:motivo]] cuando hay interés real de compra y un vendedor lo puede cerrar: dijo cuántos equipos quiere o entrega, quiere arrancar, nombra un pack, pregunta cómo pagar teniendo ya los precios. Si las instrucciones dicen qué decirle en ese momento, decilo; si no, no escribas nada más que el token.
+Es mejor que espere unos minutos a que le inventes una respuesta.`);
 
   return '\n\n' + partes.join('\n\n');
 }

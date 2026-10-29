@@ -12,6 +12,16 @@ export default function Dashboard() {
   const [stats, setStats] = useState(null);
   // "Primeros pasos" se puede ocultar; se recuerda en este navegador
   const [pasosOcultos, setPasosOcultos] = useState(false);
+  // Lo que el bot no supo contestar, agrupado por tema (solo el dueño)
+  const [pendientes, setPendientes] = useState([]);
+  const [temaAbierto, setTemaAbierto] = useState(null);
+  useEffect(() => {
+    const token = localStorage.getItem('whabot_token');
+    if (!token) return;
+    axios.get(`${process.env.NEXT_PUBLIC_API_URL}/api/bot/owner-pending`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => setPendientes(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {});
+  }, []);
   useEffect(() => {
     try { setPasosOcultos(localStorage.getItem('waibo_pasos_ocultos') === '1'); } catch (_) {}
   }, []);
@@ -137,6 +147,34 @@ export default function Dashboard() {
             >
               {trial?.expired ? 'Activar ahora' : 'Ver planes'}
             </button>
+          </div>
+        )}
+
+        {pendientes.length > 0 && (
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-title" style={{ border: 'none', marginBottom: 6 }}>
+              📌 Te preguntaron y el bot no supo ({pendientes.reduce((n, p) => n + p.cantidad, 0)})
+            </div>
+            <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
+              Agrupado por tema: si sumás la respuesta a las instrucciones del bot, la próxima vez contesta solo. Estos chats no se reparten a los vendedores.
+            </p>
+            {pendientes.map(p => (
+              <div key={p.tema} style={{ borderTop: '1px solid var(--border)', padding: '8px 0' }}>
+                <div onClick={() => setTemaAbierto(temaAbierto === p.tema ? null : p.tema)} style={{ display: 'flex', justifyContent: 'space-between', cursor: 'pointer', fontSize: 14 }}>
+                  <span><strong>{p.tema}</strong></span>
+                  <span style={{ color: 'var(--text-muted)' }}>{p.cantidad} {p.cantidad === 1 ? 'persona' : 'personas'} {temaAbierto === p.tema ? '▲' : '▼'}</span>
+                </div>
+                {temaAbierto === p.tema && (
+                  <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
+                    {p.chats.map(c => (
+                      <a key={c.alert_id} href={`/conversations?id=${c.conversation_id}`} style={{ fontSize: 13 }}>
+                        {c.nombre && c.nombre !== c.telefono ? `${c.nombre} · ` : ''}{c.telefono}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
           </div>
         )}
 

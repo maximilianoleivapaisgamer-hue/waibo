@@ -120,13 +120,19 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
                WHERE id = $1 AND NOT (COALESCE(tags, '{}') @> ARRAY[$2::text])`,
               [conversation.id, a.name]
             );
-          } else if (a.type === 'derivar') {
+          } else if (a.type === 'derivar' || a.type === 'vender') {
+            // derivar = el bot no sabe contestar o es un tema del dueño: va a los pendientes del
+            // dueño y NO se reparte. vender = interés real de compra: va a un vendedor si hay
+            // reparto, porque es un chat que un vendedor puede cerrar.
             const { createAlert } = require('./alerts');
             await pool.query(`UPDATE conversations SET status = 'human' WHERE id = $1`, [conversation.id]);
             const quien = conversation.customer_name && conversation.customer_name !== to ? `${conversation.customer_name} (${to})` : to;
-            const vendedor = await asignarPorTurno(clientId, conversation.id);
-            await createAlert(clientId, conversation.id, 'human_requested',
-              vendedor ? `${quien} quedó asignado a ${vendedor.name}${a.name ? ': ' + a.name : ''}` : `${quien} necesita que lo atiendas vos${a.name ? ': ' + a.name : ''}`);
+            const vendedor = a.type === 'vender' ? await asignarPorTurno(clientId, conversation.id) : null;
+            await createAlert(clientId, conversation.id, a.type === 'vender' ? 'sale_ready' : 'human_requested',
+              vendedor ? `${quien} quiere comprar y quedó asignado a ${vendedor.name}${a.name ? ': ' + a.name : ''}`
+                : a.type === 'vender' ? `${quien} quiere comprar${a.name ? ': ' + a.name : ''}`
+                : `${quien} necesita una respuesta tuya${a.name ? ': ' + a.name : ''}`,
+              a.name ? a.name.toLowerCase().slice(0, 80) : null);
           } else if (a.type === 'archivar') {
             if (channel.archive) await channel.archive();
             await pool.query('UPDATE conversations SET archived = true WHERE id = $1', [conversation.id]);
