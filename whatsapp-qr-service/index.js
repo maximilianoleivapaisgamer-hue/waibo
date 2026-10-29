@@ -236,7 +236,12 @@ const LIMITE_DIARIO = Number(process.env.LIMITE_DIARIO || 500);
 const ESPERA_MIN = Number(process.env.ESPERA_MIN_MS || 8000);
 const ESPERA_MAX = Number(process.env.ESPERA_MAX_MS || 16000);
 const ultimoEnvio = {};  // clientId -> ms del último envío
-const enviados24 = {};   // clientId -> [ms]
+// Envíos de las últimas 24 h por línea, guardados en disco: si el servicio se reinicia, el
+// tope no vuelve a cero (tres reinicios en un día no pueden ser 1.500 mensajes).
+const ENVIADOS_FILE = path.join(__dirname, "enviados24.json");
+const enviados24 = leerJson(ENVIADOS_FILE);   // clientId -> [ms]
+const guardarEnviados = guardarLuego(ENVIADOS_FILE, () => enviados24);
+for (const sig of ["exit", "SIGINT", "SIGTERM"]) process.on(sig, () => { try { fs.writeFileSync(ENVIADOS_FILE, JSON.stringify(enviados24)); } catch (_) {} if (sig !== "exit") process.exit(0); });
 const recientes = {};    // clientId -> Map(firma -> ms)
 const idsPropios = new Set(); // ids de lo que mandó este servicio (para no confundirlo con el celular)
 
@@ -320,6 +325,7 @@ async function trabajarCola(clientId) {
         if (r && r.id && r.id._serialized) idsPropios.add(r.id._serialized);
         ultimoEnvio[clientId] = Date.now();
         lista.push(Date.now());
+        guardarEnviados();
         if (item.firma) rec.set(item.firma, Date.now());
         if (lista.length < LIMITE_DIARIO) { avisoTope[clientId] = new Set(); avisoManual[clientId] = false; }
         item.resolve({ ok: true });
