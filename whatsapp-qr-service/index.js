@@ -529,8 +529,12 @@ function ensureClient(clientId) {
     try {
       if (!msg.fromMe) return;
       const idCompleto = idDe(msg);
-      const idCorto = String((msg.id && msg.id.id) || '');
-      if (!idCompleto || idsPropios.has(idCompleto) || idCorto.startsWith('3EB0')) return;
+      if (!idCompleto) return;
+      // Lo que mandó este mismo servicio queda anotado en idsPropios apenas sale; se espera un
+      // momento para que esté anotado. NO se filtra por el prefijo "3EB0": ese prefijo lo usan
+      // todos los WhatsApp Web (el Captador, el WhatsApp Web del navegador) y se perdían esos mensajes.
+      await wait(5000);
+      if (idsPropios.has(idCompleto)) return;
       const to = String(msg.to || '');
       if (!to || to === 'status@broadcast' || to.endsWith('@g.us') || to.endsWith('@newsletter')) return;
       const tipos = { image: '[imagen]', video: '[video]', document: '[archivo]', audio: '[audio]', ptt: '[audio]', sticker: '[sticker]', location: '[ubicación]', vcard: '[contacto]' };

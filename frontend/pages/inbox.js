@@ -172,7 +172,7 @@ export default function Inbox() {
       .then(r => { if (vivo) setChats((r.data || []).filter(c => c.channel === 'whatsapp')); })
       .catch(e => { if (e.response?.status === 401 || e.response?.status === 403) router.push('/login'); });
     cargar();
-    const t = setInterval(cargar, 6000);
+    const t = setInterval(cargar, 3000);
     return () => { vivo = false; clearInterval(t); };
   }, []);
 
@@ -184,7 +184,7 @@ export default function Inbox() {
       .then(r => { if (vivo) setMensajes(r.data || []); })
       .catch(() => {});
     cargar();
-    const t = setInterval(cargar, 4000);
+    const t = setInterval(cargar, 2000);
     return () => { vivo = false; clearInterval(t); };
   }, [abierto]);
 
