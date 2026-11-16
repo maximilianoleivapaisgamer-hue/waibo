@@ -895,10 +895,40 @@ app.get('/session/:clientId/avatar', checkSecret, async (req, res) => {
   const to = String(req.query.to || '');
   try {
     const id = chatIdPara(req.params.clientId, to) || `${soloDigitos(to)}@c.us`;
-    let url = null;
-    try { url = await rec.client.getProfilePicUrl(id); } catch (_) {}
-    if (!url && !id.endsWith('@c.us')) { try { url = await rec.client.getProfilePicUrl(`${soloDigitos(to)}@c.us`); } catch (_) {} }
-    res.json({ url: url || null });
+    // Se prueba de varias formas (la de la librería falla con los chats @lid) y se devuelven
+    // los errores para poder ver qué pasó si ninguna anda
+    const ids = [...new Set([id, `${soloDigitos(to)}@c.us`])];
+    const r = await rec.client.pupPage.evaluate(async (ids) => {
+      const W = window.require;
+      const errores = [];
+      const Coll = W('WAWebCollections');
+      for (const cid of ids) {
+        // 1) miniatura ya cargada en memoria
+        try {
+          const t = Coll.ProfilePicThumb && Coll.ProfilePicThumb.get(cid);
+          const u = t && (t.eurl || t.imgFull || t.img);
+          if (u) return { url: u, como: 'memoria' };
+        } catch (e) { errores.push('memoria ' + e.message); }
+        // 2) pedirla al servidor con el chat o el contacto
+        try {
+          const wid = W('WAWebWidFactory').createWid(cid);
+          const modelo = Coll.Chat.get(cid) || Coll.Contact.get(cid) || (await Coll.Chat.find(wid).catch(() => null)) || { id: wid };
+          const p = await W('WAWebContactProfilePicThumbBridge').requestProfilePicFromServer(modelo);
+          if (p && (p.eurl || p.imgFull || p.img)) return { url: p.eurl || p.imgFull || p.img, como: 'servidor' };
+          errores.push(cid + ' sin foto');
+        } catch (e) { errores.push(cid + ' servidor ' + (e.name || '') + ' ' + e.message); }
+        // 3) colección de miniaturas
+        try {
+          const wid = W('WAWebWidFactory').createWid(cid);
+          const t = Coll.ProfilePicThumb && (await Coll.ProfilePicThumb.find(wid));
+          const u = t && (t.eurl || t.imgFull || t.img);
+          if (u) return { url: u, como: 'miniaturas' };
+        } catch (e) { errores.push(cid + ' miniaturas ' + e.message); }
+      }
+      return { url: null, errores };
+    }, ids).catch((e) => ({ url: null, errores: [e.message] }));
+    if (!r.url && r.errores) console.log(`[${req.params.clientId}] foto de ${to}: ${r.errores.join(' | ').slice(0, 300)}`);
+    res.json({ url: r.url || null, como: r.como, errores: r.errores });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -945,6 +975,23 @@ app.get('/session/:clientId/labels', checkSecret, async (req, res) => {
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado', labels: [] });
   rec.labelsCache = null;
   res.json({ labels: await etiquetasDe(rec) });
+});
+
+// Agendar un contacto en el WhatsApp de la línea, sincronizado con la agenda del celular
+app.post('/session/:clientId/save-contact', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const tel = soloDigitos(req.body.to || '');
+  const nombre = String(req.body.firstName || '').trim();
+  const apellido = String(req.body.lastName || '').trim();
+  if (!tel || !nombre) return res.status(400).json({ error: 'Faltan número o nombre' });
+  try {
+    await rec.client.saveOrEditAddressbookContact(tel, nombre, apellido, true);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(`[${req.params.clientId}] no se pudo agendar ${tel}:`, err.message);
+    res.status(500).json({ error: 'WhatsApp no dejó agendarlo: ' + err.message });
+  }
 });
 
 app.post('/session/:clientId/label', checkSecret, async (req, res) => {

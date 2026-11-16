@@ -1259,6 +1259,33 @@ router.get('/conversations/labels/list', authMiddleware, async (req, res) => {
 });
 
 // Poner o sacar una etiqueta de WhatsApp a un chat (se ve también en el celular)
+// Agendar el contacto en el WhatsApp de la línea (y en la agenda del celular)
+router.post('/conversations/:id/save-contact', authMiddleware, async (req, res) => {
+  const firstName = String(req.body.firstName || '').trim().slice(0, 60);
+  const lastName = String(req.body.lastName || '').trim().slice(0, 60);
+  if (!firstName) return res.status(400).json({ error: 'Poné al menos el nombre' });
+  try {
+    const conv = (await pool.query(
+      `SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))`,
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    if (conv.channel !== 'whatsapp' || !process.env.QR_SERVICE_URL) return res.status(400).json({ error: 'Solo se puede agendar en chats de WhatsApp por QR' });
+    const axios = require('axios');
+    const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+    try {
+      await axios.post(`${process.env.QR_SERVICE_URL}/session/${conv.line_id || req.client.id}/save-contact`,
+        { to: conv.customer_phone, firstName, lastName, secret }, { headers: { 'x-service-secret': secret }, timeout: 60000 });
+    } catch (e) {
+      return res.status(502).json({ error: e.response?.data?.error || 'No se pudo agendar en WhatsApp' });
+    }
+    const nombre = [firstName, lastName].filter(Boolean).join(' ');
+    await pool.query('UPDATE conversations SET customer_name = $2 WHERE id = $1', [conv.id, nombre]);
+    res.json({ ok: true, customer_name: nombre });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/conversations/:id/label', authMiddleware, async (req, res) => {
   const label = String(req.body.label || '').trim();
   const quitar = !!req.body.remove;

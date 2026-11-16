@@ -175,6 +175,7 @@ export default function Inbox() {
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [etiquetasWA, setEtiquetasWA] = useState([]);
   const [respondiendo, setRespondiendo] = useState(null); // mensaje que se cita al contestar
+  const [agendando, setAgendando] = useState(null); // { nombre, apellido }
   const [menuMsg, setMenuMsg] = useState(null);   // id del mensaje con el menú abierto
   const [editando, setEditando] = useState(null); // { id, texto }
   const [verDetalle, setVerDetalle] = useState(false);
@@ -452,6 +453,17 @@ export default function Inbox() {
     } catch (e) { avisar(e.response?.data?.error || 'No se pudo editar'); }
   };
 
+  const agendarContacto = async () => {
+    if (!agendando?.nombre?.trim()) return avisar('Poné al menos el nombre');
+    try {
+      const r = await axios.post(`${API}/api/bot/conversations/${abierto}/save-contact`,
+        { firstName: agendando.nombre.trim(), lastName: agendando.apellido.trim() }, { headers: headers(), timeout: 90000 });
+      actualizarChat({ customer_name: r.data.customer_name });
+      setAgendando(null);
+      avisar('Agendado en el celular');
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo agendar'); }
+  };
+
   const guardarEtiquetas = async (tags) => {
     try {
       await axios.put(`${API}/api/bot/conversations/${abierto}/tags`, { tags }, { headers: headers() });
@@ -483,7 +495,7 @@ export default function Inbox() {
 
   const quienMando = (m) => {
     if (m.role === 'user') return null;
-    if (m.origin === 'phone') return '📱 Celular';
+    if (m.origin === 'phone') return chat?.assigned_name ? `📱 ${chat.assigned_name}` : '📱 Celular';
     if (m.origin === 'import') return null;
     if (m.origin === 'seguimiento') return '🔁 Seguimiento';
     if (m.origin === 'manual') return m.sent_by && nombreVendedor(m.sent_by) ? `👤 ${nombreVendedor(m.sent_by)}` : '👤 Vos';
@@ -683,6 +695,25 @@ export default function Inbox() {
                     <span className="wa-ficha-titulo">Temperatura</span>
                     <span className={`wa-tag ${CALOR[chat.heat].cls}`}>{CALOR[chat.heat].txt}</span>
                     {chat.heat_reason && <span style={{ fontSize: 13, color: 'var(--wa-suave)' }}>{chat.heat_reason}</span>}
+                  </div>
+                )}
+                {chat.channel === 'whatsapp' && (
+                  <div className="wa-ficha-fila">
+                    <span className="wa-ficha-titulo">Contacto</span>
+                    {agendando ? (
+                      <>
+                        <input className="wa-tag-input" style={{ width: 140 }} placeholder="Nombre" value={agendando.nombre} onChange={e => setAgendando({ ...agendando, nombre: e.target.value })} />
+                        <input className="wa-tag-input" style={{ width: 140 }} placeholder="Apellido (opcional)" value={agendando.apellido} onChange={e => setAgendando({ ...agendando, apellido: e.target.value })} />
+                        <button className="wa-boton-verde" onClick={agendarContacto}>Guardar en el celular</button>
+                        <button className="wa-boton-claro" onClick={() => setAgendando(null)}>Cancelar</button>
+                      </>
+                    ) : (
+                      <button className="wa-boton-claro" onClick={() => {
+                        const n = /^\d+$/.test(chat.customer_name || '') ? '' : (chat.customer_name || '');
+                        const [nombre, ...resto] = n.split(' ');
+                        setAgendando({ nombre: nombre || '', apellido: resto.join(' ') });
+                      }}>👤 Agendar</button>
+                    )}
                   </div>
                 )}
                 <div className="wa-ficha-fila">
