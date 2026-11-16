@@ -533,6 +533,9 @@ async function initDB() {
       );
       -- Seguimiento por chat: cuándo volver a escribirle y qué quedó pendiente
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS heat VARCHAR(10);
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS heat_reason TEXT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS heat_at TIMESTAMP;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS follow_up_note TEXT;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by UUID;

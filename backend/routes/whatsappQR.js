@@ -530,6 +530,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
       if (Array.isArray(labels) && labels.length) {
         await pool.query(`UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $2::text[])) WHERE id = $1`, [convId, labels]);
       }
+      require('../services/heat').clasificarTemperatura(convId).catch(() => {});
       return res.json({ ok: true, stored: true });
     }
 
@@ -562,6 +563,8 @@ router.post('/message', checkServiceSecret, async (req, res) => {
     // Se contesta al servicio QR enseguida: la respuesta puede tardar minutos por la demora configurada.
     res.json({ ok: true });
     await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType } });
+    const cv = await pool.query(`SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`, [clientId, from]);
+    if (cv.rows[0]) require('../services/heat').clasificarTemperatura(cv.rows[0].id).catch(() => {});
   } catch (err) {
     console.error('Error procesando mensaje QR:', err.stack || err.message);
     if (!res.headersSent) res.status(500).json({ error: err.message });

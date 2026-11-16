@@ -50,6 +50,12 @@ function textoSinRelleno(m) {
     .replace(/^(📷 Foto|🎬 Video|🎙️ Nota de voz)\s*/, '');
 }
 
+const CALOR = {
+  caliente: { txt: '🔥 Caliente', cls: 'rojo' },
+  tibio: { txt: '🌤 Tibio', cls: 'naranja' },
+  frio: { txt: '❄️ Frío', cls: 'gris' }
+};
+
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
 function Media({ m }) {
@@ -96,6 +102,8 @@ export default function Inbox() {
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [verDetalle, setVerDetalle] = useState(false);
   const [aviso, setAviso] = useState('');
+  const [etiquetaSel, setEtiquetaSel] = useState('');
+  const [conexion, setConexion] = useState(null); // null | 'ok' | 'caida'
   const finRef = useRef(null);
   const archivoRef = useRef(null);
   const grabadorRef = useRef(null);
@@ -108,6 +116,19 @@ export default function Inbox() {
     axios.get(`${API}/api/bot/sellers`, { headers: headers() })
       .then(r => { setSellers(r.data.sellers || []); setSoyVendedor(!!r.data.me); })
       .catch(() => {});
+  }, []);
+
+  // Estado de la conexión de WhatsApp (QR)
+  useEffect(() => {
+    const ver = () => axios.get(`${API}/api/whatsapp-qr/status`, { headers: headers() })
+      .then(r => {
+        if (r.data.mode !== 'qr') return setConexion(null);
+        setConexion(['connected', 'connecting', 'starting'].includes(r.data.status) ? 'ok' : 'caida');
+      })
+      .catch(() => {});
+    ver();
+    const t = setInterval(ver, 60000);
+    return () => clearInterval(t);
   }, []);
 
   // Lista de chats: se refresca sola
@@ -133,6 +154,15 @@ export default function Inbox() {
     return () => { vivo = false; clearInterval(t); };
   }, [abierto]);
 
+  useEffect(() => {
+    if (!abierto) return;
+    const c = chats.find(x => x.id === abierto);
+    if (!c || (c.heat_at && Date.now() - new Date(c.heat_at).getTime() < 30 * 60 * 1000)) return;
+    axios.post(`${API}/api/bot/conversations/${abierto}/heat`, {}, { headers: headers(), timeout: 90000 })
+      .then(r => setChats(prev => prev.map(x => x.id === abierto ? { ...x, ...r.data } : x)))
+      .catch(() => {});
+  }, [abierto]);
+
   const cantidadAntes = useRef(0);
   useEffect(() => {
     if (mensajes.length !== cantidadAntes.current) finRef.current?.scrollIntoView({ block: 'end' });
@@ -148,15 +178,23 @@ export default function Inbox() {
     const ahora = Date.now();
     return chats.filter(c => {
       if (q && !(`${c.customer_name || ''} ${c.customer_phone || ''} ${(c.tags || []).join(' ')}`.toLowerCase().includes(q))) return false;
+      if (etiquetaSel && !(c.tags || []).includes(etiquetaSel)) return false;
+      if (filtro === 'calientes') return c.heat === 'caliente';
       if (filtro === 'sinleer') return c.unread;
       if (filtro === 'seguimiento') return c.follow_up_at && new Date(c.follow_up_at).getTime() <= ahora + 24 * 3600 * 1000;
       if (filtro === 'sinasignar') return !c.assigned_to;
       if (filtro !== 'todos') return c.assigned_to === filtro;
       return !c.archived || !!q;
     });
-  }, [chats, buscar, filtro]);
+  }, [chats, buscar, filtro, etiquetaSel]);
 
   const sinLeer = chats.filter(c => c.unread).length;
+  const calientes = chats.filter(c => c.heat === 'caliente').length;
+  const todasEtiquetas = useMemo(() => {
+    const n = {};
+    for (const c of chats) for (const t of c.tags || []) n[t] = (n[t] || 0) + 1;
+    return Object.entries(n).sort((a, b) => b[1] - a[1]).map(([t]) => t);
+  }, [chats]);
   const paraSeguir = chats.filter(c => c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now() + 24 * 3600 * 1000).length;
 
   const actualizarChat = (cambios) => setChats(prev => prev.map(c => c.id === abierto ? { ...c, ...cambios } : c));
@@ -286,6 +324,11 @@ export default function Inbox() {
             <span className="wa-avatar wa-avatar-chico">{(yo?.name || yo?.business_name || 'W')[0]?.toUpperCase()}</span>
             <span className="wa-yo-nombre">{soyVendedor ? (yo?.name || 'Vendedor') : 'Todos los chats'}</span>
           </div>
+          {conexion && (
+            <span className={`wa-conexion ${conexion}`} title={conexion === 'ok' ? 'WhatsApp conectado' : 'WhatsApp desconectado: hay que escanear el QR'}>
+              ● {conexion === 'ok' ? 'Conectado' : 'Desconectado'}
+            </span>
+          )}
           {!soyVendedor && <a href="/dashboard" className="wa-link">Panel ›</a>}
         </header>
         <div className="wa-buscar">
@@ -294,12 +337,20 @@ export default function Inbox() {
         <div className="wa-chips">
           <button className={filtro === 'todos' ? 'on' : ''} onClick={() => setFiltro('todos')}>Todos</button>
           <button className={filtro === 'sinleer' ? 'on' : ''} onClick={() => setFiltro('sinleer')}>Sin leer{sinLeer ? ` ${sinLeer}` : ''}</button>
+          <button className={filtro === 'calientes' ? 'on' : ''} onClick={() => setFiltro('calientes')}>🔥 Calientes{calientes ? ` ${calientes}` : ''}</button>
           <button className={filtro === 'seguimiento' ? 'on' : ''} onClick={() => setFiltro('seguimiento')}>Seguimiento{paraSeguir ? ` ${paraSeguir}` : ''}</button>
           {!soyVendedor && sellers.length > 0 && <button className={filtro === 'sinasignar' ? 'on' : ''} onClick={() => setFiltro('sinasignar')}>Sin asignar</button>}
           {!soyVendedor && sellers.map(v => (
             <button key={v.id} className={filtro === v.id ? 'on' : ''} onClick={() => setFiltro(v.id)}>{v.name}</button>
           ))}
         </div>
+        {todasEtiquetas.length > 0 && (
+          <div className="wa-chips wa-chips-etiquetas">
+            {todasEtiquetas.map(t => (
+              <button key={t} className={etiquetaSel === t ? 'on' : ''} onClick={() => setEtiquetaSel(etiquetaSel === t ? '' : t)}>🏷 {t}</button>
+            ))}
+          </div>
+        )}
         <div className="wa-items">
           {!visibles.length && <div className="wa-vacio">No hay chats acá.</div>}
           {visibles.map(c => {
@@ -318,8 +369,9 @@ export default function Inbox() {
                     </span>
                     {c.unread && <span className="wa-burbuja-nueva">●</span>}
                   </div>
-                  {(c.tags?.length > 0 || c.follow_up_at || (!soyVendedor && c.assigned_name)) && (
+                  {(c.tags?.length > 0 || c.follow_up_at || c.heat || (!soyVendedor && c.assigned_name)) && (
                     <div className="wa-item-tags">
+                      {c.heat && CALOR[c.heat] && <span className={`wa-tag ${CALOR[c.heat].cls}`} title={c.heat_reason || ''}>{CALOR[c.heat].txt}</span>}
                       {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
                       {!soyVendedor && c.assigned_name && <span className="wa-tag violeta">👤 {c.assigned_name}</span>}
                       {(c.tags || []).slice(0, 3).map(t => <span key={t} className="wa-tag">{t}</span>)}
@@ -354,6 +406,13 @@ export default function Inbox() {
 
             {verDetalle && (
               <div className="wa-ficha">
+                {chat.heat && CALOR[chat.heat] && (
+                  <div className="wa-ficha-fila">
+                    <span className="wa-ficha-titulo">Temperatura</span>
+                    <span className={`wa-tag ${CALOR[chat.heat].cls}`}>{CALOR[chat.heat].txt}</span>
+                    {chat.heat_reason && <span style={{ fontSize: 13, color: 'var(--wa-suave)' }}>{chat.heat_reason}</span>}
+                  </div>
+                )}
                 <div className="wa-ficha-fila">
                   <span className="wa-ficha-titulo">Bot</span>
                   {chat.status === 'human'
@@ -496,6 +555,13 @@ export default function Inbox() {
         .wa-tag.azul { background: #e3f0fb; color: #1d5fa0; }
         .wa-tag.rojo { background: #fde8e8; color: #b42318; }
         .wa-tag.violeta { background: #efe9fb; color: #5b21b6; }
+        .wa-tag.naranja { background: #fff1e0; color: #9a4a00; }
+        .wa-tag.gris { background: #eef1f3; color: #54656f; }
+        .wa-chips-etiquetas { padding-top: 0; }
+        .wa-chips-etiquetas button { font-size: 12px; padding: 4px 10px; }
+        .wa-conexion { font-size: 12px; font-weight: 600; white-space: nowrap; }
+        .wa-conexion.ok { color: var(--wa-verde); }
+        .wa-conexion.caida { color: #d93025; }
         .wa-x { border: none; background: none; cursor: pointer; color: inherit; padding: 0; font-size: 13px; }
         .wa-tag-input { border: 1px dashed var(--wa-borde); background: transparent; color: var(--wa-texto); border-radius: 10px; padding: 3px 8px; font-size: 12px; width: 110px; outline: none; }
         .wa-bienvenida { margin: auto; text-align: center; color: var(--wa-suave); padding: 24px; max-width: 420px; }

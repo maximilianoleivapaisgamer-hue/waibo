@@ -1070,4 +1070,19 @@ router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
   }
 });
 
+// Calcular la temperatura de un chat al abrirlo (para los que todavía no la tienen)
+router.post('/conversations/:id/heat', authMiddleware, async (req, res) => {
+  try {
+    const c = (await pool.query(
+      'SELECT id FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    if (!c) return res.status(404).json({ error: 'No encontrada' });
+    await require('../services/heat').clasificarTemperatura(c.id);
+    const r = (await pool.query('SELECT heat, heat_reason, heat_at FROM conversations WHERE id = $1', [c.id])).rows[0];
+    res.json(r);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

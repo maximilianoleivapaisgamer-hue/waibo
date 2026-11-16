@@ -6,7 +6,8 @@ import '../styles/globals.css';
 
 const PUBLIC_PAGES = ['/', '/register', '/solicitar-baja', '/admin'];
 const ALLOWED_WHILE_SUSPENDED = ['/billing'];
-const EMPLOYEE_ALLOWED = ['/inbox', '/conversations', '/orders', '/agenda'];
+// Los vendedores trabajan solo desde la Bandeja: no ven configuración, IA ni chats ajenos
+const EMPLOYEE_ALLOWED = ['/inbox'];
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 // Cartel en todo el panel cuando el WhatsApp por QR está desconectado (el bot no contesta).

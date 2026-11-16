@@ -58,6 +58,8 @@ const campaignsRoutes = require('./routes/campaigns');
 const whatsappRoutes = require('./routes/whatsapp');
 const resourcesRoutes = require('./routes/resources');
 
+// Vendedores: solo la Bandeja (ver middleware/soloBandeja.js)
+app.use('/api', require('./middleware/soloBandeja'));
 app.use('/api/auth', authLimiter, authRoutes);
 app.use('/api/clients', apiLimiter, clientRoutes);
 app.use('/api/bot', apiLimiter, botRoutes);
