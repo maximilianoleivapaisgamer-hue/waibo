@@ -83,12 +83,13 @@ export default function Config() {
             { key: 'knowledge', label: '🧠 Base de conocimiento' },
             { key: 'resources', label: '📎 Recursos y etiquetas' },
             { key: 'reception', label: '📞 Recepción' },
-            { key: 'steps', label: '🪜 Pasos de venta' },
-            { key: 'recontact', label: '🔁 Seguimiento' }
+            { key: 'steps', label: '🧭 Pasos de venta' },
+            { key: 'recontact', label: '🔁 Seguimiento' },
+            { key: 'test', label: '🧪 Modo prueba' }
           ].map(t => (
             <button
               key={t.key}
-              onClick={() => setMainTab(t.key)}
+              onClick={() => (t.key === 'test' ? router.push('/test-chat') : setMainTab(t.key))}
               className={`btn ${mainTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
               style={{ width: 'auto', padding: '10px 20px', fontSize: 14 }}
             >

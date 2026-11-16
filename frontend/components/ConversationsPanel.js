@@ -461,7 +461,7 @@ export default function ConversationsPanel({ channel }) {
                   )}
                   {salesSteps.length > 0 && (
                     <div style={{ fontSize: 10, marginTop: 3, color: '#0E7490', fontWeight: 600 }}>
-                      🪜 {(conv.sales_step || 0) >= salesSteps.length ? 'Pasos completos' : `Paso ${(conv.sales_step || 0) + 1}/${salesSteps.length}: ${salesSteps[conv.sales_step || 0].title}`}
+                      🧭 {(conv.sales_step || 0) >= salesSteps.length ? 'Pasos completos' : `Paso ${(conv.sales_step || 0) + 1}/${salesSteps.length}: ${salesSteps[conv.sales_step || 0].title}`}
                     </div>
                   )}
                   {conv.tags?.length > 0 && (
@@ -633,7 +633,7 @@ export default function ConversationsPanel({ channel }) {
               return (
                 <div style={{ marginTop: 10, paddingTop: 10, borderTop: '1px solid var(--border)' }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
-                    🪜 Paso de venta (el bot sigue desde el marcado)
+                    🧭 Paso de venta (el bot sigue desde el marcado)
                   </div>
                   <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap' }}>
                     {opciones.map(o => {

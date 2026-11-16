@@ -112,7 +112,7 @@ export default function SellerBuilderPanel() {
         <ol style={{ fontSize: 14, lineHeight: 1.8 }}>
           <li>Probalo en <a href="/test-chat">🧪 Modo prueba</a> haciéndote pasar por un cliente.</li>
           {archivos.length > 0 && (
-            <li>Subí estos archivos en <strong>📎 Recursos y etiquetas</strong> y elegilos en cada paso de <strong>🪜 Pasos de venta</strong>:
+            <li>Subí estos archivos en <strong>📎 Recursos y etiquetas</strong> y elegilos en cada paso de <strong>🧭 Pasos de venta</strong>:
               <ul>{archivos.map(a => <li key={a}>{a}</li>)}</ul>
             </li>
           )}

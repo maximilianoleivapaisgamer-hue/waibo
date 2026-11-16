@@ -84,7 +84,7 @@ export default function SalesStepsPanel() {
       {error && <div className="error-msg">❌ {error}</div>}
 
       <div className="card">
-        <div className="card-title">🪜 Pasos de venta</div>
+        <div className="card-title">🧭 Pasos de venta</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
           El bot sigue estos pasos en orden, uno por respuesta, y Waibo recuerda en qué paso va cada chat.
           El paso 1 es la apertura: solo va a quien nunca recibió un mensaje tuyo; los demás arrancan en el paso 2.

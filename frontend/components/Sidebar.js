@@ -118,17 +118,11 @@ export default function Sidebar({ active }) {
       ]
     },
     {
-      label: 'Cerebro IA',
+      label: 'Inteligencia',
       onlyOwner: true,
       items: [
-        { key: 'config', label: 'Instrucciones y bot', icon: '🧠', href: '/config' },
-        { key: 'knowledge', label: 'Base de conocimiento', icon: '📚', href: '/config?tab=knowledge' },
-        { key: 'resources', label: 'Archivos y etiquetas', icon: '📎', href: '/config?tab=resources' },
-        { key: 'reception', label: 'Recepción', icon: '📞', href: '/config?tab=reception' },
-        { key: 'steps', label: 'Pasos de venta', icon: '🪜', href: '/config?tab=steps' },
-        { key: 'recontact', label: 'Seguimiento', icon: '🔁', href: '/config?tab=recontact' },
-        { key: 'builder', label: 'Armá tu vendedor', icon: '✨', href: '/config?tab=builder' },
-        { key: 'test-chat', label: 'Modo prueba', icon: '🧪', href: '/test-chat' },
+        // Una sola entrada: adentro están instrucciones, conocimiento, archivos, recepción, pasos, seguimiento y prueba
+        { key: 'config', label: 'Cerebro IA', icon: '🧠', href: '/config' },
       ]
     },
     ...allSections
