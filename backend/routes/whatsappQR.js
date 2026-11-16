@@ -132,6 +132,18 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
       );
       convId = nc.rows[0].id;
     }
+    // Lo que se mandó desde la Bandeja vuelve como aviso de WhatsApp: se le pone el id al
+    // mensaje ya guardado en vez de duplicarlo (WhatsApp no siempre devuelve el id al mandar)
+    if (waId) {
+      const pegado = await pool.query(
+        `UPDATE messages SET wa_id = $2, ack = COALESCE(ack, 1) WHERE id = (
+           SELECT id FROM messages WHERE conversation_id = $1 AND role = 'assistant' AND wa_id IS NULL
+             AND origin <> 'phone' AND timestamp > NOW() - interval '2 minutes'
+             AND (content = $3 OR ($4::text IS NOT NULL AND media_type IS NOT NULL))
+           ORDER BY timestamp ASC LIMIT 1)`,
+        [convId, waId, text, mediaType || null]);
+      if (pegado.rowCount) return res.json({ ok: true, guardado: false, enlazado: true });
+    }
     const ins = await pool.query(
       `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type)
        SELECT $1, 'assistant', $2, 'phone', $3, $4

@@ -367,13 +367,13 @@ async function trabajarCola(clientId) {
       if (falta > 0) await wait(falta);
       try {
         const r = await item.tarea();
-        if (r && r.id && r.id._serialized) idsPropios.add(r.id._serialized);
+        const idEnviado = idDe(r); if (idEnviado) idsPropios.add(idEnviado);
         ultimoEnvio[clientId] = Date.now();
         lista.push(Date.now());
         guardarEnviados();
         if (item.firma) rec.set(item.firma, Date.now());
         if (lista.length < LIMITE_DIARIO) { avisoTope[clientId] = new Set(); avisoManual[clientId] = false; }
-        item.resolve({ ok: true, waId: (r && r.id && r.id._serialized) || null });
+        item.resolve({ ok: true, waId: idEnviado || null });
       } catch (e) {
         item.reject(e);
       }
