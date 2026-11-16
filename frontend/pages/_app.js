@@ -131,7 +131,7 @@ export default function App({ Component, pageProps }) {
     <>
       <Head>
         <title>Waibo — Panel de control</title>
-        <meta name="viewport" content="width=device-width, initial-scale=1" />
+        <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
         <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
         <link rel="icon" type="image/png" sizes="96x96" href="/favicon.png" />
         <link rel="manifest" href="/manifest.json" />

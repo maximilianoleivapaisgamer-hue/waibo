@@ -946,7 +946,7 @@ export default function Inbox() {
           }
         }
         html, body { margin: 0; background: var(--wa-fondo); }
-        .wa { display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--wa-texto); background: var(--wa-fondo); overflow: hidden; }
+        .wa { display: flex; height: 100vh; height: 100dvh; width: 100%; max-width: 100vw; overscroll-behavior: none; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--wa-texto); background: var(--wa-fondo); overflow: hidden; }
         .wa-lista { width: 33%; min-width: 340px; max-width: 620px; background: var(--wa-panel); border-right: 1px solid var(--wa-borde); display: flex; flex-direction: column; }
         .wa-chat { flex: 1; display: flex; flex-direction: column; background: var(--wa-chat); min-width: 0; }
         .wa-top { height: 60px; padding: 0 16px; display: flex; align-items: center; gap: 12px; background: var(--wa-fondo); border-bottom: 1px solid var(--wa-borde); flex-shrink: 0; }
@@ -1011,7 +1011,7 @@ export default function Inbox() {
         .wa-seguimiento input:nth-child(2) { flex: 1; min-width: 180px; }
         .wa-banda { background: #e3f0fb; color: #1d5fa0; font-size: 13px; padding: 8px 16px; }
         .wa-banda.roja { background: #fde8e8; color: #b42318; }
-        .wa-mensajes { flex: 1; overflow-y: auto; padding: 16px 6% 8px; display: flex; flex-direction: column; gap: 2px; }
+        .wa-mensajes { flex: 1; overflow-y: auto; overflow-x: hidden; overscroll-behavior: contain; padding: 16px 6% 8px; display: flex; flex-direction: column; gap: 2px; }
         .wa-dia { text-align: center; margin: 10px 0; }
         .wa-dia span { background: var(--wa-panel); color: var(--wa-suave); font-size: 12px; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px .5px rgba(11,20,26,.13); }
         .wa-fila { display: flex; margin: 1px 0; }
@@ -1068,6 +1068,14 @@ export default function Inbox() {
         .wa-grabando { flex: 1; color: #d93025; font-weight: 600; padding: 10px; }
         .wa-aviso { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 10px 18px; border-radius: 8px; font-size: 14px; z-index: 50; max-width: 90vw; }
         @media (max-width: 760px) {
+          html, body { overflow: hidden; overscroll-behavior: none; width: 100%; position: fixed; inset: 0; }
+          .wa { position: fixed; inset: 0; }
+          .wa-escribir { padding: 6px 8px calc(14px + env(safe-area-inset-bottom)); }
+          .wa-globo { min-width: 0; overflow-wrap: anywhere; }
+          .wa-globo img, .wa-globo video { max-width: 100%; }
+          .wa-audio-fila { max-width: 100%; }
+          .wa-audio { width: 200px; }
+          .wa-caja textarea, .wa-buscar input, .wa input, .wa textarea, .wa select { font-size: 16px; }
           .wa-lista { width: 100%; min-width: 0; border-right: none; }
           .oculta-movil { display: none !important; }
           .wa-volver { display: block; }
