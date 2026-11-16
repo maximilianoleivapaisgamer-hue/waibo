@@ -76,7 +76,10 @@ app.use('/api/tiendanube', apiLimiter, tiendanubeRoutes);
 app.use('/api/agenda', apiLimiter, agendaRoutes);
 app.use('/api/tiktok', apiLimiter, tiktokRoutes);
 app.use('/api/orders', apiLimiter, ordersRoutes);
-app.use('/api/whatsapp-qr', apiLimiter, whatsappQRRoutes);
+// El servicio QR (con su clave) no pasa por el límite de pedidos: al importar sube cientos
+// de chats y archivos seguidos, y un 429 hacía que se perdieran fotos y audios.
+const QR_SECRETO = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+app.use('/api/whatsapp-qr', (req, res, next) => (req.headers['x-service-secret'] === QR_SECRETO ? next() : apiLimiter(req, res, next)), whatsappQRRoutes);
 app.use('/api/mercadopago', apiLimiter, mercadopagoRoutes);
 app.use('/api/bank-transfer', apiLimiter, bankTransferRoutes);
 app.use('/webhook', webhookLimiter, webhookRoutes);
