@@ -100,6 +100,7 @@ function buildSalesInstructions({ steps, current, resources }) {
     conRecurso && paso.after_text ? `Después del recurso el sistema manda este mensaje, no lo repitas: "${paso.after_text}"` : '',
     !conRecurso && (paso.caption || paso.after_text) ? `Todavía no hay archivo cargado para este paso: incluí en tu mensaje, adaptado, este texto: "${[paso.caption, paso.after_text].filter(Boolean).join(' ')}". No pongas marcadores como [video] ni digas que falta el archivo.` : '',
     steps[current + 1] ? `Después viene el paso ${current + 2}: "${steps[current + 1].title}". No lo hagas todavía: se hace en tu próxima respuesta.` : 'Es el último paso.',
+    'ANTES DEL PASO: leé todo lo que escribió el cliente desde tu última respuesta (pueden ser varios mensajes juntos). Si hizo una pregunta concreta (cómo funciona el bloqueo, si sirve para iPhone, cuánto sale, etc.), contestala primero en una o dos líneas con el documento y después seguí con el paso. Nunca ignores una pregunta del cliente, aunque el paso diga que no escribas texto.',
     `Cuando en esta respuesta cumplas el paso ${current + 1}, escribí [[paso_hecho]] en una línea aparte. Si el cliente pregunta otra cosa, respondele primero; si todavía no corresponde hacer el paso, no lo marques.`
   ];
   return '\n\n' + lineas.filter(Boolean).join('\n');
