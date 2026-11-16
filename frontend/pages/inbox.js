@@ -181,7 +181,20 @@ export default function Inbox() {
   const [verDetalle, setVerDetalle] = useState(false);
   const [aviso, setAviso] = useState('');
   const [etiquetaSel, setEtiquetaSel] = useState('');
-  const [lineaSel, setLineaSel] = useState('');
+  const [lineaSel, setLineaSelEstado] = useState('');
+  // La línea elegida queda en la dirección (?linea=...): así se pueden tener dos pestañas,
+  // una con ventas y otra con soporte, y cada una se acuerda de la suya al recargar
+  const setLineaSel = (id) => {
+    setLineaSelEstado(id);
+    try {
+      const u = new URL(window.location.href);
+      if (id) u.searchParams.set('linea', id); else u.searchParams.delete('linea');
+      window.history.replaceState(window.history.state, '', u.toString());
+    } catch (_) {}
+  };
+  useEffect(() => {
+    try { const l = new URL(window.location.href).searchParams.get('linea'); if (l) setLineaSelEstado(l); } catch (_) {}
+  }, []);
   // Respuestas rápidas ("/atajo") y archivos precargados (precios, video, alias...)
   const [rapidas, setRapidas] = useState({ replies: [], resources: [], can_edit: false });
   const [verRapidas, setVerRapidas] = useState(false);
