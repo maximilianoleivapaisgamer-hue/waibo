@@ -294,6 +294,11 @@ router.get('/conversations/:id/variables', authMiddleware, async (req, res) => {
 
 router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
   const { message } = req.body;
+  // Responder citando: llega el id (de Waibo) del mensaje citado
+  let citado = null;
+  if (req.body.replyToId) {
+    citado = (await pool.query('SELECT wa_id FROM messages WHERE id = $1 AND conversation_id = $2', [req.body.replyToId, req.params.id])).rows[0]?.wa_id || null;
+  }
   if (!message || !message.trim()) {
     return res.status(400).json({ error: 'El mensaje no puede estar vacío' });
   }
@@ -318,7 +323,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
         if (!QR_SERVICE_URL) return res.status(400).json({ error: 'Servicio QR no disponible' });
         const axios = require('axios');
         envioQR = await axios.post(`${QR_SERVICE_URL}/session/${conversation.line_id || req.client.id}/send`,
-          { to: conversation.customer_phone, message, secret: SERVICE_SECRET, prioridad: 0 },
+          { to: conversation.customer_phone, message, secret: SERVICE_SECRET, prioridad: 0, ...(citado && { quotedWaId: citado }) },
           { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } }
         );
       } else {
@@ -350,8 +355,8 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO messages (conversation_id, role, content, origin, sent_by, wa_id, ack) VALUES ($1, $2, $3, 'manual', $4, $5, $6)",
-      [conversation.id, 'assistant', message, req.client.own_id || req.client.id, envioQR?.data?.waId || null, envioQR?.data?.waId ? 1 : null]
+      "INSERT INTO messages (conversation_id, role, content, origin, sent_by, wa_id, ack, reply_to) VALUES ($1, $2, $3, 'manual', $4, $5, $6, $7)",
+      [conversation.id, 'assistant', message, req.client.own_id || req.client.id, envioQR?.data?.waId || null, envioQR?.data?.waId ? 1 : null, citado ? citado.split('_').pop() : null]
     );
 
     const updated = await pool.query(

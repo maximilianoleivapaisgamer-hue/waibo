@@ -174,6 +174,7 @@ export default function Inbox() {
   const [segundos, setSegundos] = useState(0);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [etiquetasWA, setEtiquetasWA] = useState([]);
+  const [respondiendo, setRespondiendo] = useState(null); // mensaje que se cita al contestar
   const [menuMsg, setMenuMsg] = useState(null);   // id del mensaje con el menú abierto
   const [editando, setEditando] = useState(null); // { id, texto }
   const [verDetalle, setVerDetalle] = useState(false);
@@ -299,12 +300,15 @@ export default function Inbox() {
     if (!t || !abierto || enviando) return;
     setEnviando(true);
     setTexto('');
+    const cita = respondiendo;
+    setRespondiendo(null);
     try {
-      await axios.post(`${API}/api/bot/conversations/${abierto}/send`, { message: t }, { headers: headers(), timeout: 300000 });
+      await axios.post(`${API}/api/bot/conversations/${abierto}/send`, { message: t, ...(cita && { replyToId: cita.id }) }, { headers: headers(), timeout: 300000 });
       const r = await axios.get(`${API}/api/bot/conversations/${abierto}/messages`, { headers: headers() });
       setMensajes(r.data || []);
     } catch (e) {
       setTexto(t);
+      setRespondiendo(cita);
       avisar(e.response?.data?.error || 'No se pudo mandar');
     }
     setEnviando(false);
@@ -679,16 +683,26 @@ export default function Inbox() {
               ) : (
                 <div key={m.id} className={`wa-fila ${m.role === 'user' ? 'izq' : 'der'}`}>
                   <div className={`wa-globo ${m.role === 'user' ? 'entrante' : 'saliente'}`}>
-                    {m.role !== 'user' && m.wa_id && !m.deleted && (
+                    {m.wa_id && !m.deleted && (
                       <button className="wa-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)} title="Opciones">⌄</button>
                     )}
                     {menuMsg === m.id && (
                       <div className="wa-menu">
-                        {!m.media_type && <button onClick={() => { setMenuMsg(null); setEditando({ id: m.id, texto: m.content }); }}>✏️ Editar</button>}
-                        <button onClick={() => borrarMensaje(m)}>🗑️ Borrar para todos</button>
+                        <button onClick={() => { setMenuMsg(null); setRespondiendo(m); }}>↩️ Responder</button>
+                        {m.role !== 'user' && !m.media_type && <button onClick={() => { setMenuMsg(null); setEditando({ id: m.id, texto: m.content }); }}>✏️ Editar</button>}
+                        {m.role !== 'user' && <button onClick={() => borrarMensaje(m)}>🗑️ Borrar para todos</button>}
                       </div>
                     )}
                     {quienMando(m) && <div className="wa-quien">{quienMando(m)}</div>}
+                    {m.reply_to && (() => {
+                      const q = mensajes.find(x => x.wa_id && x.wa_id.endsWith('_' + m.reply_to));
+                      return (
+                        <div className={`wa-cita ${q && q.role !== 'user' ? 'mia' : ''}`}>
+                          <b>{q ? (q.role === 'user' ? (chat.customer_name || chat.customer_phone) : 'Vos') : 'Mensaje citado'}</b>
+                          <span>{q ? (textoSinRelleno(q) || (q.media_type ? '📎 Archivo' : '')).slice(0, 160) : 'No está cargado en la Bandeja'}</span>
+                        </div>
+                      );
+                    })()}
                     {m.deleted ? (
                       <div className="wa-texto wa-borrado">🚫 Eliminaste este mensaje</div>
                     ) : editando?.id === m.id ? (
@@ -776,6 +790,15 @@ export default function Inbox() {
               <input type="file" ref={archivoRef} style={{ display: 'none' }} accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
                 onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) mandarArchivo(f); }} />
               <div className="wa-caja">
+                {respondiendo && !grabando && (
+                  <div className="wa-cita-caja">
+                    <div className={`wa-cita ${respondiendo.role !== 'user' ? 'mia' : ''}`} style={{ flex: 1, margin: 0 }}>
+                      <b>{respondiendo.role === 'user' ? (chat.customer_name || chat.customer_phone) : 'Vos'}</b>
+                      <span>{(textoSinRelleno(respondiendo) || (respondiendo.media_type ? '📎 Archivo' : '')).slice(0, 160)}</span>
+                    </div>
+                    <button className="wa-icono" title="Cancelar respuesta" onClick={() => setRespondiendo(null)}>✕</button>
+                  </div>
+                )}
                 {grabando ? (
                   <div className="wa-caja-fila">
                     <button className="wa-icono" title="Cancelar" onClick={() => grabadorRef.current?.cancelar()}>🗑️</button>
@@ -906,6 +929,12 @@ export default function Inbox() {
         .wa-menu { position: absolute; top: 22px; right: 4px; background: var(--wa-panel); border: 1px solid var(--wa-borde); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 5; display: flex; flex-direction: column; }
         .wa-menu button { border: none; background: none; text-align: left; padding: 8px 14px; font-size: 14px; cursor: pointer; color: var(--wa-texto); white-space: nowrap; }
         .wa-menu button:hover { background: var(--wa-hover); }
+        .wa-cita { background: rgba(0,0,0,.05); border-left: 4px solid #06cf9c; border-radius: 6px; padding: 5px 8px; margin: 2px 0 5px; display: flex; flex-direction: column; font-size: 13px; max-width: 100%; }
+        .wa-cita.mia { border-left-color: #53bdeb; }
+        .wa-cita b { color: #06a77d; font-size: 12.5px; }
+        .wa-cita.mia b { color: #3a9fd0; }
+        .wa-cita span { color: var(--wa-suave); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: pre-wrap; }
+        .wa-cita-caja { display: flex; align-items: center; gap: 8px; padding: 6px 6px 4px; }
         .wa-borrado { color: var(--wa-suave); font-style: italic; }
         .wa-editar textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--wa-borde); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 14px; margin-bottom: 6px; background: var(--wa-panel); color: var(--wa-texto); }
         .wa-tilde { color: var(--wa-suave); letter-spacing: -3px; margin-left: 2px; }

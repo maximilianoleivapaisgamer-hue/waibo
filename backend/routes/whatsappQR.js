@@ -142,7 +142,10 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
              AND (content = $3 OR ($4::text IS NOT NULL AND media_type IS NOT NULL))
            ORDER BY timestamp ASC LIMIT 1)`,
         [convId, waId, text, mediaType || null]);
-      if (pegado.rowCount) return res.json({ ok: true, guardado: false, enlazado: true });
+      if (pegado.rowCount) {
+        if (req.body.replyTo) await pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1 AND reply_to IS NULL', [waId, String(req.body.replyTo)]).catch(() => {});
+        return res.json({ ok: true, guardado: false, enlazado: true });
+      }
     }
     const ins = await pool.query(
       `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type)
@@ -150,6 +153,7 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
        WHERE NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND wa_id = $3)`,
       [convId, text, waId || null, mediaType || null]
     );
+    if (req.body.replyTo && waId) await pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1', [waId, String(req.body.replyTo)]).catch(() => {});
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
     res.json({ ok: true, guardado: ins.rowCount > 0 });
   } catch (err) {
@@ -654,6 +658,11 @@ router.get('/labels', authMiddleware, async (req, res) => {
 
 // Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
+  // Mensaje del cliente que cita otro: se anota cuál (el mensaje se guarda unos segundos después)
+  if (req.body.replyTo && req.body.waId) {
+    const anotar = () => pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1 AND reply_to IS NULL', [req.body.waId, String(req.body.replyTo)]).catch(() => {});
+    setTimeout(anotar, 4000); setTimeout(anotar, 30000); setTimeout(anotar, 120000);
+  }
   const sesion = req.body.clientId;
   const _lin = await resolverSesion(sesion);
   req.body.clientId = _lin.clientId;

@@ -547,7 +547,7 @@ function ensureClient(clientId) {
       chatmap[clientId][phone] = to;
       guardarChatmap();
       console.log(`[${clientId}] Enviado desde el celular a ${phone}: ${text.slice(0, 60)}`);
-      await avisarBackend('outgoing', { clientId, to: phone, text, waId: idCompleto, mediaType: TIPOS_MEDIA.includes(msg.type) ? msg.type : null }, 60000);
+      await avisarBackend('outgoing', { clientId, to: phone, text, waId: idCompleto, replyTo: msg._data?.quotedStanzaID || null, mediaType: TIPOS_MEDIA.includes(msg.type) ? msg.type : null }, 60000);
       if (TIPOS_MEDIA.includes(msg.type)) bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, idCompleto, m)).catch(() => subirMedia(client, clientId, idCompleto));
     } catch (err) {
       console.error(`[${clientId}] No se pudo guardar lo enviado desde el celular:`, err.response?.data?.error || err.message);
@@ -604,7 +604,7 @@ function ensureClient(clientId) {
         if (audioBajado) subirMedia(client, clientId, waId, audioBajado);
         else bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, waId, m)).catch((e) => console.error(`[${clientId}] no se pudo bajar el archivo:`, e.message));
       }
-      await avisarBackend('message', { clientId, from: phone, name, savedName, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }), ...(transcribirDespues && { pendingTranscription: true }) }, 120000);
+      await avisarBackend('message', { clientId, from: phone, name, savedName, text, labels, replyTo: msg._data?.quotedStanzaID || null, ...media, ...(audioParaNube && { audio: audioParaNube }), ...(transcribirDespues && { pendingTranscription: true }) }, 120000);
       if (transcribirDespues) {
         let dicho = '';
         try {
@@ -854,11 +854,12 @@ app.get('/session/:clientId/status', checkSecret, (req, res) => {
 app.post('/session/:clientId/send', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
-  const { to, message, prioridad } = req.body;
+  const { to, message, prioridad, quotedWaId } = req.body;
   if (!to || !message) return res.status(400).json({ error: 'faltan to/message' });
   try {
+    // quotedWaId: responde citando ese mensaje, como "Responder" en WhatsApp
     const r = await enviarEnCola(req.params.clientId, firmaDe(to, message), async () =>
-      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message), to, prioridad);
+      rec.client.sendMessage(await resolverDestino(rec.client, req.params.clientId, to), message, quotedWaId ? { quotedMessageId: quotedWaId } : {}), to, prioridad);
     res.json(r);
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando:`, err.message);
