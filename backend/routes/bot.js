@@ -1085,4 +1085,39 @@ router.post('/conversations/:id/heat', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Recepción: pregunta de entrada + segmentos + a dónde va cada uno ─────────
+router.get('/reception', authMiddleware, async (req, res) => {
+  try {
+    const r = (await pool.query('SELECT reception_enabled, reception_question, reception_segments FROM bot_configs WHERE client_id = $1', [req.client.id])).rows[0] || {};
+    const cuenta = (await pool.query(
+      `SELECT segment, COUNT(*)::int AS n FROM conversations WHERE client_id = $1 AND segment IS NOT NULL GROUP BY 1`, [req.client.id])).rows;
+    res.json({ enabled: !!r.reception_enabled, question: r.reception_question || '', segments: r.reception_segments || [], counts: cuenta });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.put('/reception', authMiddleware, async (req, res) => {
+  const { enabled, question, segments } = req.body;
+  if (!Array.isArray(segments) || segments.length > 12) return res.status(400).json({ error: 'Hasta 12 segmentos' });
+  const limpios = segments.map((s) => ({
+    name: String(s.name || '').trim().slice(0, 40),
+    description: String(s.description || '').trim().slice(0, 500),
+    label: String(s.label || '').trim().slice(0, 40) || null,
+    route: ['sellers', 'owner', 'close'].includes(s.route) ? s.route : 'owner',
+    seller_ids: Array.isArray(s.seller_ids) ? s.seller_ids.filter(Boolean).slice(0, 20) : [],
+    close_message: String(s.close_message || '').trim().slice(0, 1000) || null
+  })).filter((s) => s.name);
+  if (enabled && (!String(question || '').trim() || !limpios.length)) return res.status(400).json({ error: 'Para activarla hace falta la pregunta y al menos un segmento' });
+  try {
+    await pool.query(
+      'UPDATE bot_configs SET reception_enabled = $2, reception_question = $3, reception_segments = $4::jsonb WHERE client_id = $1',
+      [req.client.id, !!enabled, String(question || '').trim().slice(0, 1000), JSON.stringify(limpios)]
+    );
+    res.json({ enabled: !!enabled, question, segments: limpios });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

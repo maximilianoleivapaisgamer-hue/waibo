@@ -7,6 +7,7 @@ import ResourcesPanel from '../components/ResourcesPanel';
 import SalesStepsPanel from '../components/SalesStepsPanel';
 import RecontactPanel from '../components/RecontactPanel';
 import SellerBuilderPanel from '../components/SellerBuilderPanel';
+import ReceptionPanel from '../components/ReceptionPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
@@ -20,7 +21,7 @@ export default function Config() {
   const [error, setError] = useState('');
 
   useEffect(() => {
-    if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps' || router.query.tab === 'recontact' || router.query.tab === 'builder') setMainTab(router.query.tab);
+    if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps' || router.query.tab === 'recontact' || router.query.tab === 'builder' || router.query.tab === 'reception') setMainTab(router.query.tab);
   }, [router.query.tab]);
 
   useEffect(() => {
@@ -80,6 +81,7 @@ export default function Config() {
             { key: 'config', label: '🎭 Personalidad y comportamiento' },
             { key: 'knowledge', label: '🧠 Base de conocimiento' },
             { key: 'resources', label: '📎 Recursos y etiquetas' },
+            { key: 'reception', label: '📞 Recepción' },
             { key: 'steps', label: '🪜 Pasos de venta' },
             { key: 'recontact', label: '🔁 Seguimiento' }
           ].map(t => (
@@ -99,6 +101,7 @@ export default function Config() {
         {mainTab === 'steps' && <SalesStepsPanel />}
         {mainTab === 'recontact' && <RecontactPanel />}
         {mainTab === 'builder' && <SellerBuilderPanel />}
+        {mainTab === 'reception' && <ReceptionPanel />}
 
         <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}

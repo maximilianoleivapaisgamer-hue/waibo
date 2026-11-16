@@ -66,6 +66,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
   let conversation;
   let pendingWelcome = null;
+  let esConvNueva = false;
   if (!convResult.rows.length) {
     const pastHistory = await pool.query(
       `SELECT COUNT(*) FROM appointments WHERE client_id = $1 AND customer_phone = $2 AND status != 'cancelled'`,
@@ -78,6 +79,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
       [clientId, customerPhone, customerName]
     );
     conversation = newConv.rows[0];
+    esConvNueva = true;
 
     const welcomeMsg = isReturningCustomer
       ? `¡Hola de nuevo, ${customerName}! 😊 Qué bueno verte por acá otra vez. ¿En qué puedo ayudarte hoy?`
@@ -85,7 +87,14 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     pendingWelcome = welcomeMsg;
   } else {
     conversation = convResult.rows[0];
-    if (conversation.status === 'human') return;
+    if (conversation.status === 'human') {
+      // Lo atiende una persona: el bot no contesta, pero el mensaje se guarda igual
+      // (antes se perdía y el vendedor no lo veía en la Bandeja).
+      await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)',
+        [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
+      await pool.query('UPDATE conversations SET updated_at = NOW(), archived = false, recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [conversation.id]);
+      return;
+    }
   }
 
   // Demora antes de contestar: una respuesta instantánea parece un robot y, si el cliente
@@ -112,6 +121,17 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     const st = await pool.query('SELECT status FROM conversations WHERE id = $1', [conversation.id]);
     if (st.rows[0]?.status === 'human') return;
   }
+  // Modo recepción: el bot solo pregunta, clasifica en un segmento y deriva (services/reception.js)
+  if (config.reception_enabled && config.reception_question && Array.isArray(config.reception_segments) && config.reception_segments.length) {
+    if (!yaGuardado) {
+      await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)',
+        [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
+    }
+    await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
+    await require('./reception').atender({ config, conversation, phone: customerPhone, customerMessage, sendFn, extras, esNuevo: esConvNueva || !(await pool.query(`SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'assistant' LIMIT 1`, [conversation.id])).rows.length });
+    return;
+  }
+
   if (pendingWelcome) await sendFn(customerPhone, pendingWelcome);
 
   await pool.query('UPDATE conversations SET is_typing = true WHERE id = $1', [conversation.id]);

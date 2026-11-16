@@ -180,6 +180,7 @@ export default function Inbox() {
       if (q && !(`${c.customer_name || ''} ${c.customer_phone || ''} ${(c.tags || []).join(' ')}`.toLowerCase().includes(q))) return false;
       if (etiquetaSel && !(c.tags || []).includes(etiquetaSel)) return false;
       if (filtro === 'calientes') return c.heat === 'caliente';
+      if (filtro.startsWith('seg:')) return c.segment === filtro.slice(4);
       if (filtro === 'sinleer') return c.unread;
       if (filtro === 'seguimiento') return c.follow_up_at && new Date(c.follow_up_at).getTime() <= ahora + 24 * 3600 * 1000;
       if (filtro === 'sinasignar') return !c.assigned_to;
@@ -189,6 +190,7 @@ export default function Inbox() {
   }, [chats, buscar, filtro, etiquetaSel]);
 
   const sinLeer = chats.filter(c => c.unread).length;
+  const segmentos = [...new Set(chats.map(c => c.segment).filter(Boolean))];
   const calientes = chats.filter(c => c.heat === 'caliente').length;
   const todasEtiquetas = useMemo(() => {
     const n = {};
@@ -339,6 +341,7 @@ export default function Inbox() {
           <button className={filtro === 'sinleer' ? 'on' : ''} onClick={() => setFiltro('sinleer')}>Sin leer{sinLeer ? ` ${sinLeer}` : ''}</button>
           <button className={filtro === 'calientes' ? 'on' : ''} onClick={() => setFiltro('calientes')}>🔥 Calientes{calientes ? ` ${calientes}` : ''}</button>
           <button className={filtro === 'seguimiento' ? 'on' : ''} onClick={() => setFiltro('seguimiento')}>Seguimiento{paraSeguir ? ` ${paraSeguir}` : ''}</button>
+          {segmentos.map(sg => <button key={sg} className={filtro === 'seg:' + sg ? 'on' : ''} onClick={() => setFiltro('seg:' + sg)}>📍 {sg}</button>)}
           {!soyVendedor && sellers.length > 0 && <button className={filtro === 'sinasignar' ? 'on' : ''} onClick={() => setFiltro('sinasignar')}>Sin asignar</button>}
           {!soyVendedor && sellers.map(v => (
             <button key={v.id} className={filtro === v.id ? 'on' : ''} onClick={() => setFiltro(v.id)}>{v.name}</button>
@@ -369,8 +372,9 @@ export default function Inbox() {
                     </span>
                     {c.unread && <span className="wa-burbuja-nueva">●</span>}
                   </div>
-                  {(c.tags?.length > 0 || c.follow_up_at || c.heat || (!soyVendedor && c.assigned_name)) && (
+                  {(c.tags?.length > 0 || c.follow_up_at || c.heat || c.segment || (!soyVendedor && c.assigned_name)) && (
                     <div className="wa-item-tags">
+                      {c.segment && <span className="wa-tag azul">📍 {c.segment}</span>}
                       {c.heat && CALOR[c.heat] && <span className={`wa-tag ${CALOR[c.heat].cls}`} title={c.heat_reason || ''}>{CALOR[c.heat].txt}</span>}
                       {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
                       {!soyVendedor && c.assigned_name && <span className="wa-tag violeta">👤 {c.assigned_name}</span>}
