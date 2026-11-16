@@ -174,7 +174,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
        ) lm ON true
        LEFT JOIN clients v ON v.id = c.assigned_to
        WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
-         AND ($2::uuid IS NULL OR c.assigned_to = $2::uuid OR (c.assigned_to IS NULL AND COALESCE(c.line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $2::uuid))))
+         AND ($2::uuid IS NULL OR c.assigned_to = $2::uuid OR (c.assigned_to IS NULL AND COALESCE(c.line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $2::uuid))))
        ORDER BY COALESCE(lm.timestamp, c.updated_at) DESC
        LIMIT 1000`,
       [req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
@@ -188,7 +188,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 router.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
   try {
     const conv = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (conv.rows.length === 0) {
@@ -299,7 +299,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
 
   try {
     const convResult = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (!convResult.rows.length) {
@@ -1030,7 +1030,7 @@ router.post('/conversations/:id/send-media', authMiddleware, multerMedia.single(
   if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
   try {
     const conv = (await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
     const cli = (await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [req.client.id])).rows[0];
@@ -1063,7 +1063,7 @@ router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE conversations SET follow_up_at = $4, follow_up_note = $5
-       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid)))) RETURNING id, follow_up_at, follow_up_note`,
+       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid)))) RETURNING id, follow_up_at, follow_up_note`,
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null, at || null, note ? String(note).slice(0, 500) : null]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
@@ -1077,7 +1077,7 @@ router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
 router.post('/conversations/:id/heat', authMiddleware, async (req, res) => {
   try {
     const c = (await pool.query(
-      'SELECT id FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
+      'SELECT id FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
     if (!c) return res.status(404).json({ error: 'No encontrada' });
     await require('../services/heat').clasificarTemperatura(c.id);
@@ -1129,7 +1129,7 @@ router.put('/conversations/:id/case', authMiddleware, async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE conversations SET case_status = $4
-       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))
+       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))
        RETURNING id, case_status`,
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null, st]
     );
