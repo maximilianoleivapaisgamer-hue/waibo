@@ -609,6 +609,7 @@ async function initDB(intento = 1) {
       -- y mensajes editados o borrados desde la Bandeja
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS ack SMALLINT;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS reply_to TEXT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS bot_forced BOOLEAN DEFAULT false;
       CREATE TABLE IF NOT EXISTS push_subs (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         client_id UUID NOT NULL,

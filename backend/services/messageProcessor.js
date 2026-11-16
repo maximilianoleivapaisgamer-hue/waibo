@@ -120,7 +120,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   await pool.query('UPDATE conversations SET recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [conversation.id]);
 
   let yaGuardado = yaEstaba;
-  const demora = Math.min(Number(config.reply_delay_seconds) || 0, 900);
+  const demora = extras.sinDemora ? 0 : Math.min(Number(config.reply_delay_seconds) || 0, 900);
   if (demora > 0) {
     const ins = yaEstaba
       ? { rows: [{ timestamp: (await pool.query('SELECT NOW()::timestamp AS t')).rows[0].t }] }

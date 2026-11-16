@@ -217,7 +217,7 @@ router.put('/conversations/:id/status', authMiddleware, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `UPDATE conversations SET status = $1, updated_at = NOW()
+      `UPDATE conversations SET status = $1, updated_at = NOW(), bot_forced = CASE WHEN $1 = 'human' THEN false ELSE bot_forced END
        WHERE id = $2 AND client_id = $3
        RETURNING *`,
       [status, req.params.id, req.client.id]

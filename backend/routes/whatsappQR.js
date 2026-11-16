@@ -252,6 +252,58 @@ router.post('/ack', checkServiceSecret, async (req, res) => {
 
 // Llega la transcripción de un audio que ya se guardó: se completa el mensaje y, si el bot
 // está prendido, contesta recién ahora (con el texto del audio)
+// "Que lo tome el bot": el dueño le pasa al bot un chat que venía atendiendo una persona.
+// El bot lee toda la charla (lo que escribió la persona incluido) y contesta ya el último
+// mensaje del cliente. Desde ahí sigue contestando ese chat aunque la línea tenga el bot apagado.
+router.post('/bot-take/:convId', authMiddleware, async (req, res) => {
+  try {
+    const conv = (await pool.query('SELECT * FROM conversations WHERE id = $1 AND client_id = $2', [req.params.convId, req.client.id])).rows[0];
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    if (conv.channel !== 'whatsapp') return res.status(400).json({ error: 'Solo para chats de WhatsApp por QR' });
+    const ultimo = (await pool.query(
+      `SELECT role, content, wa_id FROM messages WHERE conversation_id = $1 AND role IN ('user','assistant') ORDER BY timestamp DESC LIMIT 1`, [conv.id])).rows[0];
+    // Lo que ya se mandó a mano (video, precios...) no se repite; y no vuelve a saludar
+    const habloAntes = (await pool.query(`SELECT 1 FROM messages WHERE conversation_id = $1 AND role = 'assistant' LIMIT 1`, [conv.id])).rows.length > 0;
+    await pool.query(
+      `UPDATE conversations SET status = 'bot', bot_forced = true, updated_at = NOW(),
+         sales_step = CASE WHEN $2 AND COALESCE(sales_step, 0) = 0 THEN 1 ELSE sales_step END,
+         sent_resources = ARRAY(SELECT DISTINCT x FROM unnest(COALESCE(sent_resources, '{}') ||
+           ARRAY(SELECT resource_id::text FROM messages WHERE conversation_id = $1 AND resource_id IS NOT NULL)) x)
+       WHERE id = $1`, [conv.id, habloAntes]);
+    if (!ultimo || ultimo.role !== 'user') {
+      return res.json({ ok: true, contesto: false, aviso: 'El último mensaje es tuyo: el bot va a contestar cuando el cliente escriba.' });
+    }
+    res.json({ ok: true, contesto: true });
+
+    const clientId = req.client.id;
+    const lineId = conv.line_id || null;
+    const sesion = lineId || clientId;
+    const _lin = await resolverSesion(sesion);
+    const from = conv.customer_phone;
+    const cfg = (await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply, sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [clientId])).rows[0] || {};
+    const brain = await require('../services/lines').cerebroDe(clientId, lineId);
+    if (brain && brain.label_instructions) cfg.label_instructions = brain.label_instructions;
+    if ((brain && brain.kind === 'soporte') || (_lin.line && _lin.line.kind === 'soporte')) cfg.sales_steps_enabled = false;
+    const { buildSalesExtras } = require('../services/salesActions');
+    const extras = buildSalesExtras({
+      clientId, to: from, cfg, brainId: brain ? brain.id : null,
+      channel: {
+        sendText: (t) => qrPost(sesion, 'send', { to: from, message: t }),
+        sendMedia: (rec, caption) => qrPost(sesion, 'send-media', { to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'), filename: rec.filename, caption: caption || '', asVoice: rec.kind === 'audio' }),
+        applyLabel: (n) => qrPost(sesion, 'label', { to: from, label: n }),
+        archive: () => qrPost(sesion, 'archive', { to: from }),
+        labels: () => labelsDeLinea(sesion)
+      }
+    });
+    const sendFn = (phone, message) => qrPost(sesion, 'send', { to: phone, message });
+    await processIncomingMessage(clientId, from, conv.customer_name || 'Cliente', ultimo.content, sendFn,
+      { ...extras, messageMeta: { waId: ultimo.wa_id }, lineId, line: _lin.line, brain, skipInsert: true, sinDemora: true });
+  } catch (err) {
+    console.error('Error pasándole el chat al bot:', err.message);
+    if (!res.headersSent) res.status(500).json({ error: err.message });
+  }
+});
+
 router.post('/transcript', checkServiceSecret, async (req, res) => {
   const sesion = req.body.clientId;
   const _lin = await resolverSesion(sesion);
@@ -273,7 +325,10 @@ router.post('/transcript', checkServiceSecret, async (req, res) => {
          WHERE c.id = m.conversation_id AND c.client_id = $1 AND m.wa_id = $2`, [clientId, waId, text]);
     }
     const cfg = (await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply, sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [clientId])).rows[0] || {};
-    const botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    let botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    if (!botPrendido) botPrendido = (await pool.query(
+      `SELECT 1 FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND bot_forced AND status = 'bot' LIMIT 1`,
+      [clientId, from])).rows.length > 0;
     if (!botPrendido) return;
     const brain = await require('../services/lines').cerebroDe(clientId, lineId);
     if (brain && brain.label_instructions) cfg.label_instructions = brain.label_instructions;
@@ -728,7 +783,13 @@ router.post('/message', checkServiceSecret, async (req, res) => {
     );
 
     // Bot apagado: solo guardamos el mensaje para verlo en el panel, nadie responde.
-    const botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    let botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    if (!botPrendido) {
+      const f = await pool.query(
+        `SELECT 1 FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND bot_forced AND status = 'bot' LIMIT 1`,
+        [clientId, from]);
+      botPrendido = f.rows.length > 0;
+    }
     // Audio que se está transcribiendo: se guarda ya y el bot contesta cuando llega el texto (/transcript)
     if (!botPrendido || pendingTranscription) {
       let conv = await pool.query(

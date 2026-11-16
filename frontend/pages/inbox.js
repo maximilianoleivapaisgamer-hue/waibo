@@ -544,10 +544,20 @@ export default function Inbox() {
     } catch (e) { avisar(e.response?.data?.error || 'No se pudo asignar'); }
   };
 
+  // Pasarle el chat al bot: lee toda la charla y contesta el último mensaje del cliente
+  const pasarAlBot = async () => {
+    if (!confirm('El bot va a leer toda la conversación y contestarle ahora al cliente. Desde ahí sigue contestando este chat. Seguro?')) return;
+    try {
+      const r = await axios.post(`${API}/api/whatsapp-qr/bot-take/${abierto}`, {}, { headers: headers(), timeout: 60000 });
+      actualizarChat({ status: 'bot', bot_forced: true });
+      avisar(r.data.aviso || 'El bot está contestando: en unos segundos aparece la respuesta');
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo pasar al bot'); }
+  };
+
   const tomarControl = async (status) => {
     try {
       await axios.put(`${API}/api/bot/conversations/${abierto}/status`, { status }, { headers: headers() });
-      actualizarChat({ status });
+      actualizarChat({ status, ...(status === 'human' && { bot_forced: false }) });
     } catch (_) { avisar('No se pudo cambiar'); }
   };
 
@@ -802,9 +812,8 @@ export default function Inbox() {
                 )}
                 <div className="wa-ficha-fila">
                   <span className="wa-ficha-titulo">Bot</span>
-                  {chat.status === 'human'
-                    ? <button className="wa-boton-claro" onClick={() => tomarControl('bot')}>🤖 Devolver al bot</button>
-                    : <button className="wa-boton-claro" onClick={() => tomarControl('human')}>✋ Atender yo (frenar el bot)</button>}
+                  {(chat.status === 'human' || !chat.bot_forced) && <button className="wa-boton-claro" onClick={pasarAlBot}>🤖 Que lo tome el bot</button>}
+                  {chat.status === 'bot' && <button className="wa-boton-claro" onClick={() => tomarControl('human')}>✋ Atender yo (frenar el bot)</button>}
                 </div>
                 {!soyVendedor && sellers.length > 0 && (
                   <div className="wa-ficha-fila">
