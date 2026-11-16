@@ -329,6 +329,9 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
           [clientId, phone, c.name || phone, primero]
         );
         convId = nc.rows[0].id;
+      } else if (c.savedName && conv.rows[0].customer_name !== c.savedName) {
+        // Guardado en los contactos del celular: ese nombre manda
+        await pool.query('UPDATE conversations SET customer_name = $1 WHERE id = $2', [c.savedName, convId]);
       } else if (c.name && (!conv.rows[0].customer_name || conv.rows[0].customer_name === phone || conv.rows[0].customer_name === 'Cliente')) {
         await pool.query('UPDATE conversations SET customer_name = $1 WHERE id = $2', [c.name, convId]);
       }
@@ -571,7 +574,13 @@ router.post('/message', checkServiceSecret, async (req, res) => {
   req.body.clientId = _lin.clientId;
   const lineId = _lin.lineId;
   const L = lineaSql(lineId);
-  const { clientId, from, name, labels, audio, waId, mediaType } = req.body;
+  const { clientId, from, name, labels, audio, waId, mediaType, savedName } = req.body;
+  if (savedName) {
+    await pool.query(
+      `UPDATE conversations SET customer_name = $3 WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}`,
+      [req.body.clientId, from, savedName]
+    ).catch(() => {});
+  }
   let { text } = req.body;
   if (!clientId || !from || !text) return res.status(400).json({ error: 'faltan datos' });
 

@@ -605,7 +605,9 @@ function ensureClient(clientId) {
         }
       } catch (_) {}
 
-      const name = msg._data?.notifyName || null;
+      let savedName = null;
+      try { const ct = await msg.getContact(); if (ct && ct.isMyContact && ct.name) savedName = String(ct.name).trim().slice(0, 80); } catch (_) {}
+      const name = savedName || msg._data?.notifyName || null;
       console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
       const waId = idDe(msg);
       const media = TIPOS_MEDIA.includes(msg.type) ? { waId, mediaType: msg.type } : { waId };
@@ -614,7 +616,7 @@ function ensureClient(clientId) {
         if (audioBajado) subirMedia(client, clientId, waId, audioBajado);
         else bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, waId, m)).catch((e) => console.error(`[${clientId}] no se pudo bajar el archivo:`, e.message));
       }
-      await avisarBackend('message', { clientId, from: phone, name, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
+      await avisarBackend('message', { clientId, from: phone, name, savedName, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
@@ -785,7 +787,9 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
             let nombre = ct.pushname || ct.notifyName || chat.name || chat.formattedTitle || '';
             if (nombre && !/[a-zA-ZÀ-ɏ]/.test(nombre)) nombre = '';
 
-            return { tel, nombre: String(nombre).trim().slice(0, 80), archivado: !!chat.archive, labels: (chat.labels || []).map(String), msgs };
+            // Nombre con el que está guardado en los contactos del celular (manda sobre el de perfil)
+            const guardado = ct.isMyContact && ct.name ? String(ct.name).trim().slice(0, 80) : '';
+            return { tel, nombre: guardado || String(nombre).trim().slice(0, 80), guardado, archivado: !!chat.archive, labels: (chat.labels || []).map(String), msgs };
           }, id, porChat, SISTEMA);
 
           if (c && c.tel && c.msgs.length) {
@@ -794,6 +798,7 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
             lote.push({
               phone: c.tel,
               name: c.nombre || null,
+              savedName: c.guardado || null,
               archived: c.archivado,
               labels: c.labels.map(labelName).filter(Boolean),
               messages: c.msgs.map((m) => ({ role: m.mio ? 'assistant' : 'user', text: m.texto, timestamp: new Date(m.ts * 1000).toISOString(), waId: m.waId || null, mediaType: TIPOS_MEDIA.includes(m.tipo) ? m.tipo : null }))
