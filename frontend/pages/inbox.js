@@ -175,6 +175,33 @@ export default function Inbox() {
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [etiquetasWA, setEtiquetasWA] = useState([]);
   const [respondiendo, setRespondiendo] = useState(null); // mensaje que se cita al contestar
+  const [avisos, setAvisos] = useState('?'); // '?', 'si', 'no', 'bloqueado', 'nosoporta'
+  useEffect(() => {
+    if (typeof window === 'undefined' || !('serviceWorker' in navigator) || !('PushManager' in window) || !('Notification' in window)) { setAvisos('nosoporta'); return; }
+    if (Notification.permission === 'denied') { setAvisos('bloqueado'); return; }
+    navigator.serviceWorker.ready.then(r => r.pushManager.getSubscription()).then(sub => {
+      setAvisos(sub ? 'si' : 'no');
+      // se vuelve a mandar al servidor por si cambió de usuario o se había borrado
+      if (sub) axios.post(`${API}/api/bot/push/subscribe`, { subscription: sub.toJSON() }, { headers: headers() }).catch(() => {});
+    }).catch(() => setAvisos('no'));
+    // abrir el chat que vino en la notificación (?chat=...)
+    try { const c = new URL(window.location.href).searchParams.get('chat'); if (c) setAbierto(c); } catch (_) {}
+  }, []);
+  const activarAvisos = async () => {
+    try {
+      const perm = await Notification.requestPermission();
+      if (perm !== 'granted') { setAvisos(perm === 'denied' ? 'bloqueado' : 'no'); return; }
+      const { data } = await axios.get(`${API}/api/bot/push/key`, { headers: headers() });
+      if (!data.key) return avisar('Las notificaciones no están configuradas en el servidor');
+      const b = atob(data.key.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - data.key.length % 4) % 4));
+      const clave = Uint8Array.from(b, ch => ch.charCodeAt(0));
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: clave });
+      await axios.post(`${API}/api/bot/push/subscribe`, { subscription: sub.toJSON() }, { headers: headers() });
+      setAvisos('si');
+      avisar('Listo: te van a llegar avisos de mensajes nuevos');
+    } catch (e) { avisar('No se pudieron activar los avisos: ' + (e.message || '')); }
+  };
   const [agendando, setAgendando] = useState(null); // { nombre, apellido }
   const [menuMsg, setMenuMsg] = useState(null);   // id del mensaje con el menú abierto
   const [editando, setEditando] = useState(null); // { id, texto }
@@ -634,6 +661,8 @@ export default function Inbox() {
             </span>
           )}
           {!soyVendedor && <a href="/empresa" className="wa-link">Empresa ›</a>}
+          {avisos === 'no' && <button className="wa-boton-claro" style={{ marginLeft: 6 }} onClick={activarAvisos} title="Recibir avisos de mensajes nuevos">🔔 Avisos</button>}
+          {avisos === 'bloqueado' && <span title="Las notificaciones están bloqueadas en este navegador. Habilitalas desde el candado de la barra de direcciones." style={{ marginLeft: 6, fontSize: 18, cursor: 'help' }}>🔕</span>}
         </header>
         <div className="wa-buscar">
           <input placeholder="Buscar nombre, número o etiqueta" value={buscar} onChange={e => setBuscar(e.target.value)} />

@@ -26,7 +26,8 @@
     "nodemailer": "^9.0.3",
     "pdf-parse": "^1.1.1",
     "pg": "^8.11.3",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "web-push": "^4.0.0"
   },
   "devDependencies": {
     "nodemon": "^3.0.1"

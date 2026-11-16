@@ -672,6 +672,16 @@ router.get('/labels', authMiddleware, async (req, res) => {
 
 // Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
+  // Aviso al celular de quien atiende el chat (unos segundos después, cuando ya está guardado)
+  setTimeout(async () => {
+    try {
+      const _l = await resolverSesion(req.body.clientId);
+      const c = (await pool.query(
+        `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${lineaSql(_l.lineId)} ORDER BY created_at DESC LIMIT 1`,
+        [_l.clientId, req.body.from])).rows[0];
+      if (c) await require('../services/push').avisarMensaje({ clientId: _l.clientId, conversationId: c.id, lineId: _l.lineId, nombre: c.customer_name || req.body.name, texto: req.body.text });
+    } catch (e) { console.error('[push mensaje]', e.message); }
+  }, 3000);
   // Mensaje del cliente que cita otro: se anota cuál (el mensaje se guarda unos segundos después)
   if (req.body.replyTo && req.body.waId) {
     const anotar = () => pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1 AND reply_to IS NULL', [req.body.waId, String(req.body.replyTo)]).catch(() => {});

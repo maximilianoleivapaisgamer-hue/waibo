@@ -1387,4 +1387,22 @@ router.get('/conversations/:id/avatar', authMiddleware, async (req, res) => {
   }
 });
 
+// Notificaciones al celular: clave pública y alta/baja de suscripciones del navegador
+router.get('/push/key', authMiddleware, (req, res) => res.json({ key: process.env.VAPID_PUBLIC_KEY || null }));
+router.post('/push/subscribe', authMiddleware, async (req, res) => {
+  const sub = req.body.subscription || {};
+  if (!sub.endpoint || !sub.keys) return res.status(400).json({ error: 'Suscripción inválida' });
+  try {
+    await pool.query(
+      `INSERT INTO push_subs (client_id, user_id, endpoint, keys) VALUES ($1, $2, $3, $4)
+       ON CONFLICT (endpoint) DO UPDATE SET client_id = $1, user_id = $2, keys = $4`,
+      [req.client.id, req.client.own_id || req.client.id, sub.endpoint, sub.keys]);
+    res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+router.post('/push/unsubscribe', authMiddleware, async (req, res) => {
+  await pool.query('DELETE FROM push_subs WHERE endpoint = $1 AND user_id = $2', [String(req.body.endpoint || ''), req.client.own_id || req.client.id]).catch(() => {});
+  res.json({ ok: true });
+});
+
 module.exports = router;
