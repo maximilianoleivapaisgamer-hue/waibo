@@ -1150,4 +1150,80 @@ router.get('/panel', authMiddleware, async (req, res) => {
   }
 });
 
+// ── Respuestas rápidas y archivos para la Bandeja ───────────────────────────
+// Las ve todo el equipo; las crea y borra el dueño.
+router.get('/quick-replies', authMiddleware, async (req, res) => {
+  try {
+    const r = await pool.query(
+      `SELECT q.id, q.shortcut, q.text, q.resource_id, b.name AS resource_name, b.kind AS resource_kind
+       FROM quick_replies q LEFT JOIN bot_resources b ON b.id = q.resource_id
+       WHERE q.client_id = $1 ORDER BY q.shortcut`, [req.client.id]);
+    const archivos = await pool.query(
+      `SELECT id, name, kind, description FROM bot_resources WHERE client_id = $1 ORDER BY created_at`, [req.client.id]);
+    res.json({ replies: r.rows, resources: archivos.rows, can_edit: req.client.role !== 'employee' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.post('/quick-replies', authMiddleware, async (req, res) => {
+  if (req.client.role === 'employee') return res.status(403).json({ error: 'Las respuestas rápidas las carga el dueño' });
+  const shortcut = String(req.body.shortcut || '').trim().replace(/^\//, '').replace(/\s+/g, '').toLowerCase().slice(0, 40);
+  const text = String(req.body.text || '').trim().slice(0, 4000);
+  const resource_id = req.body.resource_id || null;
+  if (!shortcut || (!text && !resource_id)) return res.status(400).json({ error: 'Poné un atajo y un texto o un archivo' });
+  try {
+    const r = await pool.query(
+      `INSERT INTO quick_replies (client_id, shortcut, text, resource_id) VALUES ($1,$2,$3,$4) RETURNING *`,
+      [req.client.id, shortcut, text || null, resource_id]);
+    res.json(r.rows[0]);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+router.delete('/quick-replies/:id', authMiddleware, async (req, res) => {
+  if (req.client.role === 'employee') return res.status(403).json({ error: 'Sin acceso' });
+  try {
+    await pool.query('DELETE FROM quick_replies WHERE id = $1 AND client_id = $2', [req.params.id, req.client.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Mandar un archivo de la biblioteca (precios, video, alias...) desde la Bandeja
+router.post('/conversations/:id/send-resource', authMiddleware, async (req, res) => {
+  try {
+    const conv = (await pool.query(
+      `SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))`,
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    const rec = (await pool.query('SELECT * FROM bot_resources WHERE id = $1 AND client_id = $2', [req.body.resource_id, req.client.id])).rows[0];
+    if (!rec) return res.status(404).json({ error: 'No existe ese archivo' });
+    if (!process.env.QR_SERVICE_URL) return res.status(503).json({ error: 'El servicio de WhatsApp no está disponible' });
+    const axios = require('axios');
+    const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+    const sesion = conv.line_id || req.client.id;
+    if (rec.kind === 'link') {
+      await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send`, { to: conv.customer_phone, message: rec.url, prioridad: 0, secret },
+        { headers: { 'x-service-secret': secret }, timeout: 300000 });
+    } else {
+      await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send-media`, {
+        to: conv.customer_phone, mimetype: rec.mimetype, data: rec.data.toString('base64'), filename: rec.filename,
+        caption: req.body.caption || '', asVoice: rec.kind === 'audio', prioridad: 0, secret
+      }, { headers: { 'x-service-secret': secret }, timeout: 300000, maxBodyLength: Infinity });
+    }
+    const msg = (await pool.query(
+      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, resource_id, media_type)
+       VALUES ($1, 'assistant', $2, 'manual', $3, $4, $5) RETURNING *`,
+      [conv.id, `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}${req.body.caption ? ' ' + req.body.caption : ''}`, req.client.own_id || req.client.id, rec.id, rec.kind === 'link' ? null : rec.kind])).rows[0];
+    await pool.query(`UPDATE conversations SET updated_at = NOW(), status = 'human', sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`, [conv.id, rec.id]);
+    res.json(msg);
+  } catch (err) {
+    console.error('[send-resource]', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error || 'No se pudo mandar el archivo' });
+  }
+});
+
 module.exports = router;

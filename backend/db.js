@@ -555,6 +555,15 @@ async function initDB() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_line_name VARCHAR(60);
       -- 'empresa' = panel sin Mercado Libre, Tiendanube, pedidos, agenda ni catálogo
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS panel_mode VARCHAR(20);
+      -- Respuestas rápidas de la Bandeja ("/atajo"), con texto y/o un archivo de la biblioteca
+      CREATE TABLE IF NOT EXISTS quick_replies (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID NOT NULL,
+        shortcut VARCHAR(40) NOT NULL,
+        text TEXT,
+        resource_id UUID,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_enabled BOOLEAN DEFAULT false;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_question TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_segments JSONB DEFAULT '[]'::jsonb;

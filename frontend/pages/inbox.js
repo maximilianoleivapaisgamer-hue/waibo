@@ -110,6 +110,10 @@ export default function Inbox() {
   const [aviso, setAviso] = useState('');
   const [etiquetaSel, setEtiquetaSel] = useState('');
   const [lineaSel, setLineaSel] = useState('');
+  // Respuestas rápidas ("/atajo") y archivos precargados (precios, video, alias...)
+  const [rapidas, setRapidas] = useState({ replies: [], resources: [], can_edit: false });
+  const [verRapidas, setVerRapidas] = useState(false);
+  const [nuevaRapida, setNuevaRapida] = useState({ shortcut: '', text: '', resource_id: '' });
   const [conexion, setConexion] = useState(null); // null | 'ok' | 'caida'
   const finRef = useRef(null);
   const archivoRef = useRef(null);
@@ -124,6 +128,10 @@ export default function Inbox() {
       .then(r => { setSellers(r.data.sellers || []); setSoyVendedor(!!r.data.me); })
       .catch(() => {});
   }, []);
+
+  const cargarRapidas = () => axios.get(`${API}/api/bot/quick-replies`, { headers: headers() })
+    .then(r => setRapidas(r.data)).catch(() => {});
+  useEffect(() => { cargarRapidas(); }, []);
 
   // Estado de la conexión de WhatsApp (QR)
   useEffect(() => {
@@ -248,6 +256,44 @@ export default function Inbox() {
       avisar(e.response?.data?.error || 'No se pudo mandar el archivo');
     }
     setEnviando(false);
+  };
+
+  const recargarMensajes = async () => {
+    const r = await axios.get(`${API}/api/bot/conversations/${abierto}/messages`, { headers: headers() });
+    setMensajes(r.data || []);
+  };
+
+  const mandarRecurso = async (resourceId, caption = '') => {
+    if (!abierto) return;
+    setEnviando(true);
+    setVerRapidas(false);
+    try {
+      await axios.post(`${API}/api/bot/conversations/${abierto}/send-resource`, { resource_id: resourceId, caption }, { headers: headers(), timeout: 300000 });
+      await recargarMensajes();
+    } catch (e) {
+      avisar(e.response?.data?.error || 'No se pudo mandar el archivo');
+    }
+    setEnviando(false);
+  };
+
+  // Elegir una respuesta rápida: el texto queda en la caja para revisarlo; si tiene archivo, se manda
+  const usarRapida = (q) => {
+    setVerRapidas(false);
+    if (q.resource_id) { setTexto(''); mandarRecurso(q.resource_id, q.text || ''); return; }
+    setTexto(q.text || '');
+  };
+
+  const guardarRapida = async () => {
+    try {
+      await axios.post(`${API}/api/bot/quick-replies`, nuevaRapida, { headers: headers() });
+      setNuevaRapida({ shortcut: '', text: '', resource_id: '' });
+      cargarRapidas();
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo guardar'); }
+  };
+  const borrarRapida = async (id) => {
+    if (!confirm('Borrar esta respuesta rápida?')) return;
+    await axios.delete(`${API}/api/bot/quick-replies/${id}`, { headers: headers() }).catch(() => {});
+    cargarRapidas();
   };
 
   const grabar = async () => {
@@ -523,6 +569,58 @@ export default function Inbox() {
               <div ref={finRef} />
             </div>
 
+            {(() => {
+              const q = texto.startsWith('/') ? texto.slice(1).toLowerCase() : null;
+              const coinciden = q === null ? [] : rapidas.replies.filter(r => r.shortcut.includes(q) || (r.text || '').toLowerCase().includes(q)).slice(0, 8);
+              if (q === null || !coinciden.length) return null;
+              return (
+                <div className="wa-rapidas-pop">
+                  <div className="wa-rapidas-titulo">Respuestas rápidas</div>
+                  {coinciden.map(r => (
+                    <div key={r.id} className="wa-rapida" onClick={() => usarRapida(r)}>
+                      <div className="wa-rapida-atajo">/{r.shortcut}{r.resource_id ? ` · ${r.resource_kind === 'audio' ? '🎙️' : '📎'} ${r.resource_name}` : ''}</div>
+                      {r.text && <div className="wa-rapida-texto">{r.text}</div>}
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+
+            {verRapidas && (
+              <div className="wa-rapidas-panel">
+                <div className="wa-rapidas-titulo">Archivos para mandar</div>
+                {!rapidas.resources.length && <div className="wa-rapida-texto" style={{ padding: '4px 12px' }}>No hay archivos cargados (se suben en Cerebro IA → Recursos).</div>}
+                <div className="wa-archivos">
+                  {rapidas.resources.map(r => (
+                    <button key={r.id} className="wa-archivo" onClick={() => mandarRecurso(r.id)} title={r.description || ''}>
+                      <span>{{ image: '🖼️', video: '🎬', audio: '🎙️', document: '📄', link: '🔗' }[r.kind] || '📎'}</span> {r.name}
+                    </button>
+                  ))}
+                </div>
+                <div className="wa-rapidas-titulo">Respuestas rápidas <span style={{ fontWeight: 400 }}>· también escribiendo /</span></div>
+                {rapidas.replies.map(r => (
+                  <div key={r.id} className="wa-rapida">
+                    <div style={{ flex: 1, cursor: 'pointer' }} onClick={() => usarRapida(r)}>
+                      <div className="wa-rapida-atajo">/{r.shortcut}{r.resource_id ? ` · 📎 ${r.resource_name}` : ''}</div>
+                      {r.text && <div className="wa-rapida-texto">{r.text}</div>}
+                    </div>
+                    {rapidas.can_edit && <button className="wa-x" onClick={() => borrarRapida(r.id)} title="Borrar">🗑️</button>}
+                  </div>
+                ))}
+                {rapidas.can_edit && (
+                  <div className="wa-rapida-nueva">
+                    <input placeholder="atajo (ej: alias)" value={nuevaRapida.shortcut} onChange={e => setNuevaRapida({ ...nuevaRapida, shortcut: e.target.value })} />
+                    <textarea rows={2} placeholder="Texto (ej: Te paso los datos para el pago...)" value={nuevaRapida.text} onChange={e => setNuevaRapida({ ...nuevaRapida, text: e.target.value })} />
+                    <select value={nuevaRapida.resource_id} onChange={e => setNuevaRapida({ ...nuevaRapida, resource_id: e.target.value })}>
+                      <option value="">Sin archivo</option>
+                      {rapidas.resources.map(r => <option key={r.id} value={r.id}>📎 {r.name}</option>)}
+                    </select>
+                    <button className="wa-boton-verde" onClick={guardarRapida}>Agregar respuesta rápida</button>
+                  </div>
+                )}
+              </div>
+            )}
+
             <footer className="wa-escribir">
               <input type="file" ref={archivoRef} style={{ display: 'none' }} accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
                 onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) mandarArchivo(f); }} />
@@ -534,6 +632,7 @@ export default function Inbox() {
                 </>
               ) : (
                 <>
+                  <button className="wa-icono" title="Respuestas rápidas y archivos precargados" onClick={() => setVerRapidas(v => !v)} disabled={enviando}>⚡</button>
                   <button className="wa-icono" title="Adjuntar foto, video o archivo" onClick={() => archivoRef.current?.click()} disabled={enviando}>📎</button>
                   <textarea rows={1} placeholder="Escribí un mensaje" value={texto}
                     onChange={e => setTexto(e.target.value)}
@@ -643,6 +742,17 @@ export default function Inbox() {
         .wa-audio { display: block; width: 260px; max-width: 100%; margin-bottom: 2px; }
         .wa-doc { border: 1px solid var(--wa-borde); background: rgba(0,0,0,.03); color: inherit; border-radius: 6px; padding: 8px 12px; cursor: pointer; margin-bottom: 4px; }
         .wa-media-load, .wa-media-err { font-size: 12px; color: var(--wa-suave); font-style: italic; margin-bottom: 4px; }
+        .wa-rapidas-pop, .wa-rapidas-panel { background: var(--wa-panel); border-top: 1px solid var(--wa-borde); max-height: 45vh; overflow-y: auto; padding: 6px 0; flex-shrink: 0; }
+        .wa-rapidas-titulo { font-size: 12px; color: var(--wa-suave); font-weight: 600; padding: 8px 14px 4px; }
+        .wa-rapida { display: flex; align-items: flex-start; gap: 8px; padding: 8px 14px; cursor: pointer; }
+        .wa-rapida:hover { background: var(--wa-hover); }
+        .wa-rapida-atajo { font-size: 14px; font-weight: 600; }
+        .wa-rapida-texto { font-size: 13px; color: var(--wa-suave); white-space: pre-wrap; max-height: 60px; overflow: hidden; }
+        .wa-archivos { display: flex; flex-wrap: wrap; gap: 6px; padding: 4px 14px 8px; }
+        .wa-archivo { border: 1px solid var(--wa-borde); background: var(--wa-fondo); color: var(--wa-texto); border-radius: 16px; padding: 6px 12px; font-size: 13px; cursor: pointer; }
+        .wa-rapida-nueva { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--wa-borde); }
+        .wa-rapida-nueva input, .wa-rapida-nueva textarea, .wa-rapida-nueva select { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
+        .wa-rapida-nueva .wa-boton-verde { align-self: flex-start; }
         .wa-escribir { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px; background: var(--wa-fondo); flex-shrink: 0; }
         .wa-escribir textarea { flex: 1; resize: none; border: none; border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit; background: var(--wa-panel); color: var(--wa-texto); outline: none; max-height: 120px; }
         .wa-icono { border: none; background: none; font-size: 22px; cursor: pointer; padding: 6px; }

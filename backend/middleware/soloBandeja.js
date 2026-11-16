@@ -9,6 +9,7 @@ const PERMITIDO = [
   /^\/api\/bot\/conversations(\/|$)/,
   /^\/api\/bot\/messages\/[^/]+\/media$/,
   /^\/api\/bot\/sellers$/,
+  /^\/api\/bot\/quick-replies(\/|$)/,
   /^\/api\/whatsapp-qr\/status$/,
   /^\/api\/billing\/status$/,
   /^\/api\/auth\//,
