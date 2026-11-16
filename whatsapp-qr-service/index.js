@@ -229,6 +229,26 @@ const subidos = leerJson(SUBIDOS_FILE); // clientId -> { waId: 1 }
 const guardarSubidos = guardarLuego(SUBIDOS_FILE, () => subidos);
 let colaSubidas = Promise.resolve();
 
+// Id completo de un mensaje ("false_<chat>_<id>"). En los mensajes que llegan en vivo a veces
+// viene sin _serialized, así que se arma a mano.
+function idDe(msg) {
+  const id = msg && msg.id;
+  if (!id) return null;
+  if (id._serialized) return id._serialized;
+  const remote = id.remote && (id.remote._serialized || id.remote);
+  return id.id && remote ? `${id.fromMe ? 'true' : 'false'}_${remote}_${id.id}` : null;
+}
+
+// Baja el archivo de un mensaje en vivo: primero con la función de whatsapp-web.js y, si falla,
+// con la descarga directa por id.
+async function bajarDeMensaje(client, msg) {
+  try {
+    const m = await msg.downloadMedia();
+    if (m && m.data) return { b64: m.data, mimetype: m.mimetype, filename: m.filename || null };
+  } catch (_) {}
+  return bajarMedia(client, idDe(msg));
+}
+
 function subirMedia(client, clientId, waId, ya = null) {
   if (!waId || subidos[clientId]?.[waId]) return Promise.resolve();
   colaSubidas = colaSubidas.then(async () => {
@@ -502,7 +522,7 @@ function ensureClient(clientId) {
   client.on('message_create', async (msg) => {
     try {
       if (!msg.fromMe) return;
-      const idCompleto = msg.id && msg.id._serialized;
+      const idCompleto = idDe(msg);
       const idCorto = String((msg.id && msg.id.id) || '');
       if (!idCompleto || idsPropios.has(idCompleto) || idCorto.startsWith('3EB0')) return;
       const to = String(msg.to || '');
@@ -518,7 +538,7 @@ function ensureClient(clientId) {
       guardarChatmap();
       console.log(`[${clientId}] Enviado desde el celular a ${phone}: ${text.slice(0, 60)}`);
       await avisarBackend('outgoing', { clientId, to: phone, text, waId: idCompleto, mediaType: TIPOS_MEDIA.includes(msg.type) ? msg.type : null }, 60000);
-      if (TIPOS_MEDIA.includes(msg.type)) subirMedia(client, clientId, idCompleto);
+      if (TIPOS_MEDIA.includes(msg.type)) bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, idCompleto, m)).catch(() => subirMedia(client, clientId, idCompleto));
     } catch (err) {
       console.error(`[${clientId}] No se pudo guardar lo enviado desde el celular:`, err.response?.data?.error || err.message);
     }
@@ -536,9 +556,10 @@ function ensureClient(clientId) {
       // Notas de voz: primero el Whisper local; si no está o falla, se manda el audio a
       // Railway para que lo transcriba un proveedor en la nube (TRANSCRIPCION=auto|local|nube).
       let audioParaNube = null;
+      let audioBajado = null;
       if (msg.type === 'ptt' || msg.type === 'audio') {
         let b64 = null;
-        try { b64 = await bajarAudio(client, msg.id._serialized); }
+        try { audioBajado = await bajarDeMensaje(client, msg); b64 = audioBajado.b64; }
         catch (e) { console.error(`[${clientId}] No se pudo bajar el audio:`, e.message); }
         if (b64) {
           let listo = false;
@@ -576,9 +597,13 @@ function ensureClient(clientId) {
 
       const name = msg._data?.notifyName || null;
       console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
-      const media = TIPOS_MEDIA.includes(msg.type) ? { waId: msg.id._serialized, mediaType: msg.type } : { waId: msg.id._serialized };
+      const waId = idDe(msg);
+      const media = TIPOS_MEDIA.includes(msg.type) ? { waId, mediaType: msg.type } : { waId };
       // El archivo se guarda antes de pasarle el mensaje al backend: aunque el backend falle, queda
-      if (TIPOS_MEDIA.includes(msg.type)) subirMedia(client, clientId, msg.id._serialized);
+      if (TIPOS_MEDIA.includes(msg.type) && waId) {
+        if (audioBajado) subirMedia(client, clientId, waId, audioBajado);
+        else bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, waId, m)).catch((e) => console.error(`[${clientId}] no se pudo bajar el archivo:`, e.message));
+      }
       await avisarBackend('message', { clientId, from: phone, name, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
@@ -609,8 +634,8 @@ function sesionLista(clientId) {
 /* Etiquetar sumando (sin pisar las que ya tenga). Va directo a los módulos internos
    porque las funciones de etiquetas de la librería están rotas en esta versión de
    WhatsApp Web. Copiado del Captador, que lo tiene probado. */
-async function etiquetar(client, chatId, telefono, nombreEtiqueta) {
-  return client.pupPage.evaluate(async (idExacto, digits, nombre) => {
+async function etiquetar(client, chatId, telefono, nombreEtiqueta, quitar = false) {
+  return client.pupPage.evaluate(async (idExacto, digits, nombre, quitar) => {
     const Coll = window.require('WAWebCollections');
     const labels = window.WWebJS.getLabels();
     const lab = labels.find((l) => String(l.name).toLowerCase() === String(nombre).toLowerCase());
@@ -636,10 +661,16 @@ async function etiquetar(client, chatId, telefono, nombreEtiqueta) {
       }
     }
     if (!chat) return { ok: false, motivo: 'no encontré el chat' };
-    if ((chat.labels || []).map(String).includes(String(lab.id))) return { ok: true, yaTenia: true };
+    const tiene = (chat.labels || []).map(String).includes(String(lab.id));
+    if (quitar) {
+      if (!tiene) return { ok: true };
+      await Coll.Label.addOrRemoveLabels([{ id: lab.id, type: 'remove' }], [chat]);
+      return { ok: true };
+    }
+    if (tiene) return { ok: true, yaTenia: true };
     await Coll.Label.addOrRemoveLabels([{ id: lab.id, type: 'add' }], [chat]);
     return { ok: true };
-  }, chatId, soloDigitos(telefono), nombreEtiqueta);
+  }, chatId, soloDigitos(telefono), nombreEtiqueta, quitar);
 }
 
 async function archivar(client, chatId) {
@@ -861,10 +892,10 @@ app.get('/session/:clientId/labels', checkSecret, async (req, res) => {
 app.post('/session/:clientId/label', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);
   if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
-  const { to, label } = req.body;
+  const { to, label, remove } = req.body;
   if (!to || !label) return res.status(400).json({ error: 'faltan to/label' });
   try {
-    const r = await etiquetar(rec.client, chatIdPara(req.params.clientId, to), to, label);
+    const r = await etiquetar(rec.client, chatIdPara(req.params.clientId, to), to, label, !!remove);
     if (!r.ok) return res.status(422).json({ error: r.motivo });
     res.json({ ok: true, yaTenia: !!r.yaTenia });
   } catch (err) {

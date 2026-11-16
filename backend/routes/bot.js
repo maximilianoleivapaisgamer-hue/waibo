@@ -162,7 +162,8 @@ router.get('/conversations', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT c.*, lm.content AS last_message, lm.timestamp AS last_message_at, lm.role AS last_message_role,
-        (lm.role = 'user' AND (c.last_read_at IS NULL OR lm.timestamp > c.last_read_at)) AS unread,
+        -- Sin leer = el último mensaje es del cliente y nadie le contestó (abrir el chat no lo apaga)
+        (lm.role = 'user') AS unread,
         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count,
         v.name AS assigned_name,
         COALESCE(wl.name, (SELECT main_line_name FROM clients WHERE id = c.client_id), 'Principal') AS line_name,
@@ -1232,6 +1233,55 @@ router.post('/conversations/:id/send-resource', authMiddleware, async (req, res)
   } catch (err) {
     console.error('[send-resource]', err.response?.data || err.message);
     res.status(500).json({ error: err.response?.data?.error || 'No se pudo mandar el archivo' });
+  }
+});
+
+// ── Etiquetas de WhatsApp Business desde la Bandeja ─────────────────────────
+// Lista de etiquetas de la línea (las mismas del celular)
+router.get('/conversations/labels/list', authMiddleware, async (req, res) => {
+  if (!process.env.QR_SERVICE_URL) return res.json({ labels: [] });
+  const axios = require('axios');
+  const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+  const sesion = req.query.line && req.query.line !== 'principal' ? req.query.line : req.client.id;
+  try {
+    const r = await axios.get(`${process.env.QR_SERVICE_URL}/session/${sesion}/labels`, { headers: { 'x-service-secret': secret }, timeout: 20000 });
+    res.json({ labels: (r.data.labels || []).map((l) => l.name) });
+  } catch (_) {
+    res.json({ labels: [], desconectado: true });
+  }
+});
+
+// Poner o sacar una etiqueta de WhatsApp a un chat (se ve también en el celular)
+router.post('/conversations/:id/label', authMiddleware, async (req, res) => {
+  const label = String(req.body.label || '').trim();
+  const quitar = !!req.body.remove;
+  if (!label) return res.status(400).json({ error: 'Falta la etiqueta' });
+  try {
+    const conv = (await pool.query(
+      `SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $3::uuid))))`,
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    let enWhatsApp = false;
+    if (process.env.QR_SERVICE_URL) {
+      const axios = require('axios');
+      const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+      try {
+        await axios.post(`${process.env.QR_SERVICE_URL}/session/${conv.line_id || req.client.id}/label`,
+          { to: conv.customer_phone, label, remove: quitar, secret }, { headers: { 'x-service-secret': secret }, timeout: 60000 });
+        enWhatsApp = true;
+      } catch (e) {
+        console.error('[etiqueta WA]', e.response?.data?.error || e.message);
+      }
+    }
+    const r = await pool.query(
+      quitar
+        ? `UPDATE conversations SET tags = array_remove(COALESCE(tags, '{}'), $2::text) WHERE id = $1 RETURNING tags`
+        : `UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || ARRAY[$2::text])) WHERE id = $1 RETURNING tags`,
+      [conv.id, label]
+    );
+    res.json({ tags: r.rows[0].tags, en_whatsapp: enWhatsApp });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 

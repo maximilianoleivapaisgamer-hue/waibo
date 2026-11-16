@@ -106,6 +106,7 @@ export default function Inbox() {
   const [grabando, setGrabando] = useState(false);
   const [segundos, setSegundos] = useState(0);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
+  const [etiquetasWA, setEtiquetasWA] = useState([]);
   const [verDetalle, setVerDetalle] = useState(false);
   const [aviso, setAviso] = useState('');
   const [etiquetaSel, setEtiquetaSel] = useState('');
@@ -327,6 +328,23 @@ export default function Inbox() {
     }
   };
 
+  // Etiquetas de WhatsApp Business de la línea del chat abierto
+  useEffect(() => {
+    if (!verDetalle || !abierto) return;
+    const c = chats.find(x => x.id === abierto);
+    axios.get(`${API}/api/bot/conversations/labels/list${c?.line_id ? `?line=${c.line_id}` : ''}`, { headers: headers() })
+      .then(r => setEtiquetasWA(r.data.labels || [])).catch(() => setEtiquetasWA([]));
+  }, [verDetalle, abierto]);
+
+  const alternarEtiquetaWA = async (label) => {
+    const tiene = (chat?.tags || []).includes(label);
+    try {
+      const r = await axios.post(`${API}/api/bot/conversations/${abierto}/label`, { label, remove: tiene }, { headers: headers(), timeout: 90000 });
+      actualizarChat({ tags: r.data.tags });
+      if (!r.data.en_whatsapp) avisar('Se guardó en Waibo, pero no se pudo poner en WhatsApp (¿está conectado?)');
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo etiquetar'); }
+  };
+
   const guardarEtiquetas = async (tags) => {
     try {
       await axios.put(`${API}/api/bot/conversations/${abierto}/tags`, { tags }, { headers: headers() });
@@ -514,8 +532,24 @@ export default function Inbox() {
                     </select>
                   </div>
                 )}
+                {etiquetasWA.length > 0 && (
+                  <div className="wa-ficha-fila columna">
+                    <span className="wa-ficha-titulo">Etiquetas de WhatsApp</span>
+                    <div className="wa-item-tags">
+                      {etiquetasWA.map(l => {
+                        const on = (chat.tags || []).includes(l);
+                        return (
+                          <button key={l} className="wa-boton-claro" onClick={() => alternarEtiquetaWA(l)}
+                            style={on ? { background: '#d9fdd3', borderColor: '#00a884', color: '#008069', fontWeight: 600 } : {}}>
+                            {on ? '✓ ' : '+ '}{l}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 <div className="wa-ficha-fila columna">
-                  <span className="wa-ficha-titulo">Etiquetas</span>
+                  <span className="wa-ficha-titulo">Etiquetas propias</span>
                   <div className="wa-item-tags">
                     {(chat.tags || []).map(t => (
                       <span key={t} className="wa-tag">{t} <button className="wa-x" onClick={() => guardarEtiquetas((chat.tags || []).filter(x => x !== t))}>×</button></span>
