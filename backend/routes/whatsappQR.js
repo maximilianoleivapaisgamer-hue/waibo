@@ -80,13 +80,11 @@ router.post('/disconnect', authMiddleware, async (req, res) => {
       await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/disconnect`, { secret: SERVICE_SECRET }, { headers: qrHeaders() });
     } catch {}
   }
-  const del = await pool.query(
-    `DELETE FROM conversations WHERE client_id = $1 AND source = 'qr'`,
-    [req.client.id]
-  );
-  console.log(`[QR disconnect] clientId=${req.client.id} — ${del.rowCount} conversaciones importadas eliminadas`);
+  // Desvincular NO borra nada: el historial (mensajes, fotos, audios, etiquetas) queda en
+  // Waibo y al volver a vincular se completa con lo nuevo.
+  console.log(`[QR disconnect] clientId=${req.client.id} — historial conservado`);
   await pool.query(`UPDATE clients SET whatsapp_mode = 'api' WHERE id = $1`, [req.client.id]);
-  res.json({ success: true, deleted_conversations: del.rowCount });
+  res.json({ success: true, deleted_conversations: 0 });
 });
 
 // Enviar mensaje desde Railway al microservicio (usado por sendWhatsAppQRMessage)
@@ -166,6 +164,22 @@ router.post('/line-limit', checkServiceSecret, async (req, res) => {
     await pool.query(
       `INSERT INTO alerts (client_id, conversation_id, type, message) VALUES ($1, $2, 'line_limit', $3)`,
       [clientId, conv?.id || null, `La línea llegó al tope de ${limite} mensajes en 24 h. El mensaje a ${quien} quedó en espera y sale cerca de las ${hora}.`]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// El servicio QR sube la foto / audio / video de un mensaje apenas llega
+router.post('/media', checkServiceSecret, async (req, res) => {
+  const { clientId, waId, mimetype, data, filename } = req.body;
+  if (!clientId || !waId || !data) return res.status(400).json({ error: 'faltan datos' });
+  try {
+    await pool.query(
+      `INSERT INTO wa_media (client_id, wa_id, mimetype, filename, data) VALUES ($1,$2,$3,$4,$5)
+       ON CONFLICT (client_id, wa_id) DO NOTHING`,
+      [clientId, waId, mimetype || null, filename || null, Buffer.from(data, 'base64')]
     );
     res.json({ ok: true });
   } catch (err) {

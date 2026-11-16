@@ -6,7 +6,7 @@ import '../styles/globals.css';
 
 const PUBLIC_PAGES = ['/', '/register', '/solicitar-baja', '/admin'];
 const ALLOWED_WHILE_SUSPENDED = ['/billing'];
-const EMPLOYEE_ALLOWED = ['/conversations', '/orders', '/agenda'];
+const EMPLOYEE_ALLOWED = ['/inbox', '/conversations', '/orders', '/agenda'];
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 // Cartel en todo el panel cuando el WhatsApp por QR está desconectado (el bot no contesta).
@@ -67,7 +67,7 @@ function BillingGuard({ children }) {
     // Restricción de empleados
     const clientData = JSON.parse(localStorage.getItem('whabot_client') || '{}');
     if (clientData.role === 'employee' && !EMPLOYEE_ALLOWED.includes(router.pathname)) {
-      router.replace('/conversations');
+      router.replace('/inbox');
       return;
     }
     axios.get(`${API}/api/billing/status`, { headers: { Authorization: `Bearer ${token}` } })

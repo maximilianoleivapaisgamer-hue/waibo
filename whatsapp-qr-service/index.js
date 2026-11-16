@@ -221,6 +221,31 @@ async function bajarAudio(client, msgId) {
 
 const TIPOS_MEDIA = ['image', 'video', 'audio', 'ptt', 'document', 'sticker'];
 
+/* Fotos, audios, videos y archivos se suben a Waibo apenas llegan (o apenas se importan).
+   WhatsApp después no los deja bajar (y menos si se vuelve a vincular el QR), así que si no
+   se guardan en el momento se pierden. subidos.json evita volver a bajar lo ya guardado. */
+const SUBIDOS_FILE = path.join(__dirname, 'subidos.json');
+const subidos = leerJson(SUBIDOS_FILE); // clientId -> { waId: 1 }
+const guardarSubidos = guardarLuego(SUBIDOS_FILE, () => subidos);
+let colaSubidas = Promise.resolve();
+
+function subirMedia(client, clientId, waId, ya = null) {
+  if (!waId || subidos[clientId]?.[waId]) return Promise.resolve();
+  colaSubidas = colaSubidas.then(async () => {
+    try {
+      const m = ya || await bajarMedia(client, waId);
+      if (!m || !m.b64) return;
+      if (m.b64.length > 22 * 1024 * 1024) { console.log(`[${clientId}] archivo muy grande, no se guarda: ${waId}`); return; }
+      await avisarBackend('media', { clientId, waId, mimetype: m.mimetype, data: m.b64, filename: m.filename || null }, 120000);
+      (subidos[clientId] = subidos[clientId] || {})[waId] = 1;
+      guardarSubidos();
+    } catch (e) {
+      console.error(`[${clientId}] no se pudo guardar el archivo ${waId}:`, e.message);
+    }
+  });
+  return colaSubidas;
+}
+
 /* ── Cola de envíos por línea ───────────────────────────────────────────────
    Todo lo que sale por una línea (bot, panel, vendedores, seguimiento) pasa por acá:
    - de a uno por línea, en orden de llegada;
@@ -493,6 +518,7 @@ function ensureClient(clientId) {
       guardarChatmap();
       console.log(`[${clientId}] Enviado desde el celular a ${phone}: ${text.slice(0, 60)}`);
       await avisarBackend('outgoing', { clientId, to: phone, text, waId: idCompleto, mediaType: TIPOS_MEDIA.includes(msg.type) ? msg.type : null }, 60000);
+      if (TIPOS_MEDIA.includes(msg.type)) subirMedia(client, clientId, idCompleto);
     } catch (err) {
       console.error(`[${clientId}] No se pudo guardar lo enviado desde el celular:`, err.response?.data?.error || err.message);
     }
@@ -551,6 +577,8 @@ function ensureClient(clientId) {
       const name = msg._data?.notifyName || null;
       console.log(`[${clientId}] Mensaje entrante de ${phone}: ${text.slice(0, 60)}`);
       const media = TIPOS_MEDIA.includes(msg.type) ? { waId: msg.id._serialized, mediaType: msg.type } : { waId: msg.id._serialized };
+      // El archivo se guarda antes de pasarle el mensaje al backend: aunque el backend falle, queda
+      if (TIPOS_MEDIA.includes(msg.type)) subirMedia(client, clientId, msg.id._serialized);
       await avisarBackend('message', { clientId, from: phone, name, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
@@ -671,6 +699,7 @@ async function importarHistorial(clientId, { porChat = 30, demora = 400, desde =
         lote = [];
         try {
           await avisarBackend('history-chats', { clientId, chats }, 180000);
+          for (const c of chats) for (const m of c.messages) if (m.mediaType && m.waId) subirMedia(rec.client, clientId, m.waId);
           job.chats += chats.length;
         } catch (e) {
           console.error(`[${clientId}] error mandando lote de historial:`, e.response?.data?.error || e.message);

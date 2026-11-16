@@ -6,6 +6,8 @@ const app = express();
 
 app.set('trust proxy', 1);
 app.use(cors());
+// El servicio QR sube fotos, audios y videos de hasta 16 MB (en base64)
+app.use('/api/whatsapp-qr', express.json({ limit: '40mb' }));
 app.use(express.json({ limit: '2mb' }));
 
 const authLimiter = rateLimit({

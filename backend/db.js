@@ -520,6 +520,20 @@ async function initDB() {
       -- Vendedores: cada chat puede tener un dueño (un empleado del negocio)
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_to UUID;
       ALTER TABLE alerts ADD COLUMN IF NOT EXISTS topic TEXT;
+      -- Fotos, audios y videos guardados apenas llegan (por id de WhatsApp): si se vuelve a
+      -- vincular el QR, WhatsApp ya no los deja bajar, así que se guardan antes.
+      CREATE TABLE IF NOT EXISTS wa_media (
+        client_id UUID NOT NULL,
+        wa_id TEXT NOT NULL,
+        mimetype VARCHAR(120),
+        filename TEXT,
+        data BYTEA NOT NULL,
+        created_at TIMESTAMP DEFAULT NOW(),
+        PRIMARY KEY (client_id, wa_id)
+      );
+      -- Seguimiento por chat: cuándo volver a escribirle y qué quedó pendiente
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS follow_up_note TEXT;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS assigned_at TIMESTAMP;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by UUID;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN DEFAULT false;

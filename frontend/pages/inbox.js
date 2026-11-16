@@ -1,0 +1,554 @@
+import Head from 'next/head';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/router';
+import axios from 'axios';
+
+const API = process.env.NEXT_PUBLIC_API_URL;
+
+// Bandeja de vendedores: se ve y se usa como WhatsApp. Cada vendedor ve solo sus chats
+// (lo filtra el backend); el dueño ve todos, filtra por vendedor y reasigna.
+// El historial vive en Waibo (mensajes, fotos, audios, etiquetas): no depende del celular.
+
+function hora(ts) {
+  if (!ts) return '';
+  const d = new Date(ts);
+  const hoy = new Date();
+  if (d.toDateString() === hoy.toDateString()) return d.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
+  const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
+  if (d.toDateString() === ayer.toDateString()) return 'Ayer';
+  return d.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+}
+
+function diaDe(ts) {
+  const d = new Date(ts);
+  const hoy = new Date();
+  if (d.toDateString() === hoy.toDateString()) return 'Hoy';
+  const ayer = new Date(hoy); ayer.setDate(hoy.getDate() - 1);
+  if (d.toDateString() === ayer.toDateString()) return 'Ayer';
+  return d.toLocaleDateString('es-AR', { weekday: 'long', day: 'numeric', month: 'long' });
+}
+
+function escapar(t) {
+  return String(t || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// *negrita*, _cursiva_, ~tachado~ como en WhatsApp
+function formato(t) {
+  return escapar(t)
+    .replace(/\*([^*\n]+)\*/g, '<b>$1</b>')
+    .replace(/_([^_\n]+)_/g, '<i>$1</i>')
+    .replace(/~([^~\n]+)~/g, '<s>$1</s>')
+    .replace(/\n/g, '<br/>');
+}
+
+function textoSinRelleno(m) {
+  let t = String(m.content || '');
+  if (!m.media_type) return t;
+  return t.replace(/^\[(imagen|video|archivo|audio|sticker)\]\s*/i, '')
+    .replace(/^\[El cliente mandó (una imagen|un video|un archivo|un audio|un sticker)\]\s*/i, '')
+    .replace(/^\[Audio del cliente\]:\s*/i, '🎙️ ')
+    .replace(/^(📷 Foto|🎬 Video|🎙️ Nota de voz)\s*/, '');
+}
+
+const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
+
+function Media({ m }) {
+  const [url, setUrl] = useState(null);
+  const [err, setErr] = useState('');
+  const tipo = m.media_type === 'ptt' ? 'audio' : m.media_type;
+  useEffect(() => {
+    let u = null;
+    if (!['image', 'sticker', 'audio', 'video'].includes(tipo)) return;
+    axios.get(`${API}/api/bot/messages/${m.id}/media`, { headers: headers(), responseType: 'blob', timeout: 90000 })
+      .then(r => { u = URL.createObjectURL(r.data); setUrl(u); })
+      .catch(async e => { try { setErr(JSON.parse(await e.response.data.text()).error); } catch (_) { setErr('No disponible'); } });
+    return () => { if (u) URL.revokeObjectURL(u); };
+  }, [m.id]);
+  const abrirArchivo = async () => {
+    try {
+      const r = await axios.get(`${API}/api/bot/messages/${m.id}/media`, { headers: headers(), responseType: 'blob', timeout: 90000 });
+      window.open(URL.createObjectURL(r.data), '_blank');
+    } catch (_) { setErr('No disponible'); }
+  };
+  if (err) return <div className="wa-media-err">⚠️ {err}</div>;
+  if (tipo === 'document') return <button className="wa-doc" onClick={abrirArchivo}>📄 Abrir archivo</button>;
+  if (!url) return <div className="wa-media-load">Cargando…</div>;
+  if (tipo === 'image' || tipo === 'sticker') return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" className={tipo === 'sticker' ? 'wa-sticker' : 'wa-img'} /></a>;
+  if (tipo === 'audio') return <audio controls src={url} className="wa-audio" />;
+  if (tipo === 'video') return <video controls src={url} className="wa-img" />;
+  return null;
+}
+
+export default function Inbox() {
+  const router = useRouter();
+  const [yo, setYo] = useState(null);
+  const [chats, setChats] = useState([]);
+  const [sellers, setSellers] = useState([]);
+  const [soyVendedor, setSoyVendedor] = useState(false);
+  const [abierto, setAbierto] = useState(null);
+  const [mensajes, setMensajes] = useState([]);
+  const [buscar, setBuscar] = useState('');
+  const [filtro, setFiltro] = useState('todos'); // todos | sinleer | seguimiento | sinasignar | <id vendedor>
+  const [texto, setTexto] = useState('');
+  const [enviando, setEnviando] = useState(false);
+  const [grabando, setGrabando] = useState(false);
+  const [segundos, setSegundos] = useState(0);
+  const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
+  const [verDetalle, setVerDetalle] = useState(false);
+  const [aviso, setAviso] = useState('');
+  const finRef = useRef(null);
+  const archivoRef = useRef(null);
+  const grabadorRef = useRef(null);
+  const timerRef = useRef(null);
+
+  useEffect(() => {
+    const token = localStorage.getItem('whabot_token');
+    if (!token) { router.push('/login'); return; }
+    try { setYo(JSON.parse(localStorage.getItem('whabot_client') || '{}')); } catch (_) { setYo({}); }
+    axios.get(`${API}/api/bot/sellers`, { headers: headers() })
+      .then(r => { setSellers(r.data.sellers || []); setSoyVendedor(!!r.data.me); })
+      .catch(() => {});
+  }, []);
+
+  // Lista de chats: se refresca sola
+  useEffect(() => {
+    let vivo = true;
+    const cargar = () => axios.get(`${API}/api/bot/conversations`, { headers: headers() })
+      .then(r => { if (vivo) setChats((r.data || []).filter(c => c.channel === 'whatsapp')); })
+      .catch(e => { if (e.response?.status === 401 || e.response?.status === 403) router.push('/login'); });
+    cargar();
+    const t = setInterval(cargar, 6000);
+    return () => { vivo = false; clearInterval(t); };
+  }, []);
+
+  // Mensajes del chat abierto: se refrescan solos
+  useEffect(() => {
+    if (!abierto) return;
+    let vivo = true;
+    const cargar = () => axios.get(`${API}/api/bot/conversations/${abierto}/messages`, { headers: headers() })
+      .then(r => { if (vivo) setMensajes(r.data || []); })
+      .catch(() => {});
+    cargar();
+    const t = setInterval(cargar, 4000);
+    return () => { vivo = false; clearInterval(t); };
+  }, [abierto]);
+
+  const cantidadAntes = useRef(0);
+  useEffect(() => {
+    if (mensajes.length !== cantidadAntes.current) finRef.current?.scrollIntoView({ block: 'end' });
+    cantidadAntes.current = mensajes.length;
+  }, [mensajes]);
+
+  const chat = chats.find(c => c.id === abierto) || null;
+  const nombreVendedor = (id) => sellers.find(v => v.id === id)?.name;
+  const avisar = (t) => { setAviso(t); setTimeout(() => setAviso(''), 4000); };
+
+  const visibles = useMemo(() => {
+    const q = buscar.trim().toLowerCase();
+    const ahora = Date.now();
+    return chats.filter(c => {
+      if (q && !(`${c.customer_name || ''} ${c.customer_phone || ''} ${(c.tags || []).join(' ')}`.toLowerCase().includes(q))) return false;
+      if (filtro === 'sinleer') return c.unread;
+      if (filtro === 'seguimiento') return c.follow_up_at && new Date(c.follow_up_at).getTime() <= ahora + 24 * 3600 * 1000;
+      if (filtro === 'sinasignar') return !c.assigned_to;
+      if (filtro !== 'todos') return c.assigned_to === filtro;
+      return !c.archived || !!q;
+    });
+  }, [chats, buscar, filtro]);
+
+  const sinLeer = chats.filter(c => c.unread).length;
+  const paraSeguir = chats.filter(c => c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now() + 24 * 3600 * 1000).length;
+
+  const actualizarChat = (cambios) => setChats(prev => prev.map(c => c.id === abierto ? { ...c, ...cambios } : c));
+
+  const mandarTexto = async () => {
+    const t = texto.trim();
+    if (!t || !abierto || enviando) return;
+    setEnviando(true);
+    setTexto('');
+    try {
+      await axios.post(`${API}/api/bot/conversations/${abierto}/send`, { message: t }, { headers: headers(), timeout: 300000 });
+      const r = await axios.get(`${API}/api/bot/conversations/${abierto}/messages`, { headers: headers() });
+      setMensajes(r.data || []);
+    } catch (e) {
+      setTexto(t);
+      avisar(e.response?.data?.error || 'No se pudo mandar');
+    }
+    setEnviando(false);
+  };
+
+  const mandarArchivo = async (archivo, voz = false) => {
+    if (!archivo || !abierto) return;
+    if (archivo.size > 16 * 1024 * 1024) { avisar('El archivo pesa más de 16 MB (límite de WhatsApp)'); return; }
+    setEnviando(true);
+    const fd = new FormData();
+    fd.append('file', archivo, archivo.name || (voz ? 'nota.webm' : 'archivo'));
+    if (voz) fd.append('voice', '1');
+    else if (texto.trim()) { fd.append('caption', texto.trim()); setTexto(''); }
+    try {
+      await axios.post(`${API}/api/bot/conversations/${abierto}/send-media`, fd, { headers: headers(), timeout: 300000 });
+      const r = await axios.get(`${API}/api/bot/conversations/${abierto}/messages`, { headers: headers() });
+      setMensajes(r.data || []);
+    } catch (e) {
+      avisar(e.response?.data?.error || 'No se pudo mandar el archivo');
+    }
+    setEnviando(false);
+  };
+
+  const grabar = async () => {
+    if (grabando) {
+      grabadorRef.current?.stop();
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const tipo = MediaRecorder.isTypeSupported('audio/webm;codecs=opus') ? 'audio/webm;codecs=opus' : '';
+      const rec = new MediaRecorder(stream, tipo ? { mimeType: tipo } : undefined);
+      const partes = [];
+      let cancelado = false;
+      rec.ondataavailable = (e) => { if (e.data.size) partes.push(e.data); };
+      rec.onstop = () => {
+        stream.getTracks().forEach(t => t.stop());
+        clearInterval(timerRef.current);
+        setGrabando(false);
+        if (cancelado || !partes.length) return;
+        const blob = new Blob(partes, { type: rec.mimeType || 'audio/webm' });
+        mandarArchivo(new File([blob], 'nota.webm', { type: blob.type }), true);
+      };
+      rec.cancelar = () => { cancelado = true; rec.stop(); };
+      grabadorRef.current = rec;
+      rec.start();
+      setSegundos(0);
+      setGrabando(true);
+      timerRef.current = setInterval(() => setSegundos(s => s + 1), 1000);
+    } catch (_) {
+      avisar('No se pudo usar el micrófono. Dale permiso en el navegador.');
+    }
+  };
+
+  const guardarEtiquetas = async (tags) => {
+    try {
+      await axios.put(`${API}/api/bot/conversations/${abierto}/tags`, { tags }, { headers: headers() });
+      actualizarChat({ tags });
+    } catch (_) { avisar('No se pudo guardar la etiqueta'); }
+  };
+
+  const guardarSeguimiento = async (at, note) => {
+    try {
+      const r = await axios.put(`${API}/api/bot/conversations/${abierto}/follow-up`, { at, note }, { headers: headers() });
+      actualizarChat({ follow_up_at: r.data.follow_up_at, follow_up_note: r.data.follow_up_note });
+      avisar(at ? 'Seguimiento agendado' : 'Seguimiento quitado');
+    } catch (_) { avisar('No se pudo guardar el seguimiento'); }
+  };
+
+  const asignar = async (id) => {
+    try {
+      await axios.put(`${API}/api/bot/conversations/${abierto}/assign`, { employee_id: id || null }, { headers: headers() });
+      actualizarChat({ assigned_to: id || null, assigned_name: nombreVendedor(id) || null });
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo asignar'); }
+  };
+
+  const tomarControl = async (status) => {
+    try {
+      await axios.put(`${API}/api/bot/conversations/${abierto}/status`, { status }, { headers: headers() });
+      actualizarChat({ status });
+    } catch (_) { avisar('No se pudo cambiar'); }
+  };
+
+  const quienMando = (m) => {
+    if (m.role === 'user') return null;
+    if (m.origin === 'phone') return '📱 Celular';
+    if (m.origin === 'import') return null;
+    if (m.origin === 'seguimiento') return '🔁 Seguimiento';
+    if (m.origin === 'manual') return m.sent_by && nombreVendedor(m.sent_by) ? `👤 ${nombreVendedor(m.sent_by)}` : '👤 Vos';
+    return '🤖 Bot';
+  };
+
+  // Mensajes con separador por día
+  const conDias = [];
+  let ultimoDia = '';
+  for (const m of mensajes) {
+    const d = diaDe(m.timestamp);
+    if (d !== ultimoDia) { conDias.push({ dia: d, key: 'd' + m.id }); ultimoDia = d; }
+    conDias.push(m);
+  }
+
+  const seguimientoLocal = chat?.follow_up_at ? new Date(new Date(chat.follow_up_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
+
+  return (
+    <div className="wa">
+      <Head><title>Bandeja · Waibo</title></Head>
+
+      {/* ── Lista de chats ── */}
+      <aside className={`wa-lista ${abierto ? 'oculta-movil' : ''}`}>
+        <header className="wa-top">
+          <div className="wa-yo">
+            <span className="wa-avatar wa-avatar-chico">{(yo?.name || yo?.business_name || 'W')[0]?.toUpperCase()}</span>
+            <span className="wa-yo-nombre">{soyVendedor ? (yo?.name || 'Vendedor') : 'Todos los chats'}</span>
+          </div>
+          {!soyVendedor && <a href="/dashboard" className="wa-link">Panel ›</a>}
+        </header>
+        <div className="wa-buscar">
+          <input placeholder="Buscar nombre, número o etiqueta" value={buscar} onChange={e => setBuscar(e.target.value)} />
+        </div>
+        <div className="wa-chips">
+          <button className={filtro === 'todos' ? 'on' : ''} onClick={() => setFiltro('todos')}>Todos</button>
+          <button className={filtro === 'sinleer' ? 'on' : ''} onClick={() => setFiltro('sinleer')}>Sin leer{sinLeer ? ` ${sinLeer}` : ''}</button>
+          <button className={filtro === 'seguimiento' ? 'on' : ''} onClick={() => setFiltro('seguimiento')}>Seguimiento{paraSeguir ? ` ${paraSeguir}` : ''}</button>
+          {!soyVendedor && sellers.length > 0 && <button className={filtro === 'sinasignar' ? 'on' : ''} onClick={() => setFiltro('sinasignar')}>Sin asignar</button>}
+          {!soyVendedor && sellers.map(v => (
+            <button key={v.id} className={filtro === v.id ? 'on' : ''} onClick={() => setFiltro(v.id)}>{v.name}</button>
+          ))}
+        </div>
+        <div className="wa-items">
+          {!visibles.length && <div className="wa-vacio">No hay chats acá.</div>}
+          {visibles.map(c => {
+            const vencido = c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now();
+            return (
+              <div key={c.id} className={`wa-item ${abierto === c.id ? 'activo' : ''}`} onClick={() => { setAbierto(c.id); setVerDetalle(false); }}>
+                <span className="wa-avatar">{(c.customer_name || c.customer_phone || '?')[0]?.toUpperCase()}</span>
+                <div className="wa-item-cuerpo">
+                  <div className="wa-item-fila">
+                    <span className={`wa-item-nombre ${c.unread ? 'fuerte' : ''}`}>{c.customer_name || c.customer_phone}</span>
+                    <span className={`wa-item-hora ${c.unread ? 'verde' : ''}`}>{hora(c.last_message_at)}</span>
+                  </div>
+                  <div className="wa-item-fila">
+                    <span className="wa-item-ultimo">
+                      {c.last_message_role === 'assistant' ? '✓ ' : ''}{String(c.last_message || '').replace(/\n/g, ' ').slice(0, 70)}
+                    </span>
+                    {c.unread && <span className="wa-burbuja-nueva">●</span>}
+                  </div>
+                  {(c.tags?.length > 0 || c.follow_up_at || (!soyVendedor && c.assigned_name)) && (
+                    <div className="wa-item-tags">
+                      {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
+                      {!soyVendedor && c.assigned_name && <span className="wa-tag violeta">👤 {c.assigned_name}</span>}
+                      {(c.tags || []).slice(0, 3).map(t => <span key={t} className="wa-tag">{t}</span>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </aside>
+
+      {/* ── Chat abierto ── */}
+      <main className={`wa-chat ${abierto ? '' : 'oculta-movil'}`}>
+        {!chat ? (
+          <div className="wa-bienvenida">
+            <div className="wa-bienvenida-icono">💬</div>
+            <h2>Bandeja de Waibo</h2>
+            <p>Elegí un chat de la izquierda. Todo queda guardado: mensajes, fotos, audios y etiquetas.</p>
+          </div>
+        ) : (
+          <>
+            <header className="wa-top wa-chat-top">
+              <button className="wa-volver" onClick={() => setAbierto(null)}>‹</button>
+              <span className="wa-avatar wa-avatar-chico">{(chat.customer_name || chat.customer_phone || '?')[0]?.toUpperCase()}</span>
+              <div className="wa-chat-titulo" onClick={() => setVerDetalle(v => !v)}>
+                <div className="wa-chat-nombre">{chat.customer_name || chat.customer_phone}</div>
+                <div className="wa-chat-sub">{chat.customer_phone}{chat.status === 'human' ? ' · atiende una persona' : ' · contesta el bot'}</div>
+              </div>
+              <button className="wa-boton-claro" onClick={() => setVerDetalle(v => !v)}>{verDetalle ? 'Cerrar' : 'Ficha'}</button>
+            </header>
+
+            {verDetalle && (
+              <div className="wa-ficha">
+                <div className="wa-ficha-fila">
+                  <span className="wa-ficha-titulo">Bot</span>
+                  {chat.status === 'human'
+                    ? <button className="wa-boton-claro" onClick={() => tomarControl('bot')}>🤖 Devolver al bot</button>
+                    : <button className="wa-boton-claro" onClick={() => tomarControl('human')}>✋ Atender yo (frenar el bot)</button>}
+                </div>
+                {!soyVendedor && sellers.length > 0 && (
+                  <div className="wa-ficha-fila">
+                    <span className="wa-ficha-titulo">Vendedor</span>
+                    <select value={chat.assigned_to || ''} onChange={e => asignar(e.target.value)}>
+                      <option value="">Sin asignar</option>
+                      {sellers.map(v => <option key={v.id} value={v.id}>{v.name}</option>)}
+                    </select>
+                  </div>
+                )}
+                <div className="wa-ficha-fila columna">
+                  <span className="wa-ficha-titulo">Etiquetas</span>
+                  <div className="wa-item-tags">
+                    {(chat.tags || []).map(t => (
+                      <span key={t} className="wa-tag">{t} <button className="wa-x" onClick={() => guardarEtiquetas((chat.tags || []).filter(x => x !== t))}>×</button></span>
+                    ))}
+                    <input className="wa-tag-input" placeholder="+ etiqueta" value={nuevaEtiqueta}
+                      onChange={e => setNuevaEtiqueta(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && nuevaEtiqueta.trim()) {
+                          guardarEtiquetas([...(chat.tags || []), nuevaEtiqueta.trim()]);
+                          setNuevaEtiqueta('');
+                        }
+                      }} />
+                  </div>
+                </div>
+                <div className="wa-ficha-fila columna">
+                  <span className="wa-ficha-titulo">Seguimiento</span>
+                  <div className="wa-seguimiento">
+                    <input type="datetime-local" defaultValue={seguimientoLocal} key={chat.id + (chat.follow_up_at || '')} id="seg-fecha" />
+                    <input placeholder="Qué quedó pendiente (ej: espera el alias)" defaultValue={chat.follow_up_note || ''} key={'n' + chat.id + (chat.follow_up_note || '')} id="seg-nota" />
+                    <button className="wa-boton-verde" onClick={() => {
+                      const f = document.getElementById('seg-fecha').value;
+                      const n = document.getElementById('seg-nota').value;
+                      guardarSeguimiento(f ? new Date(f).toISOString() : null, n);
+                    }}>Guardar</button>
+                    {chat.follow_up_at && <button className="wa-boton-claro" onClick={() => guardarSeguimiento(null, null)}>Quitar</button>}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {chat.follow_up_at && !verDetalle && (
+              <div className={`wa-banda ${new Date(chat.follow_up_at).getTime() <= Date.now() ? 'roja' : ''}`}>
+                ⏰ Seguimiento {new Date(chat.follow_up_at).toLocaleString('es-AR', { weekday: 'short', day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                {chat.follow_up_note ? ` · ${chat.follow_up_note}` : ''}
+              </div>
+            )}
+
+            <div className="wa-mensajes">
+              {conDias.map(m => m.dia ? (
+                <div key={m.key} className="wa-dia"><span>{m.dia}</span></div>
+              ) : (
+                <div key={m.id} className={`wa-fila ${m.role === 'user' ? 'izq' : 'der'}`}>
+                  <div className={`wa-globo ${m.role === 'user' ? 'entrante' : 'saliente'}`}>
+                    {quienMando(m) && <div className="wa-quien">{quienMando(m)}</div>}
+                    {m.media_type && <Media m={m} />}
+                    {textoSinRelleno(m) && <div className="wa-texto" dangerouslySetInnerHTML={{ __html: formato(textoSinRelleno(m)) }} />}
+                    <div className="wa-hora">{new Date(m.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                  </div>
+                </div>
+              ))}
+              <div ref={finRef} />
+            </div>
+
+            <footer className="wa-escribir">
+              <input type="file" ref={archivoRef} style={{ display: 'none' }} accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) mandarArchivo(f); }} />
+              {grabando ? (
+                <>
+                  <button className="wa-icono" title="Cancelar" onClick={() => grabadorRef.current?.cancelar()}>🗑️</button>
+                  <div className="wa-grabando">● Grabando {Math.floor(segundos / 60)}:{String(segundos % 60).padStart(2, '0')}</div>
+                  <button className="wa-enviar" title="Mandar nota de voz" onClick={grabar}>➤</button>
+                </>
+              ) : (
+                <>
+                  <button className="wa-icono" title="Adjuntar foto, video o archivo" onClick={() => archivoRef.current?.click()} disabled={enviando}>📎</button>
+                  <textarea rows={1} placeholder="Escribí un mensaje" value={texto}
+                    onChange={e => setTexto(e.target.value)}
+                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandarTexto(); } }} />
+                  {texto.trim()
+                    ? <button className="wa-enviar" onClick={mandarTexto} disabled={enviando}>{enviando ? '…' : '➤'}</button>
+                    : <button className="wa-enviar" title="Grabar nota de voz" onClick={grabar} disabled={enviando}>{enviando ? '…' : '🎤'}</button>}
+                </>
+              )}
+            </footer>
+          </>
+        )}
+      </main>
+
+      {aviso && <div className="wa-aviso">{aviso}</div>}
+
+      <style jsx global>{`
+        :root {
+          --wa-fondo: #f0f2f5; --wa-panel: #ffffff; --wa-borde: #e9edef; --wa-texto: #111b21; --wa-suave: #667781;
+          --wa-verde: #00a884; --wa-verde-oscuro: #008069; --wa-saliente: #d9fdd3; --wa-entrante: #ffffff; --wa-chat: #efeae2;
+          --wa-activo: #f0f2f5; --wa-hover: #f5f6f6;
+        }
+        @media (prefers-color-scheme: dark) {
+          :root {
+            --wa-fondo: #0b141a; --wa-panel: #111b21; --wa-borde: #222d34; --wa-texto: #e9edef; --wa-suave: #8696a0;
+            --wa-saliente: #005c4b; --wa-entrante: #202c33; --wa-chat: #0b141a; --wa-activo: #2a3942; --wa-hover: #202c33;
+          }
+        }
+        html, body { margin: 0; background: var(--wa-fondo); }
+        .wa { display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--wa-texto); background: var(--wa-fondo); overflow: hidden; }
+        .wa-lista { width: 380px; min-width: 300px; background: var(--wa-panel); border-right: 1px solid var(--wa-borde); display: flex; flex-direction: column; }
+        .wa-chat { flex: 1; display: flex; flex-direction: column; background: var(--wa-chat); min-width: 0; }
+        .wa-top { height: 60px; padding: 0 16px; display: flex; align-items: center; gap: 12px; background: var(--wa-fondo); border-bottom: 1px solid var(--wa-borde); flex-shrink: 0; }
+        .wa-yo { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
+        .wa-yo-nombre { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wa-link { color: var(--wa-verde-oscuro); font-size: 14px; text-decoration: none; font-weight: 600; }
+        .wa-avatar { width: 49px; height: 49px; border-radius: 50%; background: #dfe5e7; color: #54656f; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; flex-shrink: 0; }
+        .wa-avatar-chico { width: 40px; height: 40px; font-size: 16px; }
+        .wa-buscar { padding: 8px 12px; background: var(--wa-panel); }
+        .wa-buscar input { width: 100%; box-sizing: border-box; border: none; background: var(--wa-fondo); color: var(--wa-texto); border-radius: 8px; padding: 9px 14px; font-size: 14px; outline: none; }
+        .wa-chips { display: flex; gap: 6px; padding: 4px 12px 10px; overflow-x: auto; flex-shrink: 0; }
+        .wa-chips button { border: none; background: var(--wa-fondo); color: var(--wa-suave); padding: 6px 12px; border-radius: 16px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .wa-chips button.on { background: #d9fdd3; color: #008069; font-weight: 600; }
+        .wa-items { overflow-y: auto; flex: 1; }
+        .wa-vacio { padding: 30px; text-align: center; color: var(--wa-suave); font-size: 14px; }
+        .wa-item { display: flex; gap: 12px; padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--wa-borde); }
+        .wa-item:hover { background: var(--wa-hover); }
+        .wa-item.activo { background: var(--wa-activo); }
+        .wa-item-cuerpo { flex: 1; min-width: 0; }
+        .wa-item-fila { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+        .wa-item-nombre { font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wa-item-nombre.fuerte { font-weight: 700; }
+        .wa-item-hora { font-size: 12px; color: var(--wa-suave); flex-shrink: 0; }
+        .wa-item-hora.verde { color: var(--wa-verde); font-weight: 600; }
+        .wa-item-ultimo { font-size: 14px; color: var(--wa-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wa-burbuja-nueva { color: var(--wa-verde); font-size: 14px; }
+        .wa-item-tags { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; align-items: center; }
+        .wa-tag { font-size: 11px; padding: 2px 8px; border-radius: 10px; background: #e7f3ef; color: #0b6e5a; display: inline-flex; align-items: center; gap: 4px; }
+        .wa-tag.azul { background: #e3f0fb; color: #1d5fa0; }
+        .wa-tag.rojo { background: #fde8e8; color: #b42318; }
+        .wa-tag.violeta { background: #efe9fb; color: #5b21b6; }
+        .wa-x { border: none; background: none; cursor: pointer; color: inherit; padding: 0; font-size: 13px; }
+        .wa-tag-input { border: 1px dashed var(--wa-borde); background: transparent; color: var(--wa-texto); border-radius: 10px; padding: 3px 8px; font-size: 12px; width: 110px; outline: none; }
+        .wa-bienvenida { margin: auto; text-align: center; color: var(--wa-suave); padding: 24px; max-width: 420px; }
+        .wa-bienvenida-icono { font-size: 56px; }
+        .wa-bienvenida h2 { color: var(--wa-texto); font-weight: 400; }
+        .wa-chat-top { background: var(--wa-fondo); }
+        .wa-volver { display: none; border: none; background: none; font-size: 28px; color: var(--wa-suave); cursor: pointer; padding: 0 4px; }
+        .wa-chat-titulo { flex: 1; min-width: 0; cursor: pointer; }
+        .wa-chat-nombre { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wa-chat-sub { font-size: 13px; color: var(--wa-suave); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .wa-boton-claro { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 18px; padding: 6px 12px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .wa-boton-verde { border: none; background: var(--wa-verde); color: white; border-radius: 18px; padding: 7px 14px; font-size: 13px; cursor: pointer; }
+        .wa-ficha { background: var(--wa-panel); border-bottom: 1px solid var(--wa-borde); padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+        .wa-ficha-fila { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+        .wa-ficha-fila.columna { flex-direction: column; align-items: flex-start; gap: 6px; }
+        .wa-ficha-titulo { font-size: 12px; text-transform: uppercase; letter-spacing: .04em; color: var(--wa-suave); font-weight: 600; min-width: 80px; }
+        .wa-ficha select, .wa-seguimiento input { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 8px; padding: 6px 10px; font-size: 13px; }
+        .wa-seguimiento { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
+        .wa-seguimiento input:nth-child(2) { flex: 1; min-width: 180px; }
+        .wa-banda { background: #e3f0fb; color: #1d5fa0; font-size: 13px; padding: 8px 16px; }
+        .wa-banda.roja { background: #fde8e8; color: #b42318; }
+        .wa-mensajes { flex: 1; overflow-y: auto; padding: 16px 6% 8px; display: flex; flex-direction: column; gap: 2px; }
+        .wa-dia { text-align: center; margin: 10px 0; }
+        .wa-dia span { background: var(--wa-panel); color: var(--wa-suave); font-size: 12px; padding: 5px 12px; border-radius: 8px; box-shadow: 0 1px .5px rgba(11,20,26,.13); }
+        .wa-fila { display: flex; margin: 1px 0; }
+        .wa-fila.izq { justify-content: flex-start; }
+        .wa-fila.der { justify-content: flex-end; }
+        .wa-globo { max-width: 65%; padding: 6px 9px 4px; border-radius: 8px; box-shadow: 0 1px .5px rgba(11,20,26,.13); font-size: 14.2px; line-height: 19px; word-wrap: break-word; }
+        .wa-globo.entrante { background: var(--wa-entrante); border-top-left-radius: 0; }
+        .wa-globo.saliente { background: var(--wa-saliente); border-top-right-radius: 0; }
+        .wa-quien { font-size: 11.5px; color: var(--wa-verde-oscuro); font-weight: 600; margin-bottom: 2px; }
+        .wa-texto { white-space: normal; }
+        .wa-hora { font-size: 11px; color: var(--wa-suave); text-align: right; margin-top: 2px; }
+        .wa-img { display: block; max-width: 100%; max-height: 340px; border-radius: 6px; margin-bottom: 4px; }
+        .wa-sticker { display: block; width: 130px; }
+        .wa-audio { display: block; width: 260px; max-width: 100%; margin-bottom: 2px; }
+        .wa-doc { border: 1px solid var(--wa-borde); background: rgba(0,0,0,.03); color: inherit; border-radius: 6px; padding: 8px 12px; cursor: pointer; margin-bottom: 4px; }
+        .wa-media-load, .wa-media-err { font-size: 12px; color: var(--wa-suave); font-style: italic; margin-bottom: 4px; }
+        .wa-escribir { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px; background: var(--wa-fondo); flex-shrink: 0; }
+        .wa-escribir textarea { flex: 1; resize: none; border: none; border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit; background: var(--wa-panel); color: var(--wa-texto); outline: none; max-height: 120px; }
+        .wa-icono { border: none; background: none; font-size: 22px; cursor: pointer; padding: 6px; }
+        .wa-enviar { border: none; background: var(--wa-verde); color: white; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+        .wa-enviar:disabled, .wa-icono:disabled { opacity: .5; cursor: default; }
+        .wa-grabando { flex: 1; color: #d93025; font-weight: 600; padding: 10px; }
+        .wa-aviso { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 10px 18px; border-radius: 8px; font-size: 14px; z-index: 50; max-width: 90vw; }
+        @media (max-width: 760px) {
+          .wa-lista { width: 100%; min-width: 0; border-right: none; }
+          .oculta-movil { display: none !important; }
+          .wa-volver { display: block; }
+          .wa-globo { max-width: 85%; }
+          .wa-mensajes { padding: 12px 10px 8px; }
+        }
+      `}</style>
+    </div>
+  );
+}

@@ -924,6 +924,10 @@ router.get('/messages/:id/media', authMiddleware, async (req, res) => {
     }
     const guardado = (await pool.query('SELECT mimetype, data FROM message_media WHERE message_id = $1', [m.id])).rows[0];
     if (guardado) return enviar(guardado.mimetype, guardado.data);
+    if (m.wa_id) {
+      const pre = (await pool.query('SELECT mimetype, data FROM wa_media WHERE client_id = $1 AND wa_id = $2', [req.client.id, m.wa_id])).rows[0];
+      if (pre) return enviar(pre.mimetype, pre.data);
+    }
     if (!m.wa_id || !process.env.QR_SERVICE_URL) return res.status(404).json({ error: 'Este archivo no está disponible' });
     const axios = require('axios');
     const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
@@ -1010,6 +1014,57 @@ router.get('/owner-pending', authMiddleware, async (req, res) => {
       [req.client.id]
     );
     res.json(r.rows);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ── Bandeja de vendedores ───────────────────────────────────────────────────
+// Mandar foto, video, archivo o nota de voz desde el panel. Sale por la cola de la línea con
+// prioridad de persona y queda guardado en el historial con el archivo.
+const multerMedia = require('multer')({ storage: require('multer').memoryStorage(), limits: { fileSize: 16 * 1024 * 1024 } });
+router.post('/conversations/:id/send-media', authMiddleware, multerMedia.single('file'), async (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
+  try {
+    const conv = (await pool.query(
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
+    const cli = (await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [req.client.id])).rows[0];
+    if (cli?.whatsapp_mode !== 'qr' || !process.env.QR_SERVICE_URL) return res.status(400).json({ error: 'Para mandar archivos desde acá, WhatsApp tiene que estar conectado por QR' });
+    const mime = (req.file.mimetype || 'application/octet-stream').split(';')[0];
+    const esVoz = req.body.voice === '1';
+    const tipo = esVoz || mime.startsWith('audio/') ? 'audio' : mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document';
+    const axios = require('axios');
+    const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+    await axios.post(`${process.env.QR_SERVICE_URL}/session/${req.client.id}/send-media`, {
+      to: conv.customer_phone, mimetype: mime, data: req.file.buffer.toString('base64'),
+      filename: req.file.originalname, caption: req.body.caption || '', asVoice: esVoz, prioridad: 0, secret
+    }, { headers: { 'x-service-secret': secret }, timeout: 300000, maxBodyLength: Infinity });
+    const etiqueta = { audio: '🎙️ Nota de voz', image: '📷 Foto', video: '🎬 Video', document: '📄 ' + req.file.originalname }[tipo];
+    const msg = (await pool.query(
+      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, media_type) VALUES ($1, 'assistant', $2, 'manual', $3, $4) RETURNING *`,
+      [conv.id, req.body.caption ? `${etiqueta} ${req.body.caption}` : etiqueta, req.client.own_id || req.client.id, tipo === 'audio' && esVoz ? 'ptt' : tipo])).rows[0];
+    await pool.query('INSERT INTO message_media (message_id, mimetype, filename, data) VALUES ($1,$2,$3,$4)', [msg.id, mime, req.file.originalname, req.file.buffer]);
+    await pool.query(`UPDATE conversations SET updated_at = NOW(), status = 'human' WHERE id = $1`, [conv.id]);
+    res.json(msg);
+  } catch (err) {
+    console.error('[send-media panel]', err.response?.data || err.message);
+    res.status(500).json({ error: err.response?.data?.error || 'No se pudo mandar el archivo' });
+  }
+});
+
+// Seguimiento por chat: fecha para volver a escribirle y nota
+router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
+  const { at, note } = req.body;
+  try {
+    const r = await pool.query(
+      `UPDATE conversations SET follow_up_at = $4, follow_up_note = $5
+       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid) RETURNING id, follow_up_at, follow_up_note`,
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null, at || null, note ? String(note).slice(0, 500) : null]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
+    res.json(r.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
