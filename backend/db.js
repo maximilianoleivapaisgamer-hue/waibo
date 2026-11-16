@@ -534,6 +534,25 @@ async function initDB() {
       -- Seguimiento por chat: cuándo volver a escribirle y qué quedó pendiente
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS follow_up_at TIMESTAMP;
       ALTER TABLE conversations ADD COLUMN IF NOT EXISTS heat VARCHAR(10);
+      -- Líneas extra de WhatsApp por QR (Ventas, Soporte...). La principal no está acá: sus chats tienen line_id NULL.
+      CREATE TABLE IF NOT EXISTS wa_lines (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID NOT NULL,
+        name VARCHAR(60) NOT NULL,
+        kind VARCHAR(20) DEFAULT 'ventas',
+        bot_enabled BOOLEAN DEFAULT false,
+        bot_prompt TEXT,
+        status VARCHAR(20) DEFAULT 'disconnected',
+        phone_number VARCHAR(30),
+        connected_at TIMESTAMP,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS line_id UUID;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS case_status VARCHAR(20);
+      -- Líneas que ve cada empleado ('principal' o ids de wa_lines); NULL = todas
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS line_ids TEXT[];
+      -- Nombre propio de la línea principal en el panel
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_line_name VARCHAR(60);
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_enabled BOOLEAN DEFAULT false;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_question TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_segments JSONB DEFAULT '[]'::jsonb;

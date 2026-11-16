@@ -65,6 +65,7 @@ app.use('/api/clients', apiLimiter, clientRoutes);
 app.use('/api/bot', apiLimiter, botRoutes);
 app.use('/api/seller-builder', apiLimiter, require('./routes/sellerBuilder'));
 app.use('/api/ai-runner', require('./routes/aiRunner'));
+app.use('/api/lines', apiLimiter, require('./routes/lines'));
 app.use('/api/instagram', apiLimiter, instagramRoutes);
 app.use('/api/facebook', apiLimiter, facebookRoutes);
 app.use('/api/knowledge', apiLimiter, knowledgeRoutes);

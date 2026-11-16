@@ -164,14 +164,17 @@ router.get('/conversations', authMiddleware, async (req, res) => {
       `SELECT c.*, lm.content AS last_message, lm.timestamp AS last_message_at, lm.role AS last_message_role,
         (lm.role = 'user' AND (c.last_read_at IS NULL OR lm.timestamp > c.last_read_at)) AS unread,
         (SELECT COUNT(*) FROM messages WHERE conversation_id = c.id) as message_count,
-        v.name AS assigned_name
+        v.name AS assigned_name,
+        COALESCE(wl.name, (SELECT main_line_name FROM clients WHERE id = c.client_id), 'Principal') AS line_name,
+        COALESCE(wl.kind, 'ventas') AS line_kind
        FROM conversations c
+       LEFT JOIN wa_lines wl ON wl.id = c.line_id
        LEFT JOIN LATERAL (
          SELECT content, timestamp, role FROM messages WHERE conversation_id = c.id ORDER BY timestamp DESC LIMIT 1
        ) lm ON true
        LEFT JOIN clients v ON v.id = c.assigned_to
        WHERE c.client_id = $1 AND c.source IS DISTINCT FROM 'qr'
-         AND ($2::uuid IS NULL OR c.assigned_to = $2::uuid)
+         AND ($2::uuid IS NULL OR c.assigned_to = $2::uuid OR (c.assigned_to IS NULL AND COALESCE(c.line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $2::uuid))))
        ORDER BY COALESCE(lm.timestamp, c.updated_at) DESC
        LIMIT 1000`,
       [req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
@@ -185,7 +188,7 @@ router.get('/conversations', authMiddleware, async (req, res) => {
 router.get('/conversations/:id/messages', authMiddleware, async (req, res) => {
   try {
     const conv = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (conv.rows.length === 0) {
@@ -296,7 +299,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
 
   try {
     const convResult = await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]
     );
     if (!convResult.rows.length) {
@@ -307,12 +310,12 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     if (conversation.channel === 'whatsapp') {
       const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id, whatsapp_mode FROM clients WHERE id = $1', [req.client.id]);
       const cr = clientResult.rows[0] || {};
-      if (cr.whatsapp_mode === 'qr') {
+      if (cr.whatsapp_mode === 'qr' || conversation.line_id) {
         const QR_SERVICE_URL = process.env.QR_SERVICE_URL;
         const SERVICE_SECRET = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
         if (!QR_SERVICE_URL) return res.status(400).json({ error: 'Servicio QR no disponible' });
         const axios = require('axios');
-        await axios.post(`${QR_SERVICE_URL}/session/${req.client.id}/send`,
+        await axios.post(`${QR_SERVICE_URL}/session/${conversation.line_id || req.client.id}/send`,
           { to: conversation.customer_phone, message, secret: SERVICE_SECRET, prioridad: 0 },
           { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } }
         );
@@ -910,7 +913,7 @@ router.put('/conversations/:id/recontact', authMiddleware, async (req, res) => {
 router.get('/messages/:id/media', authMiddleware, async (req, res) => {
   try {
     const m = (await pool.query(
-      `SELECT m.id, m.wa_id, m.resource_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
+      `SELECT m.id, m.wa_id, m.resource_id, c.line_id FROM messages m JOIN conversations c ON c.id = m.conversation_id
        WHERE m.id = $1 AND c.client_id = $2`, [req.params.id, req.client.id])).rows[0];
     if (!m) return res.status(404).json({ error: 'No encontrado' });
     const enviar = (mimetype, data) => {
@@ -933,7 +936,7 @@ router.get('/messages/:id/media', authMiddleware, async (req, res) => {
     const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
     let r;
     try {
-      r = await axios.get(`${process.env.QR_SERVICE_URL}/session/${req.client.id}/media`, {
+      r = await axios.get(`${process.env.QR_SERVICE_URL}/session/${m.line_id || req.client.id}/media`, {
         params: { waId: m.wa_id }, headers: { 'x-service-secret': secret }, timeout: 60000, maxContentLength: 60 * 1024 * 1024
       });
     } catch (e) {
@@ -1027,17 +1030,17 @@ router.post('/conversations/:id/send-media', authMiddleware, multerMedia.single(
   if (!req.file) return res.status(400).json({ error: 'Falta el archivo' });
   try {
     const conv = (await pool.query(
-      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      'SELECT * FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
     if (!conv) return res.status(404).json({ error: 'Conversación no encontrada' });
     const cli = (await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [req.client.id])).rows[0];
-    if (cli?.whatsapp_mode !== 'qr' || !process.env.QR_SERVICE_URL) return res.status(400).json({ error: 'Para mandar archivos desde acá, WhatsApp tiene que estar conectado por QR' });
+    if ((cli?.whatsapp_mode !== 'qr' && !conv.line_id) || !process.env.QR_SERVICE_URL) return res.status(400).json({ error: 'Para mandar archivos desde acá, WhatsApp tiene que estar conectado por QR' });
     const mime = (req.file.mimetype || 'application/octet-stream').split(';')[0];
     const esVoz = req.body.voice === '1';
     const tipo = esVoz || mime.startsWith('audio/') ? 'audio' : mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document';
     const axios = require('axios');
     const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
-    await axios.post(`${process.env.QR_SERVICE_URL}/session/${req.client.id}/send-media`, {
+    await axios.post(`${process.env.QR_SERVICE_URL}/session/${conv.line_id || req.client.id}/send-media`, {
       to: conv.customer_phone, mimetype: mime, data: req.file.buffer.toString('base64'),
       filename: req.file.originalname, caption: req.body.caption || '', asVoice: esVoz, prioridad: 0, secret
     }, { headers: { 'x-service-secret': secret }, timeout: 300000, maxBodyLength: Infinity });
@@ -1060,7 +1063,7 @@ router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
   try {
     const r = await pool.query(
       `UPDATE conversations SET follow_up_at = $4, follow_up_note = $5
-       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid) RETURNING id, follow_up_at, follow_up_note`,
+       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid)))) RETURNING id, follow_up_at, follow_up_note`,
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null, at || null, note ? String(note).slice(0, 500) : null]
     );
     if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
@@ -1074,7 +1077,7 @@ router.put('/conversations/:id/follow-up', authMiddleware, async (req, res) => {
 router.post('/conversations/:id/heat', authMiddleware, async (req, res) => {
   try {
     const c = (await pool.query(
-      'SELECT id FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid)',
+      'SELECT id FROM conversations WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))',
       [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
     if (!c) return res.status(404).json({ error: 'No encontrada' });
     await require('../services/heat').clasificarTemperatura(c.id);
@@ -1115,6 +1118,23 @@ router.put('/reception', authMiddleware, async (req, res) => {
       [req.client.id, !!enabled, String(question || '').trim().slice(0, 1000), JSON.stringify(limpios)]
     );
     res.json({ enabled: !!enabled, question, segments: limpios });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Soporte: estado del caso (abierto / esperando al cliente / resuelto)
+router.put('/conversations/:id/case', authMiddleware, async (req, res) => {
+  const st = ['abierto', 'esperando', 'resuelto'].includes(req.body.status) ? req.body.status : null;
+  try {
+    const r = await pool.query(
+      `UPDATE conversations SET case_status = $4
+       WHERE id = $1 AND client_id = $2 AND ($3::uuid IS NULL OR assigned_to = $3::uuid OR (assigned_to IS NULL AND COALESCE(line_id::text, $q$principal$q$) = ANY((SELECT line_ids FROM clients WHERE id = $3::uuid))))
+       RETURNING id, case_status`,
+      [req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null, st]
+    );
+    if (!r.rows.length) return res.status(404).json({ error: 'No encontrada' });
+    res.json(r.rows[0]);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

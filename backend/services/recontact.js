@@ -31,11 +31,12 @@ function horaArgentina() {
   return Number(new Date().toLocaleString('en-US', { timeZone: 'America/Argentina/Buenos_Aires', hour: 'numeric', hour12: false })) % 24;
 }
 
-function canalDe(client, to, ultimoDelCliente) {
-  if (client.whatsapp_mode === 'qr') {
+function canalDe(client, to, ultimoDelCliente, lineId = null) {
+  if (client.whatsapp_mode === 'qr' || lineId) {
+    const ses = lineId || client.id;
     return {
-      sendText: (t) => qrPost(client.id, 'send', { to, message: t }),
-      sendMedia: (rec, caption) => qrPost(client.id, 'send-media', {
+      sendText: (t) => qrPost(ses, 'send', { to, message: t }),
+      sendMedia: (rec, caption) => qrPost(ses, 'send-media', {
         to, mimetype: rec.mimetype, data: rec.data.toString('base64'), filename: rec.filename,
         caption: caption || '', asVoice: rec.kind === 'audio'
       })
@@ -123,7 +124,7 @@ async function procesarCliente(cfg) {
   if (!cand.length) return;
   const conv = cand[0];
 
-  const canal = canalDe(client, conv.customer_phone, conv.last_user_at);
+  const canal = canalDe(client, conv.customer_phone, conv.last_user_at, conv.line_id);
   if (!canal) {
     await pool.query('UPDATE conversations SET recontact_count = 99 WHERE id = $1', [conv.id]);
     return;

@@ -18,6 +18,8 @@ const { extractActions } = require('./whatsappActions');
 async function processIncomingMessage(clientId, customerPhoneRaw, customerName, rawMessage, sendFn, extras = {}) {
   const customerPhone = normalizePhone(customerPhoneRaw);
   const meta = extras.messageMeta || {};
+  // Línea por la que entró (null = la principal). Las líneas extra pueden tener su propio bot.
+  const L = require('./lines').lineaSql(extras.lineId || null);
 
   const clientResult = await pool.query('SELECT * FROM clients WHERE id = $1 AND active = true', [clientId]);
   if (!clientResult.rows.length) return;
@@ -26,16 +28,20 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   const configResult = await pool.query('SELECT * FROM bot_configs WHERE client_id = $1 AND active = true', [clientId]);
   if (!configResult.rows.length) return;
   const config = configResult.rows[0];
+  if (extras.line) {
+    if (extras.line.bot_prompt) config.system_prompt = extras.line.bot_prompt;
+    if (extras.line.kind === 'soporte') { config.reception_enabled = false; config.sales_steps_enabled = false; }
+  }
 
   if (!isWithinBusinessHours(config)) {
     let convResult = await pool.query(
-      `SELECT * FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT * FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
       [clientId, customerPhone]
     );
     let conv = convResult.rows[0];
     if (!conv) {
       const newConv = await pool.query(
-        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel) VALUES ($1,$2,$3,'whatsapp') RETURNING *`,
+        `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel) VALUES (${L}, $1,$2,$3,'whatsapp') RETURNING *`,
         [clientId, customerPhone, customerName]
       );
       conv = newConv.rows[0];
@@ -50,7 +56,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
 
   if (customerMessage.toLowerCase().includes(config.human_handoff_keyword.toLowerCase())) {
     const convForAlert = await pool.query(
-      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
       [clientId, customerPhone]
     );
     await pool.query(`UPDATE conversations SET status = 'human' WHERE client_id = $1 AND customer_phone = $2`, [clientId, customerPhone]);
@@ -60,7 +66,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   }
 
   let convResult = await pool.query(
-    `SELECT * FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+    `SELECT * FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
     [clientId, customerPhone]
   );
 
@@ -75,7 +81,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     const isReturningCustomer = parseInt(pastHistory.rows[0].count) > 0;
 
     const newConv = await pool.query(
-      `INSERT INTO conversations (client_id, customer_phone, customer_name, channel) VALUES ($1,$2,$3,'whatsapp') RETURNING *`,
+      `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel) VALUES (${L}, $1,$2,$3,'whatsapp') RETURNING *`,
       [clientId, customerPhone, customerName]
     );
     conversation = newConv.rows[0];

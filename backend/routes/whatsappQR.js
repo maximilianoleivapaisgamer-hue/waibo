@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { resolverSesion, lineaSql } = require('../services/lines');
 const pool = require('../db');
 const authMiddleware = require('../middleware/auth');
 const axios = require('axios');
@@ -111,17 +112,22 @@ function checkServiceSecret(req, res, next) {
 // Mensaje que el dueño mandó desde el celular: se guarda en el momento (origin 'phone').
 // El bot y el seguimiento lo usan para saber que esa charla la está llevando una persona.
 router.post('/outgoing', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, to, text, waId, mediaType } = req.body;
   if (!clientId || !to || !text) return res.status(400).json({ error: 'faltan datos' });
   try {
     let conv = await pool.query(
-      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+      `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
       [clientId, to]
     );
     let convId = conv.rows[0]?.id;
     if (!convId) {
       const nc = await pool.query(
-        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$2,'whatsapp','bot') RETURNING id`,
+        `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel, status) VALUES (${L}, $1,$2,$2,'whatsapp','bot') RETURNING id`,
         [clientId, to]
       );
       convId = nc.rows[0].id;
@@ -143,6 +149,11 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
 // servicio QR. Se deja una alerta en el panel por cada número demorado (sin aviso por
 // WhatsApp, que saldría por la misma línea trabada).
 router.post('/line-limit', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, to, limite, sale, manual, enviados } = req.body;
   try {
     // WhatsApp restringe por el ritmo de la línea, sin importar el canal: se suma lo del celular
@@ -173,6 +184,11 @@ router.post('/line-limit', checkServiceSecret, async (req, res) => {
 
 // El servicio QR sube la foto / audio / video de un mensaje apenas llega
 router.post('/media', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, waId, mimetype, data, filename } = req.body;
   if (!clientId || !waId || !data) return res.status(400).json({ error: 'faltan datos' });
   try {
@@ -189,7 +205,21 @@ router.post('/media', checkServiceSecret, async (req, res) => {
 
 // El servicio QR avisa que WhatsApp cerró la sesión
 router.post('/disconnected', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   try {
+    if (lineId) {
+      const prev = (await pool.query('SELECT status, name FROM wa_lines WHERE id = $1', [lineId])).rows[0];
+      await pool.query(`UPDATE wa_lines SET status = 'disconnected' WHERE id = $1`, [lineId]);
+      if (prev?.status === 'connected') {
+        await pool.query(`INSERT INTO alerts (client_id, type, message) VALUES ($1, 'whatsapp_disconnected', $2)`,
+          [req.body.clientId, `La línea "${prev.name}" se desconectó. Entrá a Líneas y escaneá el QR de nuevo.`]);
+      }
+      return res.json({ ok: true });
+    }
     await require('../services/qrHealth').marcarDesconectado(req.body.clientId, req.body.reason || 'LOGOUT');
     res.json({ ok: true });
   } catch (err) {
@@ -198,8 +228,18 @@ router.post('/disconnected', checkServiceSecret, async (req, res) => {
 });
 
 router.post('/connected', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, phone } = req.body;
   try {
+    // Línea extra: su estado vive en wa_lines (la principal sigue en whatsapp_qr_sessions)
+    if (lineId) {
+      await pool.query(`UPDATE wa_lines SET status = 'connected', phone_number = $2, connected_at = NOW() WHERE id = $1`, [lineId, phone]);
+      return res.json({ ok: true });
+    }
     await pool.query(
       `INSERT INTO whatsapp_qr_sessions (client_id, status, phone_number, connected_at)
        VALUES ($1, 'connected', $2, NOW())
@@ -216,6 +256,11 @@ router.post('/connected', checkServiceSecret, async (req, res) => {
 // El microservicio envía historial de mensajes al conectar
 // Etiquetas de WhatsApp Business → tags de la conversación
 router.post('/labels', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, items } = req.body;
   res.json({ ok: true });
   if (!Array.isArray(items) || !items.length) return;
@@ -225,7 +270,7 @@ router.post('/labels', checkServiceSecret, async (req, res) => {
       await pool.query(
         `UPDATE conversations
          SET tags = array_append(COALESCE(tags, '{}'), $3::text)
-         WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = $2
+         WHERE client_id = $1 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND customer_phone = $2
            AND NOT (COALESCE(tags, '{}') @> ARRAY[$3::text])`,
         [clientId, phone, label]
       );
@@ -240,6 +285,11 @@ router.post('/labels', checkServiceSecret, async (req, res) => {
 // Son conversaciones normales del canal: se ven en el panel. created_at toma la fecha
 // del primer mensaje para no inflar "conversaciones de hoy".
 router.post('/history-chats', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, chats } = req.body;
   if (!clientId || !Array.isArray(chats)) return res.status(400).json({ error: 'faltan datos' });
   let convs = 0, guardados = 0;
@@ -251,14 +301,14 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
       const primero = msgs.reduce((a, m) => (m.timestamp < a ? m.timestamp : a), msgs[0].timestamp);
 
       let conv = await pool.query(
-        `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+        `SELECT id, customer_name FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
         [clientId, phone]
       );
       let convId = conv.rows[0]?.id;
       if (!convId) {
         const nc = await pool.query(
-          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, created_at)
-           VALUES ($1,$2,$3,'whatsapp','bot',$4::timestamp) RETURNING id`,
+          `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel, status, created_at)
+           VALUES (${L}, $1,$2,$3,'whatsapp','bot',$4::timestamp) RETURNING id`,
           [clientId, phone, c.name || phone, primero]
         );
         convId = nc.rows[0].id;
@@ -310,6 +360,11 @@ router.post('/history-chats', checkServiceSecret, async (req, res) => {
 });
 
 router.post('/history', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, messages, archived_phones } = req.body;
   res.json({ ok: true }); // Responder rápido
 
@@ -317,7 +372,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
   if (Array.isArray(archived_phones) && archived_phones.length) {
     pool.query(
       `UPDATE conversations SET archived = true
-       WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = ANY($2::text[])`,
+       WHERE client_id = $1 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND customer_phone = ANY($2::text[])`,
       [clientId, archived_phones]
     ).catch(err => console.error('[QR history] error marcando archivados:', err.message));
   }
@@ -337,7 +392,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
       try {
       // Buscar o crear conversación
       let convResult = await pool.query(
-        `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+        `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
         [clientId, phone]
       );
       let convId;
@@ -345,7 +400,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
         convId = convResult.rows[0].id;
       } else {
         const newConv = await pool.query(
-          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, source) VALUES ($1,$2,$3,'whatsapp','bot','qr') RETURNING id`,
+          `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel, status, source) VALUES (${L}, $1,$2,$3,'whatsapp','bot','qr') RETURNING id`,
           [clientId, phone, phone]
         );
         convId = newConv.rows[0].id;
@@ -379,7 +434,7 @@ router.post('/history', checkServiceSecret, async (req, res) => {
     if (Array.isArray(archived_phones) && archived_phones.length) {
       await pool.query(
         `UPDATE conversations SET archived = true
-         WHERE client_id = $1 AND channel = 'whatsapp' AND customer_phone = ANY($2::text[])`,
+         WHERE client_id = $1 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND customer_phone = ANY($2::text[])`,
         [clientId, archived_phones]
       ).catch(err => console.error('[QR history] error marcando archivados:', err.message));
     }
@@ -394,11 +449,16 @@ router.post('/history', checkServiceSecret, async (req, res) => {
 // Limpieza de soporte: borra conversaciones de WhatsApp importadas sin marca
 // (anteriores a la columna source). Protegido por el secret del servicio.
 router.post('/purge-legacy', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId } = req.body;
   if (!clientId) return res.status(400).json({ error: 'clientId requerido' });
   try {
     const del = await pool.query(
-      `DELETE FROM conversations WHERE client_id = $1 AND channel = 'whatsapp'`,
+      `DELETE FROM conversations WHERE client_id = $1 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}`,
       [clientId]
     );
     console.log(`[QR purge-legacy] clientId=${clientId} — ${del.rowCount} conversaciones eliminadas`);
@@ -410,6 +470,11 @@ router.post('/purge-legacy', checkServiceSecret, async (req, res) => {
 
 // Contactos: reemplazar JIDs @lid por el número real y guardar nombres
 router.post('/contacts', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, items } = req.body;
   res.json({ ok: true });
   if (!Array.isArray(items) || !items.length) return;
@@ -419,12 +484,12 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
       try {
         if (lid && phone) {
           const lidConv = await pool.query(
-            `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' LIMIT 1`,
+            `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} LIMIT 1`,
             [clientId, lid]
           );
           if (lidConv.rows.length) {
             const phoneConv = await pool.query(
-              `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' LIMIT 1`,
+              `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} LIMIT 1`,
               [clientId, phone]
             );
             if (phoneConv.rows.length) {
@@ -440,7 +505,7 @@ router.post('/contacts', checkServiceSecret, async (req, res) => {
         if (name && phone) {
           await pool.query(
             `UPDATE conversations SET customer_name = $1
-             WHERE client_id = $2 AND customer_phone = $3 AND channel = 'whatsapp'
+             WHERE client_id = $2 AND customer_phone = $3 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}
                AND (customer_name IS NULL OR customer_name = customer_phone OR customer_name IN ('Cliente', 'Usuario'))`,
             [name, clientId, phone]
           );
@@ -484,6 +549,11 @@ router.get('/labels', authMiddleware, async (req, res) => {
 
 // Mensaje entrante por QR → la IA responde y ejecuta lo que pida (recursos, etiquetas, archivar)
 router.post('/message', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  req.body.clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
   const { clientId, from, name, labels, audio, waId, mediaType } = req.body;
   let { text } = req.body;
   if (!clientId || !from || !text) return res.status(400).json({ error: 'faltan datos' });
@@ -497,30 +567,33 @@ router.post('/message', checkServiceSecret, async (req, res) => {
     }
 
     const cr = await pool.query('SELECT whatsapp_mode FROM clients WHERE id = $1', [clientId]);
-    if (!cr.rows.length || cr.rows[0].whatsapp_mode !== 'qr') {
+    if (!lineId && (!cr.rows.length || cr.rows[0].whatsapp_mode !== 'qr')) {
       return res.json({ ok: true, skipped: 'el cliente no tiene el QR como canal activo' });
     }
 
     const cfgRes = await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply, sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [clientId]);
     const cfg = cfgRes.rows[0] || {};
+    // Línea de soporte: sin pasos de venta (el bot de soporte usa su propio prompt)
+    if (_lin.line && _lin.line.kind === 'soporte') cfg.sales_steps_enabled = false;
 
     // Si el cliente vuelve a escribir, el chat deja de estar archivado en Waibo
     // (WhatsApp también lo desarchiva solo al recibir un mensaje).
     await pool.query(
-      `UPDATE conversations SET archived = false WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND archived = true`,
+      `UPDATE conversations SET archived = false WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} AND archived = true`,
       [clientId, from]
     );
 
     // Bot apagado: solo guardamos el mensaje para verlo en el panel, nadie responde.
-    if (!cfg.qr_auto_reply) {
+    const botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    if (!botPrendido) {
       let conv = await pool.query(
-        `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`,
+        `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
         [clientId, from]
       );
       let convId = conv.rows[0]?.id;
       if (!convId) {
         const nc = await pool.query(
-          `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status) VALUES ($1,$2,$3,'whatsapp','bot') RETURNING id`,
+          `INSERT INTO conversations (line_id, client_id, customer_phone, customer_name, channel, status) VALUES (${L}, $1,$2,$3,'whatsapp','bot') RETURNING id`,
           [clientId, from, name || from]
         );
         convId = nc.rows[0].id;
@@ -538,32 +611,32 @@ router.post('/message', checkServiceSecret, async (req, res) => {
     if (Array.isArray(labels) && labels.length) {
       await pool.query(
         `UPDATE conversations SET tags = ARRAY(SELECT DISTINCT unnest(COALESCE(tags, '{}') || $3::text[]))
-         WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp'`,
+         WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}`,
         [clientId, from, labels]
       );
     }
 
-    const sendFn = (phone, message) => qrPost(clientId, 'send', { to: phone, message });
+    const sendFn = (phone, message) => qrPost(sesion, 'send', { to: phone, message });
 
     const { buildSalesExtras } = require('../services/salesActions');
     const extras = buildSalesExtras({
       clientId, to: from, cfg,
       channel: {
-        sendText: (t) => qrPost(clientId, 'send', { to: from, message: t }),
-        sendMedia: (rec, caption) => qrPost(clientId, 'send-media', {
+        sendText: (t) => qrPost(sesion, 'send', { to: from, message: t }),
+        sendMedia: (rec, caption) => qrPost(sesion, 'send-media', {
           to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'),
           filename: rec.filename, caption: caption || '', asVoice: rec.kind === 'audio'
         }),
-        applyLabel: (name) => qrPost(clientId, 'label', { to: from, label: name }),
-        archive: () => qrPost(clientId, 'archive', { to: from }),
-        labels: () => labelsDeLinea(clientId)
+        applyLabel: (name) => qrPost(sesion, 'label', { to: from, label: name }),
+        archive: () => qrPost(sesion, 'archive', { to: from }),
+        labels: () => labelsDeLinea(sesion)
       }
     });
 
     // Se contesta al servicio QR enseguida: la respuesta puede tardar minutos por la demora configurada.
     res.json({ ok: true });
-    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType } });
-    const cv = await pool.query(`SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' ORDER BY created_at DESC LIMIT 1`, [clientId, from]);
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType }, lineId, line: _lin.line });
+    const cv = await pool.query(`SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`, [clientId, from]);
     if (cv.rows[0]) require('../services/heat').clasificarTemperatura(cv.rows[0].id).catch(() => {});
   } catch (err) {
     console.error('Error procesando mensaje QR:', err.stack || err.message);
