@@ -108,6 +108,29 @@ function Audio({ src }) {
   );
 }
 
+// Foto: al tocarla se agranda encima del chat, como en WhatsApp (Esc, ✕ o clic afuera la cierra)
+function Foto({ url, sticker }) {
+  const [grande, setGrande] = useState(false);
+  useEffect(() => {
+    if (!grande) return;
+    const k = (e) => { if (e.key === 'Escape') setGrande(false); };
+    window.addEventListener('keydown', k);
+    return () => window.removeEventListener('keydown', k);
+  }, [grande]);
+  return (
+    <>
+      <img src={url} alt="" className={sticker ? 'wa-sticker' : 'wa-img'} style={{ cursor: 'zoom-in' }} onClick={() => setGrande(true)} />
+      {grande && (
+        <div onClick={() => setGrande(false)} style={{ position: 'fixed', inset: 0, background: 'rgba(11,20,26,.92)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <button onClick={() => setGrande(false)} title="Cerrar" style={{ position: 'absolute', top: 16, right: 20, background: 'none', border: 'none', color: '#fff', fontSize: 30, cursor: 'pointer' }}>✕</button>
+          <a href={url} download="imagen" onClick={e => e.stopPropagation()} title="Descargar" style={{ position: 'absolute', top: 20, right: 70, color: '#fff', fontSize: 22, textDecoration: 'none' }}>⬇</a>
+          <img src={url} alt="" onClick={e => e.stopPropagation()} style={{ maxWidth: '92vw', maxHeight: '90vh', objectFit: 'contain', boxShadow: '0 4px 30px rgba(0,0,0,.5)' }} />
+        </div>
+      )}
+    </>
+  );
+}
+
 function Media({ m }) {
   const [url, setUrl] = useState(null);
   const [err, setErr] = useState('');
@@ -129,7 +152,7 @@ function Media({ m }) {
   if (err) return <div className="wa-media-err">⚠️ {err}</div>;
   if (tipo === 'document') return <button className="wa-doc" onClick={abrirArchivo}>📄 Abrir archivo</button>;
   if (!url) return <div className="wa-media-load">Cargando…</div>;
-  if (tipo === 'image' || tipo === 'sticker') return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" className={tipo === 'sticker' ? 'wa-sticker' : 'wa-img'} /></a>;
+  if (tipo === 'image' || tipo === 'sticker') return <Foto url={url} sticker={tipo === 'sticker'} />;
   if (tipo === 'audio') return <Audio src={url} />;
   if (tipo === 'video') return <video controls src={url} className="wa-img" />;
   return null;
