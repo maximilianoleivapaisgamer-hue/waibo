@@ -499,6 +499,97 @@ export default function Inbox() {
     conDias.push(m);
   }
 
+  // La lista de chats y los mensajes se arman de nuevo solo cuando cambian ellos,
+  // no con cada letra que se escribe en la caja (eso hacía lento el tipeo)
+  const listaChats = useMemo(() => (
+    visibles.map(c => {
+            const vencido = c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now();
+            return (
+              <div key={c.id} className={`wa-item ${abierto === c.id ? 'activo' : ''}`} onClick={() => { setAbierto(c.id); setVerDetalle(false); }}>
+                <Avatar conv={c} />
+                <div className="wa-item-cuerpo">
+                  <div className="wa-item-fila">
+                    <span className={`wa-item-nombre ${c.unread ? 'fuerte' : ''}`}>{c.customer_name || c.customer_phone}</span>
+                    <span className={`wa-item-hora ${c.unread ? 'verde' : ''}`}>{hora(c.last_message_at)}</span>
+                  </div>
+                  <div className="wa-item-fila">
+                    <span className="wa-item-ultimo">
+                      {c.last_message_role === 'assistant' ? '✓ ' : ''}{String(c.last_message || '').replace(/\n/g, ' ').slice(0, 70)}
+                    </span>
+                    {c.unread && <span className="wa-burbuja-nueva">●</span>}
+                  </div>
+                  {(lineas.length > 1 || c.line_kind === 'soporte' || c.tags?.length > 0 || c.follow_up_at || c.heat || c.segment || (!soyVendedor && c.assigned_name)) && (
+                    <div className="wa-item-tags">
+                      {lineas.length > 1 && <span className="wa-tag gris">{c.line_kind === 'soporte' ? '🛟' : '💼'} {c.line_name}</span>}
+                      {c.line_kind === 'soporte' && CASO[c.case_status || 'abierto'] && <span className={`wa-tag ${CASO[c.case_status || 'abierto'].cls}`}>{CASO[c.case_status || 'abierto'].txt}</span>}
+                      {c.segment && <span className="wa-tag azul">📍 {c.segment}</span>}
+                      {c.heat && CALOR[c.heat] && <span className={`wa-tag ${CALOR[c.heat].cls}`} title={c.heat_reason || ''}>{CALOR[c.heat].txt}</span>}
+                      {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
+                      {!soyVendedor && c.assigned_name && <span className="wa-tag violeta">👤 {c.assigned_name}</span>}
+                      {(c.tags || []).slice(0, 3).map(t => <span key={t} className="wa-tag">{t}</span>)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            );
+          })
+  ), [visibles, abierto, lineas, soyVendedor]);
+  const listaMensajes = useMemo(() => (
+    conDias.map(m => m.dia ? (
+                <div key={m.key} className="wa-dia"><span>{m.dia}</span></div>
+              ) : (
+                <div key={m.id} className={`wa-fila ${m.role === 'user' ? 'izq' : 'der'}`}>
+                  <div className={`wa-globo ${m.role === 'user' ? 'entrante' : 'saliente'}`}>
+                    {m.wa_id && !m.deleted && (
+                      <button className="wa-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)} title="Opciones">⌄</button>
+                    )}
+                    {menuMsg === m.id && (
+                      <div className="wa-menu">
+                        <button onClick={() => { setMenuMsg(null); setRespondiendo(m); }}>↩️ Responder</button>
+                        {m.role !== 'user' && !m.media_type && <button onClick={() => { setMenuMsg(null); setEditando({ id: m.id, texto: m.content }); }}>✏️ Editar</button>}
+                        {m.role !== 'user' && <button onClick={() => borrarMensaje(m)}>🗑️ Borrar para todos</button>}
+                      </div>
+                    )}
+                    {quienMando(m) && <div className="wa-quien">{quienMando(m)}</div>}
+                    {m.reply_to && (() => {
+                      const q = mensajes.find(x => x.wa_id && x.wa_id.endsWith('_' + m.reply_to));
+                      return (
+                        <div className={`wa-cita ${q && q.role !== 'user' ? 'mia' : ''}`}>
+                          <b>{q ? (q.role === 'user' ? (chat.customer_name || chat.customer_phone) : 'Vos') : 'Mensaje citado'}</b>
+                          <span>{q ? (textoSinRelleno(q) || (q.media_type ? '📎 Archivo' : '')).slice(0, 160) : 'No está cargado en la Bandeja'}</span>
+                        </div>
+                      );
+                    })()}
+                    {m.deleted ? (
+                      <div className="wa-texto wa-borrado">🚫 Eliminaste este mensaje</div>
+                    ) : editando?.id === m.id ? (
+                      <div className="wa-editar">
+                        <textarea rows={2} value={editando.texto} onChange={e => setEditando({ ...editando, texto: e.target.value })} />
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <button className="wa-boton-claro" onClick={() => setEditando(null)}>Cancelar</button>
+                          <button className="wa-boton-verde" onClick={guardarEdicion}>Guardar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {m.media_type && <Media m={m} />}
+                        {textoSinRelleno(m) && <div className="wa-texto" dangerouslySetInnerHTML={{ __html: formato(textoSinRelleno(m)) }} />}
+                      </>
+                    )}
+                    <div className="wa-hora">
+                      {m.edited && !m.deleted ? 'Editado · ' : ''}
+                      {new Date(m.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                      {m.role !== 'user' && m.ack > 0 && !m.deleted && (
+                        <span className={`wa-tilde ${m.ack >= 3 ? 'leido' : ''}`} title={m.ack >= 3 ? 'Leído' : m.ack === 2 ? 'Entregado' : 'Enviado'}>
+                          {m.ack >= 2 ? ' ✓✓' : ' ✓'}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ))
+  ), [mensajes, menuMsg, editando, chat, sellers]);
+
   const seguimientoLocal = chat?.follow_up_at ? new Date(new Date(chat.follow_up_at).getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 16) : '';
 
   return (
@@ -549,37 +640,7 @@ export default function Inbox() {
         )}
         <div className="wa-items">
           {!visibles.length && <div className="wa-vacio">No hay chats acá.</div>}
-          {visibles.map(c => {
-            const vencido = c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now();
-            return (
-              <div key={c.id} className={`wa-item ${abierto === c.id ? 'activo' : ''}`} onClick={() => { setAbierto(c.id); setVerDetalle(false); }}>
-                <Avatar conv={c} />
-                <div className="wa-item-cuerpo">
-                  <div className="wa-item-fila">
-                    <span className={`wa-item-nombre ${c.unread ? 'fuerte' : ''}`}>{c.customer_name || c.customer_phone}</span>
-                    <span className={`wa-item-hora ${c.unread ? 'verde' : ''}`}>{hora(c.last_message_at)}</span>
-                  </div>
-                  <div className="wa-item-fila">
-                    <span className="wa-item-ultimo">
-                      {c.last_message_role === 'assistant' ? '✓ ' : ''}{String(c.last_message || '').replace(/\n/g, ' ').slice(0, 70)}
-                    </span>
-                    {c.unread && <span className="wa-burbuja-nueva">●</span>}
-                  </div>
-                  {(lineas.length > 1 || c.line_kind === 'soporte' || c.tags?.length > 0 || c.follow_up_at || c.heat || c.segment || (!soyVendedor && c.assigned_name)) && (
-                    <div className="wa-item-tags">
-                      {lineas.length > 1 && <span className="wa-tag gris">{c.line_kind === 'soporte' ? '🛟' : '💼'} {c.line_name}</span>}
-                      {c.line_kind === 'soporte' && CASO[c.case_status || 'abierto'] && <span className={`wa-tag ${CASO[c.case_status || 'abierto'].cls}`}>{CASO[c.case_status || 'abierto'].txt}</span>}
-                      {c.segment && <span className="wa-tag azul">📍 {c.segment}</span>}
-                      {c.heat && CALOR[c.heat] && <span className={`wa-tag ${CALOR[c.heat].cls}`} title={c.heat_reason || ''}>{CALOR[c.heat].txt}</span>}
-                      {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
-                      {!soyVendedor && c.assigned_name && <span className="wa-tag violeta">👤 {c.assigned_name}</span>}
-                      {(c.tags || []).slice(0, 3).map(t => <span key={t} className="wa-tag">{t}</span>)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            );
-          })}
+          {listaChats}
         </div>
       </aside>
 
@@ -695,59 +756,7 @@ export default function Inbox() {
             )}
 
             <div className="wa-mensajes">
-              {conDias.map(m => m.dia ? (
-                <div key={m.key} className="wa-dia"><span>{m.dia}</span></div>
-              ) : (
-                <div key={m.id} className={`wa-fila ${m.role === 'user' ? 'izq' : 'der'}`}>
-                  <div className={`wa-globo ${m.role === 'user' ? 'entrante' : 'saliente'}`}>
-                    {m.wa_id && !m.deleted && (
-                      <button className="wa-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)} title="Opciones">⌄</button>
-                    )}
-                    {menuMsg === m.id && (
-                      <div className="wa-menu">
-                        <button onClick={() => { setMenuMsg(null); setRespondiendo(m); }}>↩️ Responder</button>
-                        {m.role !== 'user' && !m.media_type && <button onClick={() => { setMenuMsg(null); setEditando({ id: m.id, texto: m.content }); }}>✏️ Editar</button>}
-                        {m.role !== 'user' && <button onClick={() => borrarMensaje(m)}>🗑️ Borrar para todos</button>}
-                      </div>
-                    )}
-                    {quienMando(m) && <div className="wa-quien">{quienMando(m)}</div>}
-                    {m.reply_to && (() => {
-                      const q = mensajes.find(x => x.wa_id && x.wa_id.endsWith('_' + m.reply_to));
-                      return (
-                        <div className={`wa-cita ${q && q.role !== 'user' ? 'mia' : ''}`}>
-                          <b>{q ? (q.role === 'user' ? (chat.customer_name || chat.customer_phone) : 'Vos') : 'Mensaje citado'}</b>
-                          <span>{q ? (textoSinRelleno(q) || (q.media_type ? '📎 Archivo' : '')).slice(0, 160) : 'No está cargado en la Bandeja'}</span>
-                        </div>
-                      );
-                    })()}
-                    {m.deleted ? (
-                      <div className="wa-texto wa-borrado">🚫 Eliminaste este mensaje</div>
-                    ) : editando?.id === m.id ? (
-                      <div className="wa-editar">
-                        <textarea rows={2} value={editando.texto} onChange={e => setEditando({ ...editando, texto: e.target.value })} />
-                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                          <button className="wa-boton-claro" onClick={() => setEditando(null)}>Cancelar</button>
-                          <button className="wa-boton-verde" onClick={guardarEdicion}>Guardar</button>
-                        </div>
-                      </div>
-                    ) : (
-                      <>
-                        {m.media_type && <Media m={m} />}
-                        {textoSinRelleno(m) && <div className="wa-texto" dangerouslySetInnerHTML={{ __html: formato(textoSinRelleno(m)) }} />}
-                      </>
-                    )}
-                    <div className="wa-hora">
-                      {m.edited && !m.deleted ? 'Editado · ' : ''}
-                      {new Date(m.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
-                      {m.role !== 'user' && m.ack > 0 && !m.deleted && (
-                        <span className={`wa-tilde ${m.ack >= 3 ? 'leido' : ''}`} title={m.ack >= 3 ? 'Leído' : m.ack === 2 ? 'Entregado' : 'Enviado'}>
-                          {m.ack >= 2 ? ' ✓✓' : ' ✓'}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              ))}
+              {listaMensajes}
               <div ref={finRef} />
             </div>
 
