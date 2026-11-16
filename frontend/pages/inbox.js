@@ -200,6 +200,23 @@ export default function Inbox() {
       .catch(() => {});
   }, []);
 
+  // Subir un archivo nuevo desde la Bandeja para usarlo en una respuesta rápida
+  const [subiendoArchivo, setSubiendoArchivo] = useState(false);
+  const subirArchivoRapida = async (f) => {
+    const nombre = (prompt('Nombre del archivo (así lo vas a ver en la lista):', f.name.replace(/\.[^.]+$/, '')) || '').trim();
+    if (!nombre) return;
+    setSubiendoArchivo(true);
+    try {
+      const fd = new FormData();
+      fd.append('file', f);
+      fd.append('name', nombre);
+      const r = await axios.post(`${API}/api/resources/file`, fd, { headers: headers(), timeout: 300000 });
+      await cargarRapidas();
+      setNuevaRapida(n => ({ ...n, resource_id: r.data.id, shortcut: n.shortcut || nombre.toLowerCase().replace(/\s+/g, '-').slice(0, 30) }));
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo subir el archivo'); }
+    setSubiendoArchivo(false);
+  };
+
   const cargarRapidas = () => axios.get(`${API}/api/bot/quick-replies`, { headers: headers() })
     .then(r => setRapidas(r.data)).catch(() => {});
   useEffect(() => { cargarRapidas(); }, []);
@@ -780,6 +797,12 @@ export default function Inbox() {
                       <option value="">Sin archivo</option>
                       {rapidas.resources.map(r => <option key={r.id} value={r.id}>📎 {r.name}</option>)}
                     </select>
+                    <label className="wa-boton-claro" style={{ cursor: 'pointer', textAlign: 'center' }}>
+                      {subiendoArchivo ? 'Subiendo…' : '📤 Subir archivo nuevo (foto, audio, video, PDF)'}
+                      <input type="file" style={{ display: 'none' }} disabled={subiendoArchivo}
+                        accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
+                        onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) subirArchivoRapida(f); }} />
+                    </label>
                     <button className="wa-boton-verde" onClick={guardarRapida}>Agregar respuesta rápida</button>
                   </div>
                 )}
