@@ -76,7 +76,7 @@ router.post('/:clientId/message', async (req, res) => {
 
     // Base de conocimiento
     const kbRes = await pool.query(
-      'SELECT title, content FROM knowledge_base WHERE client_id = $1 LIMIT 10',
+      'SELECT title, content FROM knowledge_base WHERE client_id = $1 AND brain_id IS NULL LIMIT 10',
       [clientId]
     );
     const kb = kbRes.rows.map(r => `${r.title}: ${r.content}`).join('\n\n');

@@ -39,7 +39,7 @@ async function estadoQR(sesion) {
 router.get('/', authMiddleware, soloDueno, async (req, res) => {
   try {
     const cli = (await pool.query(
-      `SELECT c.main_line_name, c.whatsapp_mode, bc.qr_auto_reply, s.phone_number
+      `SELECT c.main_line_name, c.main_brain_id, c.whatsapp_mode, bc.qr_auto_reply, s.phone_number
        FROM clients c LEFT JOIN bot_configs bc ON bc.client_id = c.id LEFT JOIN whatsapp_qr_sessions s ON s.client_id = c.id
        WHERE c.id = $1`, [req.client.id])).rows[0] || {};
     const extras = (await pool.query('SELECT * FROM wa_lines WHERE client_id = $1 ORDER BY created_at', [req.client.id])).rows;
@@ -52,7 +52,7 @@ router.get('/', authMiddleware, soloDueno, async (req, res) => {
     const quienes = (id) => equipo.filter((e) => !e.line_ids || e.line_ids.includes(id)).map((e) => e.name);
     const lineas = [{
       id: 'principal', name: cli.main_line_name || 'Principal', kind: 'ventas', principal: true,
-      bot_enabled: !!cli.qr_auto_reply, phone_number: cli.phone_number || null
+      bot_enabled: !!cli.qr_auto_reply, phone_number: cli.phone_number || null, brain_id: cli.main_brain_id || null
     }, ...extras.map((l) => ({ ...l, principal: false }))];
     const conEstado = await Promise.all(lineas.map(async (l) => {
       const st = await estadoQR(l.principal ? req.client.id : l.id);
@@ -82,10 +82,16 @@ router.put('/:id', authMiddleware, soloDueno, async (req, res) => {
   try {
     const l = await lineaDe(req);
     if (!l) return res.status(404).json({ error: 'No existe esa línea' });
-    const { name, kind, bot_enabled, bot_prompt } = req.body;
+    const { name, kind, bot_enabled, bot_prompt, brain_id } = req.body;
+    const cerebro = brain_id === undefined ? undefined : (brain_id && brain_id !== 'principal' ? brain_id : null);
+    if (cerebro) {
+      const ok = await pool.query('SELECT 1 FROM brains WHERE id = $1 AND client_id = $2', [cerebro, req.client.id]);
+      if (!ok.rows.length) return res.status(400).json({ error: 'Ese cerebro no es de tu cuenta' });
+    }
     if (l.principal) {
       if (name !== undefined) await pool.query('UPDATE clients SET main_line_name = $2 WHERE id = $1', [req.client.id, String(name).trim().slice(0, 60) || null]);
       if (bot_enabled !== undefined) await pool.query('UPDATE bot_configs SET qr_auto_reply = $2, active = true WHERE client_id = $1', [req.client.id, !!bot_enabled]);
+      if (cerebro !== undefined) await pool.query('UPDATE clients SET main_brain_id = $2 WHERE id = $1', [req.client.id, cerebro]);
       return res.json({ ok: true });
     }
     const r = await pool.query(
@@ -95,6 +101,7 @@ router.put('/:id', authMiddleware, soloDueno, async (req, res) => {
       [l.id, req.client.id, name ? String(name).trim().slice(0, 60) : null, ['ventas', 'soporte'].includes(kind) ? kind : null,
        bot_enabled === undefined ? null : !!bot_enabled, bot_prompt !== undefined, bot_prompt ? String(bot_prompt).slice(0, 20000) : null]
     );
+    if (cerebro !== undefined) await pool.query('UPDATE wa_lines SET brain_id = $2 WHERE id = $1', [l.id, cerebro]);
     if (bot_enabled) await pool.query('UPDATE bot_configs SET active = true WHERE client_id = $1', [req.client.id]);
     res.json(r.rows[0]);
   } catch (err) {

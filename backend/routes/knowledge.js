@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const { cerebroPedido } = require('../services/lines');
 const multer = require('multer');
 const pdfParse = require('pdf-parse');
 const pool = require('../db');
@@ -16,8 +17,8 @@ const MIN_USEFUL_PDF_CHARS = 30;
 router.get('/', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, type, title, LEFT(content, 200) as preview, source_url, created_at FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC',
-      [req.client.id]
+      'SELECT id, type, title, LEFT(content, 200) as preview, source_url, created_at FROM knowledge_base WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at DESC',
+      [req.client.id, await cerebroPedido(req)]
     );
     res.json(result.rows);
   } catch (err) {
@@ -28,8 +29,8 @@ router.get('/', authMiddleware, async (req, res) => {
 router.get('/export', authMiddleware, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT id, type, title, content, source_url, created_at FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC',
-      [req.client.id]
+      'SELECT id, type, title, content, source_url, created_at FROM knowledge_base WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at DESC',
+      [req.client.id, await cerebroPedido(req)]
     );
     res.json(result.rows);
   } catch (err) {
@@ -43,9 +44,9 @@ router.post('/text', authMiddleware, async (req, res) => {
 
   try {
     const result = await pool.query(
-      `INSERT INTO knowledge_base (client_id, type, title, content)
-       VALUES ($1, 'text', $2, $3) RETURNING *`,
-      [req.client.id, title, content]
+      `INSERT INTO knowledge_base (client_id, type, title, content, brain_id)
+       VALUES ($1, 'text', $2, $3, $4) RETURNING *`,
+      [req.client.id, title, content, await cerebroPedido(req)]
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {
@@ -62,9 +63,9 @@ router.post('/url', authMiddleware, async (req, res) => {
     const title = `Web: ${new URL(url).hostname}`;
 
     const result = await pool.query(
-      `INSERT INTO knowledge_base (client_id, type, title, content, source_url)
-       VALUES ($1, 'url', $2, $3, $4) RETURNING *`,
-      [req.client.id, title, content, url]
+      `INSERT INTO knowledge_base (client_id, type, title, content, source_url, brain_id)
+       VALUES ($1, 'url', $2, $3, $4, $5) RETURNING *`,
+      [req.client.id, title, content, url, await cerebroPedido(req)]
     );
     res.status(201).json({ ...result.rows[0], chars: content.length });
   } catch (err) {
@@ -107,9 +108,9 @@ router.post('/file', authMiddleware, upload.single('file'), async (req, res) => 
     }
 
     const result = await pool.query(
-      `INSERT INTO knowledge_base (client_id, type, title, content)
-       VALUES ($1, 'file', $2, $3) RETURNING *`,
-      [req.client.id, originalname, content]
+      `INSERT INTO knowledge_base (client_id, type, title, content, brain_id)
+       VALUES ($1, 'file', $2, $3, $4) RETURNING *`,
+      [req.client.id, originalname, content, await cerebroPedido(req)]
     );
     res.status(201).json({ ...result.rows[0], chars: content.length });
   } catch (err) {

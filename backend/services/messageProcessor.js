@@ -28,10 +28,18 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   const configResult = await pool.query('SELECT * FROM bot_configs WHERE client_id = $1 AND active = true', [clientId]);
   if (!configResult.rows.length) return;
   const config = configResult.rows[0];
-  if (extras.line) {
-    if (extras.line.bot_prompt) config.system_prompt = extras.line.bot_prompt;
-    if (extras.line.kind === 'soporte') { config.reception_enabled = false; config.sales_steps_enabled = false; }
+  // Cerebro de la línea: reemplaza instrucciones, datos, tono y modelo (y en soporte no hay
+  // recepción ni pasos de venta). Sin cerebro propio se usa el principal (bot_configs).
+  const brain = extras.brain !== undefined ? extras.brain : await require('./lines').cerebroDe(clientId, extras.lineId || null);
+  if (brain) {
+    for (const k of ['system_prompt', 'business_info', 'bot_name', 'bot_tone', 'bot_tone_custom', 'ai_model', 'label_instructions', 'welcome_message']) {
+      if (brain[k] !== null && brain[k] !== undefined && brain[k] !== '') config[k] = brain[k];
+    }
+    if (brain.kind === 'soporte') { config.reception_enabled = false; config.sales_steps_enabled = false; }
+  } else if (extras.line && extras.line.bot_prompt) {
+    config.system_prompt = extras.line.bot_prompt;
   }
+  if (extras.line && extras.line.kind === 'soporte') { config.reception_enabled = false; config.sales_steps_enabled = false; }
 
   if (!isWithinBusinessHours(config)) {
     let convResult = await pool.query(
@@ -175,7 +183,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     const previo = filas.length > 1 ? filas[filas.length - 2] : null;
     const diasSinHablar = previo ? (Date.now() - new Date(previo.timestamp).getTime()) / 86400000 : 0;
 
-    const kbResult = await pool.query('SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 10', [clientId]);
+    const kbResult = await pool.query('SELECT title, content FROM knowledge_base WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at DESC LIMIT 10', [clientId, brain ? brain.id : null]);
     const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
 
     let productContext = '';

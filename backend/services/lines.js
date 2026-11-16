@@ -30,4 +30,21 @@ function lineaSql(lineId) {
   return `'${lineId}'::uuid`;
 }
 
-module.exports = { resolverSesion, sesionDe, lineaSql };
+// Cerebro que atiende una línea (null = el principal, o sea bot_configs)
+async function cerebroDe(clientId, lineId) {
+  let id = null;
+  if (lineId) id = (await pool.query('SELECT brain_id FROM wa_lines WHERE id = $1', [lineId])).rows[0]?.brain_id || null;
+  else id = (await pool.query('SELECT main_brain_id FROM clients WHERE id = $1', [clientId])).rows[0]?.main_brain_id || null;
+  if (!id) return null;
+  return (await pool.query('SELECT * FROM brains WHERE id = $1 AND client_id = $2', [id, clientId])).rows[0] || null;
+}
+
+// "?brain=" de un pedido del panel → id de cerebro de la cuenta, o null (principal)
+async function cerebroPedido(req) {
+  const b = req.query.brain || req.body?.brain;
+  if (!b || b === 'principal' || !UUID.test(b)) return null;
+  const r = await pool.query('SELECT id FROM brains WHERE id = $1 AND client_id = $2', [b, req.client.id]);
+  return r.rows[0]?.id || null;
+}
+
+module.exports = { resolverSesion, sesionDe, lineaSql, cerebroDe, cerebroPedido };

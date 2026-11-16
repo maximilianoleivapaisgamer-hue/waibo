@@ -292,7 +292,7 @@ async function handleInstagramEvent(clientId, body) {
           }));
 
           const kbResult = await pool.query(
-            'SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 10',
+            'SELECT title, content FROM knowledge_base WHERE client_id = $1 AND brain_id IS NULL ORDER BY created_at DESC LIMIT 10',
             [clientId]
           );
           const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
@@ -333,7 +333,7 @@ async function handleInstagramEvent(clientId, body) {
         if (!hasKeyword && !replyAll) continue;
 
         const kbResult = await pool.query(
-          'SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 5',
+          'SELECT title, content FROM knowledge_base WHERE client_id = $1 AND brain_id IS NULL ORDER BY created_at DESC LIMIT 5',
           [clientId]
         );
         const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');

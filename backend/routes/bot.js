@@ -604,10 +604,19 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
       return res.status(404).json({ error: 'Configuración del bot no encontrada' });
     }
     const config = configResult.rows[0];
+    // Modo prueba con un cerebro elegido (Soporte, etc.)
+    const cerebroId = await require('../services/lines').cerebroPedido(req);
+    const cerebroPrueba = cerebroId ? (await pool.query('SELECT * FROM brains WHERE id = $1', [cerebroId])).rows[0] : null;
+    if (cerebroPrueba) {
+      for (const k of ['system_prompt', 'business_info', 'bot_name', 'bot_tone', 'bot_tone_custom', 'ai_model', 'label_instructions']) {
+        if (cerebroPrueba[k]) config[k] = cerebroPrueba[k];
+      }
+      if (cerebroPrueba.kind === 'soporte') config.sales_steps_enabled = false;
+    }
 
     const kbResult = await pool.query(
-      'SELECT title, content FROM knowledge_base WHERE client_id = $1 ORDER BY created_at DESC LIMIT 10',
-      [req.client.id]
+      'SELECT title, content FROM knowledge_base WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at DESC LIMIT 10',
+      [req.client.id, cerebroPrueba ? cerebroPrueba.id : null]
     );
     const knowledgeBase = kbResult.rows.map(k => `[${k.title}]: ${k.content}`).join('\n\n');
 
@@ -623,7 +632,7 @@ router.post('/test-chat', authMiddleware, async (req, res) => {
     let extra = '';
     let recursos = [];
     if (config.whatsapp_actions_enabled !== false) {
-      recursos = (await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [req.client.id])).rows;
+      recursos = (await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at', [req.client.id, cerebroPrueba ? cerebroPrueba.id : null])).rows;
       const labels = [...new Set([...(await waiboLabels(req.client.id)), ...pasos.map((p) => p.label).filter(Boolean)])];
       extra = buildInstructions({ resources: recursos, alreadySent: yaEnviados, labels, labelInstructions: config.label_instructions || '' });
       if (pasos.length) extra += buildSalesInstructions({ steps: pasos, current: pasoActual, resources: recursos });

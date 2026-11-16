@@ -44,13 +44,13 @@ async function asignarPorTurno(clientId, conversationId) {
   return v;
 }
 
-function buildSalesExtras({ clientId, to, cfg, channel }) {
+function buildSalesExtras({ clientId, to, cfg, channel, brainId = null }) {
   if (cfg.whatsapp_actions_enabled === false) return {};
   const pasos = cfg.sales_steps_enabled && Array.isArray(cfg.sales_steps) ? cfg.sales_steps.filter((p) => p && p.title) : [];
 
   return {
     buildInstructions: async (conversation) => {
-      const recs = await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 ORDER BY created_at', [clientId]);
+      const recs = await pool.query('SELECT id, name, description, kind FROM bot_resources WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2 ORDER BY created_at', [clientId, brainId]);
       const labels = [...new Set([...(await channel.labels()), ...pasos.map((p) => p.label).filter(Boolean)])];
       const base = buildInstructions({
         resources: recs.rows,
@@ -74,7 +74,7 @@ function buildSalesExtras({ clientId, to, cfg, channel }) {
     onActions: async (actions, conversation) => {
       if (actions.some((a) => a.type === 'enviar')) {
         const { resolverRecurso } = require('./whatsappActions');
-        const lista = (await pool.query('SELECT id, name FROM bot_resources WHERE client_id = $1', [clientId])).rows;
+        const lista = (await pool.query('SELECT id, name FROM bot_resources WHERE client_id = $1 AND brain_id IS NOT DISTINCT FROM $2', [clientId, brainId])).rows;
         for (const a of actions) if (a.type === 'enviar') { const r = resolverRecurso(a.id, lista); if (r) a.id = r.id; }
       }
       // Marcar el paso como hecho dispara su recurso y su etiqueta; mandar el recurso del

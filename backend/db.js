@@ -555,6 +555,28 @@ async function initDB() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_line_name VARCHAR(60);
       -- 'empresa' = panel sin Mercado Libre, Tiendanube, pedidos, agenda ni catálogo
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS panel_mode VARCHAR(20);
+      -- Cerebros: Ventas (el de siempre, en bot_configs) y otros como Soporte, cada uno con
+      -- sus instrucciones, su base de conocimiento y sus archivos
+      CREATE TABLE IF NOT EXISTS brains (
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+        client_id UUID NOT NULL,
+        name VARCHAR(60) NOT NULL,
+        kind VARCHAR(20) DEFAULT 'ventas',
+        system_prompt TEXT,
+        business_info TEXT,
+        bot_name VARCHAR(80),
+        bot_tone VARCHAR(30),
+        bot_tone_custom TEXT,
+        ai_model VARCHAR(80),
+        label_instructions TEXT,
+        welcome_message TEXT,
+        created_at TIMESTAMP DEFAULT NOW()
+      );
+      ALTER TABLE knowledge_base ADD COLUMN IF NOT EXISTS brain_id UUID;
+      ALTER TABLE bot_resources ADD COLUMN IF NOT EXISTS brain_id UUID;
+      ALTER TABLE wa_lines ADD COLUMN IF NOT EXISTS brain_id UUID;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_brain_id UUID;
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_brain_name VARCHAR(60);
       -- Respuestas rápidas de la Bandeja ("/atajo"), con texto y/o un archivo de la biblioteca
       CREATE TABLE IF NOT EXISTS quick_replies (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),

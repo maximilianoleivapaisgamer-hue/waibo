@@ -618,9 +618,12 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     const sendFn = (phone, message) => qrPost(sesion, 'send', { to: phone, message });
 
+    const brain = await require('../services/lines').cerebroDe(clientId, lineId);
+    if (brain && brain.label_instructions) cfg.label_instructions = brain.label_instructions;
+    if (brain && brain.kind === 'soporte') cfg.sales_steps_enabled = false;
     const { buildSalesExtras } = require('../services/salesActions');
     const extras = buildSalesExtras({
-      clientId, to: from, cfg,
+      clientId, to: from, cfg, brainId: brain ? brain.id : null,
       channel: {
         sendText: (t) => qrPost(sesion, 'send', { to: from, message: t }),
         sendMedia: (rec, caption) => qrPost(sesion, 'send-media', {
@@ -635,7 +638,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     // Se contesta al servicio QR enseguida: la respuesta puede tardar minutos por la demora configurada.
     res.json({ ok: true });
-    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType }, lineId, line: _lin.line });
+    await processIncomingMessage(clientId, from, name || 'Cliente', text, sendFn, { ...extras, messageMeta: { waId, mediaType }, lineId, line: _lin.line, brain });
     const cv = await pool.query(`SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`, [clientId, from]);
     if (cv.rows[0]) require('../services/heat').clasificarTemperatura(cv.rows[0].id).catch(() => {});
   } catch (err) {
