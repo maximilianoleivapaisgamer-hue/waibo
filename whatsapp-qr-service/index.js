@@ -880,6 +880,22 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   }
 });
 
+// Foto de perfil de un contacto (link temporal de WhatsApp; null si no tiene o la oculta)
+app.get('/session/:clientId/avatar', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const to = String(req.query.to || '');
+  try {
+    const id = chatIdPara(req.params.clientId, to) || `${soloDigitos(to)}@c.us`;
+    let url = null;
+    try { url = await rec.client.getProfilePicUrl(id); } catch (_) {}
+    if (!url && !id.endsWith('@c.us')) { try { url = await rec.client.getProfilePicUrl(`${soloDigitos(to)}@c.us`); } catch (_) {} }
+    res.json({ url: url || null });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Borrar para todos o editar un mensaje propio (WhatsApp pone sus límites de tiempo)
 app.post('/session/:clientId/message-action', checkSecret, async (req, res) => {
   const rec = sesionLista(req.params.clientId);

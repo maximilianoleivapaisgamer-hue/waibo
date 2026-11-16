@@ -64,6 +64,34 @@ const CASO = {
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
+// Foto de perfil: se pide recién cuando el chat aparece en pantalla, y queda en memoria
+const avatares = {};
+function Avatar({ conv, chico }) {
+  const ref = useRef(null);
+  const [url, setUrl] = useState(avatares[conv.id] || null);
+  useEffect(() => {
+    if (avatares[conv.id] !== undefined || conv.channel !== 'whatsapp') return;
+    const el = ref.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(([e]) => {
+      if (!e.isIntersecting) return;
+      obs.disconnect();
+      avatares[conv.id] = null;
+      axios.get(`${API}/api/bot/conversations/${conv.id}/avatar`, { headers: headers() })
+        .then(r => { avatares[conv.id] = r.data.url || null; setUrl(r.data.url || null); })
+        .catch(() => {});
+    });
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [conv.id]);
+  const letra = (conv.customer_name || conv.customer_phone || '?')[0]?.toUpperCase();
+  return (
+    <span ref={ref} className={`wa-avatar ${chico ? 'wa-avatar-chico' : ''}`}>
+      {url ? <img src={url} alt="" onError={() => { avatares[conv.id] = null; setUrl(null); }} /> : letra}
+    </span>
+  );
+}
+
 function Audio({ src }) {
   const ref = useRef(null);
   const [vel, setVel] = useState(1);
@@ -481,7 +509,7 @@ export default function Inbox() {
             const vencido = c.follow_up_at && new Date(c.follow_up_at).getTime() <= Date.now();
             return (
               <div key={c.id} className={`wa-item ${abierto === c.id ? 'activo' : ''}`} onClick={() => { setAbierto(c.id); setVerDetalle(false); }}>
-                <span className="wa-avatar">{(c.customer_name || c.customer_phone || '?')[0]?.toUpperCase()}</span>
+                <Avatar conv={c} />
                 <div className="wa-item-cuerpo">
                   <div className="wa-item-fila">
                     <span className={`wa-item-nombre ${c.unread ? 'fuerte' : ''}`}>{c.customer_name || c.customer_phone}</span>
@@ -523,7 +551,7 @@ export default function Inbox() {
           <>
             <header className="wa-top wa-chat-top">
               <button className="wa-volver" onClick={() => setAbierto(null)}>‹</button>
-              <span className="wa-avatar wa-avatar-chico">{(chat.customer_name || chat.customer_phone || '?')[0]?.toUpperCase()}</span>
+              <Avatar conv={chat} chico />
               <div className="wa-chat-titulo" onClick={() => setVerDetalle(v => !v)}>
                 <div className="wa-chat-nombre">{chat.customer_name || chat.customer_phone}</div>
                 <div className="wa-chat-sub">{chat.customer_phone}{lineas.length > 1 ? ` · ${chat.line_name}` : ''}{chat.status === 'human' ? ' · atiende una persona' : ' · contesta el bot'}</div>
@@ -776,6 +804,8 @@ export default function Inbox() {
         .wa-link { color: var(--wa-verde-oscuro); font-size: 14px; text-decoration: none; font-weight: 600; }
         .wa-avatar { width: 49px; height: 49px; border-radius: 50%; background: #dfe5e7; color: #54656f; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 18px; flex-shrink: 0; }
         .wa-avatar-chico { width: 40px; height: 40px; font-size: 16px; }
+        .wa-avatar { overflow: hidden; }
+        .wa-avatar img { width: 100%; height: 100%; object-fit: cover; }
         .wa-buscar { padding: 8px 12px; background: var(--wa-panel); }
         .wa-buscar input { width: 100%; box-sizing: border-box; border: none; background: var(--wa-fondo); color: var(--wa-texto); border-radius: 8px; padding: 9px 14px; font-size: 14px; outline: none; }
         .wa-chips { display: flex; gap: 6px; padding: 4px 12px 10px; overflow-x: auto; flex-shrink: 0; }

@@ -602,6 +602,8 @@ async function initDB() {
       -- Tildes de WhatsApp de lo que mandamos (1 enviado, 2 entregado, 3 leído, 4 escuchado),
       -- y mensajes editados o borrados desde la Bandeja
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS ack SMALLINT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS avatar_url TEXT;
+      ALTER TABLE conversations ADD COLUMN IF NOT EXISTS avatar_at TIMESTAMP;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT false;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
       CREATE INDEX IF NOT EXISTS messages_wa_id ON messages (wa_id);

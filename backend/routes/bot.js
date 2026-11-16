@@ -1332,4 +1332,27 @@ router.put('/conversations/:id/messages/:mid', authMiddleware, async (req, res) 
   }
 });
 
+// Foto de perfil del cliente: se pide a WhatsApp y se guarda un día (el link de WhatsApp vence)
+router.get('/conversations/:id/avatar', authMiddleware, async (req, res) => {
+  try {
+    const c = (await pool.query('SELECT id, customer_phone, line_id, avatar_url, avatar_at, channel FROM conversations WHERE id = $1 AND client_id = $2', [req.params.id, req.client.id])).rows[0];
+    if (!c) return res.status(404).json({ error: 'No encontrada' });
+    if (c.avatar_at && Date.now() - new Date(c.avatar_at).getTime() < 20 * 3600 * 1000) return res.json({ url: c.avatar_url });
+    if (c.channel !== 'whatsapp' || !process.env.QR_SERVICE_URL) return res.json({ url: null });
+    const axios = require('axios');
+    const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+    let url = null;
+    try {
+      const r = await axios.get(`${process.env.QR_SERVICE_URL}/session/${c.line_id || req.client.id}/avatar`, { params: { to: c.customer_phone }, headers: { 'x-service-secret': secret }, timeout: 20000 });
+      url = r.data.url || null;
+    } catch (_) {
+      return res.json({ url: c.avatar_url || null });
+    }
+    await pool.query('UPDATE conversations SET avatar_url = $2, avatar_at = NOW() WHERE id = $1', [c.id, url]);
+    res.json({ url });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
