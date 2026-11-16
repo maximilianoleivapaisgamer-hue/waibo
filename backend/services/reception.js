@@ -116,4 +116,4 @@ async function atender({ config, conversation, phone, customerMessage, sendFn, e
   return derivar({ config, conversation: c, phone, segmento: null, sendFn, extras });
 }
 
-module.exports = { atender };
+module.exports = { atender, clasificar };
