@@ -658,24 +658,29 @@ export default function Inbox() {
             <footer className="wa-escribir">
               <input type="file" ref={archivoRef} style={{ display: 'none' }} accept="image/*,video/*,audio/*,application/pdf,.doc,.docx,.xls,.xlsx"
                 onChange={e => { const f = e.target.files[0]; e.target.value = ''; if (f) mandarArchivo(f); }} />
-              {grabando ? (
-                <>
-                  <button className="wa-icono" title="Cancelar" onClick={() => grabadorRef.current?.cancelar()}>🗑️</button>
-                  <div className="wa-grabando">● Grabando {Math.floor(segundos / 60)}:{String(segundos % 60).padStart(2, '0')}</div>
-                  <button className="wa-enviar" title="Mandar nota de voz" onClick={grabar}>➤</button>
-                </>
-              ) : (
-                <>
-                  <button className="wa-icono" title="Respuestas rápidas y archivos precargados" onClick={() => setVerRapidas(v => !v)} disabled={enviando}>⚡</button>
-                  <button className="wa-icono" title="Adjuntar foto, video o archivo" onClick={() => archivoRef.current?.click()} disabled={enviando}>📎</button>
-                  <textarea rows={1} placeholder="Escribí un mensaje" value={texto}
-                    onChange={e => setTexto(e.target.value)}
-                    onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandarTexto(); } }} />
-                  {texto.trim()
-                    ? <button className="wa-enviar" onClick={mandarTexto} disabled={enviando}>{enviando ? '…' : '➤'}</button>
-                    : <button className="wa-enviar" title="Grabar nota de voz" onClick={grabar} disabled={enviando}>{enviando ? '…' : '🎤'}</button>}
-                </>
-              )}
+              <div className="wa-caja">
+                {grabando ? (
+                  <div className="wa-caja-fila">
+                    <button className="wa-icono" title="Cancelar" onClick={() => grabadorRef.current?.cancelar()}>🗑️</button>
+                    <div className="wa-grabando">● Grabando {Math.floor(segundos / 60)}:{String(segundos % 60).padStart(2, '0')}</div>
+                    <button className="wa-enviar" title="Mandar nota de voz" onClick={grabar}>➤</button>
+                  </div>
+                ) : (
+                  <>
+                    <textarea rows={1} placeholder="Escribí un mensaje" value={texto}
+                      onChange={e => { setTexto(e.target.value); e.target.style.height = 'auto'; e.target.style.height = Math.min(e.target.scrollHeight, 160) + 'px'; }}
+                      onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); mandarTexto(); } }} />
+                    <div className="wa-caja-fila">
+                      <button className="wa-icono" title="Adjuntar foto, video o archivo" onClick={() => archivoRef.current?.click()} disabled={enviando}>📎</button>
+                      <button className="wa-chip-rapidas" title="Respuestas rápidas y archivos precargados" onClick={() => setVerRapidas(v => !v)} disabled={enviando}>⚡ Respuestas rápidas</button>
+                      <span style={{ flex: 1 }} />
+                      {texto.trim()
+                        ? <button className="wa-enviar" onClick={mandarTexto} disabled={enviando}>{enviando ? '…' : '➤'}</button>
+                        : <button className="wa-icono" title="Grabar nota de voz" onClick={grabar} disabled={enviando}>{enviando ? '…' : '🎤'}</button>}
+                    </div>
+                  </>
+                )}
+              </div>
             </footer>
           </>
         )}
@@ -697,7 +702,7 @@ export default function Inbox() {
         }
         html, body { margin: 0; background: var(--wa-fondo); }
         .wa { display: flex; height: 100vh; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; color: var(--wa-texto); background: var(--wa-fondo); overflow: hidden; }
-        .wa-lista { width: 380px; min-width: 300px; background: var(--wa-panel); border-right: 1px solid var(--wa-borde); display: flex; flex-direction: column; }
+        .wa-lista { width: 33%; min-width: 340px; max-width: 620px; background: var(--wa-panel); border-right: 1px solid var(--wa-borde); display: flex; flex-direction: column; }
         .wa-chat { flex: 1; display: flex; flex-direction: column; background: var(--wa-chat); min-width: 0; }
         .wa-top { height: 60px; padding: 0 16px; display: flex; align-items: center; gap: 12px; background: var(--wa-fondo); border-bottom: 1px solid var(--wa-borde); flex-shrink: 0; }
         .wa-yo { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; }
@@ -787,10 +792,13 @@ export default function Inbox() {
         .wa-rapida-nueva { display: flex; flex-direction: column; gap: 6px; padding: 8px 14px; border-top: 1px solid var(--wa-borde); }
         .wa-rapida-nueva input, .wa-rapida-nueva textarea, .wa-rapida-nueva select { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 8px; padding: 7px 10px; font-size: 13px; font-family: inherit; }
         .wa-rapida-nueva .wa-boton-verde { align-self: flex-start; }
-        .wa-escribir { display: flex; align-items: flex-end; gap: 8px; padding: 8px 12px; background: var(--wa-fondo); flex-shrink: 0; }
-        .wa-escribir textarea { flex: 1; resize: none; border: none; border-radius: 8px; padding: 10px 12px; font-size: 15px; font-family: inherit; background: var(--wa-panel); color: var(--wa-texto); outline: none; max-height: 120px; }
-        .wa-icono { border: none; background: none; font-size: 22px; cursor: pointer; padding: 6px; }
-        .wa-enviar { border: none; background: var(--wa-verde); color: white; width: 44px; height: 44px; border-radius: 50%; font-size: 18px; cursor: pointer; flex-shrink: 0; }
+        .wa-escribir { padding: 8px 16px 12px; background: var(--wa-chat); flex-shrink: 0; }
+        .wa-caja { background: var(--wa-panel); border-radius: 24px; padding: 8px 12px 4px; box-shadow: 0 1px 2px rgba(11,20,26,.1); }
+        .wa-caja textarea { width: 100%; box-sizing: border-box; resize: none; border: none; padding: 8px 6px; font-size: 15px; font-family: inherit; background: transparent; color: var(--wa-texto); outline: none; max-height: 160px; line-height: 20px; }
+        .wa-caja-fila { display: flex; align-items: center; gap: 6px; }
+        .wa-chip-rapidas { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 16px; padding: 5px 12px; font-size: 13px; cursor: pointer; font-weight: 600; }
+        .wa-icono { border: none; background: none; font-size: 20px; cursor: pointer; padding: 4px 6px; }
+        .wa-enviar { border: none; background: var(--wa-verde); color: white; width: 38px; height: 38px; border-radius: 50%; font-size: 18px; cursor: pointer; flex-shrink: 0; }
         .wa-enviar:disabled, .wa-icono:disabled { opacity: .5; cursor: default; }
         .wa-grabando { flex: 1; color: #d93025; font-weight: 600; padding: 10px; }
         .wa-aviso { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #111b21; color: white; padding: 10px 18px; border-radius: 8px; font-size: 14px; z-index: 50; max-width: 90vw; }
