@@ -136,12 +136,12 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
     // mensaje ya guardado en vez de duplicarlo (WhatsApp no siempre devuelve el id al mandar)
     if (waId) {
       const pegado = await pool.query(
-        `UPDATE messages SET wa_id = $2, ack = COALESCE(ack, 1) WHERE id = (
+        `UPDATE messages SET wa_id = $2, ack = GREATEST(COALESCE(ack, 1), $5) WHERE id = (
            SELECT id FROM messages WHERE conversation_id = $1 AND role = 'assistant' AND wa_id IS NULL
              AND origin <> 'phone' AND timestamp > NOW() - interval '2 minutes'
              AND (content = $3 OR ($4::text IS NOT NULL AND media_type IS NOT NULL))
            ORDER BY timestamp ASC LIMIT 1)`,
-        [convId, waId, text, mediaType || null]);
+        [convId, waId, text, mediaType || null, ackPendiente(waId)]);
       if (pegado.rowCount) {
         if (req.body.replyTo) await pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1 AND reply_to IS NULL', [waId, String(req.body.replyTo)]).catch(() => {});
         return res.json({ ok: true, guardado: false, enlazado: true });
@@ -149,9 +149,9 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
     }
     const ins = await pool.query(
       `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type, ack)
-       SELECT $1, 'assistant', $2, 'phone', $3, $4, 1
+       SELECT $1, 'assistant', $2, 'phone', $3, $4, $5
        WHERE NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND wa_id = $3)`,
-      [convId, text, waId || null, mediaType || null]
+      [convId, text, waId || null, mediaType || null, waId ? ackPendiente(waId) : 1]
     );
     if (req.body.replyTo && waId) await pool.query('UPDATE messages SET reply_to = $2 WHERE wa_id = $1', [waId, String(req.body.replyTo)]).catch(() => {});
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [convId]);
@@ -220,11 +220,25 @@ router.post('/media', checkServiceSecret, async (req, res) => {
 });
 
 // Tildes de los mensajes que mandamos
+// Tildes que llegan antes que el mensaje (lo mandado desde el celular se guarda unos
+// segundos después): se recuerdan un rato y se aplican cuando el mensaje se guarda
+const acksPendientes = new Map(); // waId -> { ack, t }
+function ackPendiente(waId) {
+  const p = acksPendientes.get(waId);
+  if (!p) return 1;
+  acksPendientes.delete(waId);
+  return Math.max(1, p.ack);
+}
 router.post('/ack', checkServiceSecret, async (req, res) => {
   const sesion = req.body.clientId;
   const _lin = await resolverSesion(sesion);
   const { waId, ack } = req.body;
   try {
+    if (waId) {
+      const ant = acksPendientes.get(waId);
+      acksPendientes.set(waId, { ack: Math.max(Number(ack) || 0, ant ? ant.ack : 0), t: Date.now() });
+      if (acksPendientes.size > 5000) for (const [k, v] of acksPendientes) if (Date.now() - v.t > 10 * 60000) acksPendientes.delete(k);
+    }
     await pool.query(
       `UPDATE messages m SET ack = GREATEST(COALESCE(m.ack, 0), $3)
        FROM conversations c WHERE c.id = m.conversation_id AND c.client_id = $1 AND m.wa_id = $2`,
