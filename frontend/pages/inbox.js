@@ -64,6 +64,22 @@ const CASO = {
 
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
+function Audio({ src }) {
+  const ref = useRef(null);
+  const [vel, setVel] = useState(1);
+  const cambiar = () => {
+    const v = vel === 1 ? 1.5 : vel === 1.5 ? 2 : 1;
+    setVel(v);
+    if (ref.current) ref.current.playbackRate = v;
+  };
+  return (
+    <div className="wa-audio-fila">
+      <audio ref={ref} controls src={src} className="wa-audio" onPlay={e => { e.currentTarget.playbackRate = vel; }} />
+      <button className="wa-vel" onClick={cambiar} title="Velocidad">{vel}x</button>
+    </div>
+  );
+}
+
 function Media({ m }) {
   const [url, setUrl] = useState(null);
   const [err, setErr] = useState('');
@@ -86,7 +102,7 @@ function Media({ m }) {
   if (tipo === 'document') return <button className="wa-doc" onClick={abrirArchivo}>📄 Abrir archivo</button>;
   if (!url) return <div className="wa-media-load">Cargando…</div>;
   if (tipo === 'image' || tipo === 'sticker') return <a href={url} target="_blank" rel="noreferrer"><img src={url} alt="" className={tipo === 'sticker' ? 'wa-sticker' : 'wa-img'} /></a>;
-  if (tipo === 'audio') return <audio controls src={url} className="wa-audio" />;
+  if (tipo === 'audio') return <Audio src={url} />;
   if (tipo === 'video') return <video controls src={url} className="wa-img" />;
   return null;
 }
@@ -107,6 +123,8 @@ export default function Inbox() {
   const [segundos, setSegundos] = useState(0);
   const [nuevaEtiqueta, setNuevaEtiqueta] = useState('');
   const [etiquetasWA, setEtiquetasWA] = useState([]);
+  const [menuMsg, setMenuMsg] = useState(null);   // id del mensaje con el menú abierto
+  const [editando, setEditando] = useState(null); // { id, texto }
   const [verDetalle, setVerDetalle] = useState(false);
   const [aviso, setAviso] = useState('');
   const [etiquetaSel, setEtiquetaSel] = useState('');
@@ -343,6 +361,23 @@ export default function Inbox() {
       actualizarChat({ tags: r.data.tags });
       if (!r.data.en_whatsapp) avisar('Se guardó en Waibo, pero no se pudo poner en WhatsApp (¿está conectado?)');
     } catch (e) { avisar(e.response?.data?.error || 'No se pudo etiquetar'); }
+  };
+
+  const borrarMensaje = async (m) => {
+    setMenuMsg(null);
+    if (!confirm('Borrar este mensaje para todos? WhatsApp solo deja hacerlo durante un tiempo después de mandarlo.')) return;
+    try {
+      await axios.post(`${API}/api/bot/conversations/${abierto}/messages/${m.id}/delete`, {}, { headers: headers(), timeout: 90000 });
+      await recargarMensajes();
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo borrar'); }
+  };
+  const guardarEdicion = async () => {
+    if (!editando?.texto?.trim()) return;
+    try {
+      await axios.put(`${API}/api/bot/conversations/${abierto}/messages/${editando.id}`, { text: editando.texto.trim() }, { headers: headers(), timeout: 90000 });
+      setEditando(null);
+      await recargarMensajes();
+    } catch (e) { avisar(e.response?.data?.error || 'No se pudo editar'); }
   };
 
   const guardarEtiquetas = async (tags) => {
@@ -593,10 +628,41 @@ export default function Inbox() {
               ) : (
                 <div key={m.id} className={`wa-fila ${m.role === 'user' ? 'izq' : 'der'}`}>
                   <div className={`wa-globo ${m.role === 'user' ? 'entrante' : 'saliente'}`}>
+                    {m.role !== 'user' && m.wa_id && !m.deleted && (
+                      <button className="wa-menu-btn" onClick={() => setMenuMsg(menuMsg === m.id ? null : m.id)} title="Opciones">⌄</button>
+                    )}
+                    {menuMsg === m.id && (
+                      <div className="wa-menu">
+                        {!m.media_type && <button onClick={() => { setMenuMsg(null); setEditando({ id: m.id, texto: m.content }); }}>✏️ Editar</button>}
+                        <button onClick={() => borrarMensaje(m)}>🗑️ Borrar para todos</button>
+                      </div>
+                    )}
                     {quienMando(m) && <div className="wa-quien">{quienMando(m)}</div>}
-                    {m.media_type && <Media m={m} />}
-                    {textoSinRelleno(m) && <div className="wa-texto" dangerouslySetInnerHTML={{ __html: formato(textoSinRelleno(m)) }} />}
-                    <div className="wa-hora">{new Date(m.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}</div>
+                    {m.deleted ? (
+                      <div className="wa-texto wa-borrado">🚫 Eliminaste este mensaje</div>
+                    ) : editando?.id === m.id ? (
+                      <div className="wa-editar">
+                        <textarea rows={2} value={editando.texto} onChange={e => setEditando({ ...editando, texto: e.target.value })} />
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <button className="wa-boton-claro" onClick={() => setEditando(null)}>Cancelar</button>
+                          <button className="wa-boton-verde" onClick={guardarEdicion}>Guardar</button>
+                        </div>
+                      </div>
+                    ) : (
+                      <>
+                        {m.media_type && <Media m={m} />}
+                        {textoSinRelleno(m) && <div className="wa-texto" dangerouslySetInnerHTML={{ __html: formato(textoSinRelleno(m)) }} />}
+                      </>
+                    )}
+                    <div className="wa-hora">
+                      {m.edited && !m.deleted ? 'Editado · ' : ''}
+                      {new Date(m.timestamp).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' })}
+                      {m.role !== 'user' && m.ack > 0 && !m.deleted && (
+                        <span className={`wa-tilde ${m.ack >= 3 ? 'leido' : ''}`} title={m.ack >= 3 ? 'Leído' : m.ack === 2 ? 'Entregado' : 'Enviado'}>
+                          {m.ack >= 2 ? ' ✓✓' : ' ✓'}
+                        </span>
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -779,6 +845,18 @@ export default function Inbox() {
         .wa-img { display: block; max-width: 100%; max-height: 340px; border-radius: 6px; margin-bottom: 4px; }
         .wa-sticker { display: block; width: 130px; }
         .wa-audio { display: block; width: 260px; max-width: 100%; margin-bottom: 2px; }
+        .wa-audio-fila { display: flex; align-items: center; gap: 6px; }
+        .wa-vel { border: none; background: rgba(0,0,0,.08); color: var(--wa-texto); border-radius: 12px; padding: 4px 8px; font-size: 12px; font-weight: 700; cursor: pointer; min-width: 40px; }
+        .wa-globo { position: relative; }
+        .wa-menu-btn { position: absolute; top: 2px; right: 4px; border: none; background: transparent; color: var(--wa-suave); cursor: pointer; font-size: 14px; opacity: 0; padding: 0 4px; }
+        .wa-globo:hover .wa-menu-btn { opacity: 1; }
+        .wa-menu { position: absolute; top: 22px; right: 4px; background: var(--wa-panel); border: 1px solid var(--wa-borde); border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,.15); z-index: 5; display: flex; flex-direction: column; }
+        .wa-menu button { border: none; background: none; text-align: left; padding: 8px 14px; font-size: 14px; cursor: pointer; color: var(--wa-texto); white-space: nowrap; }
+        .wa-menu button:hover { background: var(--wa-hover); }
+        .wa-borrado { color: var(--wa-suave); font-style: italic; }
+        .wa-editar textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--wa-borde); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 14px; margin-bottom: 6px; background: var(--wa-panel); color: var(--wa-texto); }
+        .wa-tilde { color: var(--wa-suave); letter-spacing: -3px; margin-left: 2px; }
+        .wa-tilde.leido { color: #53bdeb; }
         .wa-doc { border: 1px solid var(--wa-borde); background: rgba(0,0,0,.03); color: inherit; border-radius: 6px; padding: 8px 12px; cursor: pointer; margin-bottom: 4px; }
         .wa-media-load, .wa-media-err { font-size: 12px; color: var(--wa-suave); font-style: italic; margin-bottom: 4px; }
         .wa-rapidas-pop, .wa-rapidas-panel { background: var(--wa-panel); border-top: 1px solid var(--wa-borde); max-height: 45vh; overflow-y: auto; padding: 6px 0; flex-shrink: 0; }

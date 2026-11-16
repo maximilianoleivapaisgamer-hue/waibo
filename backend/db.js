@@ -599,6 +599,12 @@ async function initDB() {
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS sent_by UUID;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS auto_assign BOOLEAN DEFAULT false;
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS wa_id TEXT;
+      -- Tildes de WhatsApp de lo que mandamos (1 enviado, 2 entregado, 3 leído, 4 escuchado),
+      -- y mensajes editados o borrados desde la Bandeja
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS ack SMALLINT;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS edited BOOLEAN DEFAULT false;
+      ALTER TABLE messages ADD COLUMN IF NOT EXISTS deleted BOOLEAN DEFAULT false;
+      CREATE INDEX IF NOT EXISTS messages_wa_id ON messages (wa_id);
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS media_type VARCHAR(20);
       ALTER TABLE messages ADD COLUMN IF NOT EXISTS resource_id UUID;
       CREATE TABLE IF NOT EXISTS ai_jobs (

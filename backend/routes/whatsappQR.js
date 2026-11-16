@@ -203,6 +203,23 @@ router.post('/media', checkServiceSecret, async (req, res) => {
   }
 });
 
+// Tildes de los mensajes que mandamos
+router.post('/ack', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  const { waId, ack } = req.body;
+  try {
+    await pool.query(
+      `UPDATE messages m SET ack = GREATEST(COALESCE(m.ack, 0), $3)
+       FROM conversations c WHERE c.id = m.conversation_id AND c.client_id = $1 AND m.wa_id = $2`,
+      [_lin.clientId, waId, Number(ack) || 0]
+    );
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // El servicio QR avisa que WhatsApp cerró la sesión
 router.post('/disconnected', checkServiceSecret, async (req, res) => {
   const sesion = req.body.clientId;

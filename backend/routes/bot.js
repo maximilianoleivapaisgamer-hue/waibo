@@ -308,6 +308,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     }
     const conversation = convResult.rows[0];
 
+    let envioQR = null;
     if (conversation.channel === 'whatsapp') {
       const clientResult = await pool.query('SELECT whatsapp_api_key, whatsapp_provider, whatsapp_phone_id, whatsapp_mode FROM clients WHERE id = $1', [req.client.id]);
       const cr = clientResult.rows[0] || {};
@@ -316,7 +317,7 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
         const SERVICE_SECRET = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
         if (!QR_SERVICE_URL) return res.status(400).json({ error: 'Servicio QR no disponible' });
         const axios = require('axios');
-        await axios.post(`${QR_SERVICE_URL}/session/${conversation.line_id || req.client.id}/send`,
+        envioQR = await axios.post(`${QR_SERVICE_URL}/session/${conversation.line_id || req.client.id}/send`,
           { to: conversation.customer_phone, message, secret: SERVICE_SECRET, prioridad: 0 },
           { headers: { 'x-service-secret': SERVICE_SECRET, 'Content-Type': 'application/json' } }
         );
@@ -349,8 +350,8 @@ router.post('/conversations/:id/send', authMiddleware, async (req, res) => {
     }
 
     await pool.query(
-      "INSERT INTO messages (conversation_id, role, content, origin, sent_by) VALUES ($1, $2, $3, 'manual', $4)",
-      [conversation.id, 'assistant', message, req.client.own_id || req.client.id]
+      "INSERT INTO messages (conversation_id, role, content, origin, sent_by, wa_id, ack) VALUES ($1, $2, $3, 'manual', $4, $5, $6)",
+      [conversation.id, 'assistant', message, req.client.own_id || req.client.id, envioQR?.data?.waId || null, envioQR?.data?.waId ? 1 : null]
     );
 
     const updated = await pool.query(
@@ -1050,14 +1051,14 @@ router.post('/conversations/:id/send-media', authMiddleware, multerMedia.single(
     const tipo = esVoz || mime.startsWith('audio/') ? 'audio' : mime.startsWith('image/') ? 'image' : mime.startsWith('video/') ? 'video' : 'document';
     const axios = require('axios');
     const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
-    await axios.post(`${process.env.QR_SERVICE_URL}/session/${conv.line_id || req.client.id}/send-media`, {
+    const envio = await axios.post(`${process.env.QR_SERVICE_URL}/session/${conv.line_id || req.client.id}/send-media`, {
       to: conv.customer_phone, mimetype: mime, data: req.file.buffer.toString('base64'),
       filename: req.file.originalname, caption: req.body.caption || '', asVoice: esVoz, prioridad: 0, secret
     }, { headers: { 'x-service-secret': secret }, timeout: 300000, maxBodyLength: Infinity });
     const etiqueta = { audio: '🎙️ Nota de voz', image: '📷 Foto', video: '🎬 Video', document: '📄 ' + req.file.originalname }[tipo];
     const msg = (await pool.query(
-      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, media_type) VALUES ($1, 'assistant', $2, 'manual', $3, $4) RETURNING *`,
-      [conv.id, req.body.caption ? `${etiqueta} ${req.body.caption}` : etiqueta, req.client.own_id || req.client.id, tipo === 'audio' && esVoz ? 'ptt' : tipo])).rows[0];
+      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, media_type, wa_id, ack) VALUES ($1, 'assistant', $2, 'manual', $3, $4, $5, $6) RETURNING *`,
+      [conv.id, req.body.caption ? `${etiqueta} ${req.body.caption}` : etiqueta, req.client.own_id || req.client.id, tipo === 'audio' && esVoz ? 'ptt' : tipo, envio.data?.waId || null, envio.data?.waId ? 1 : null])).rows[0];
     await pool.query('INSERT INTO message_media (message_id, mimetype, filename, data) VALUES ($1,$2,$3,$4)', [msg.id, mime, req.file.originalname, req.file.buffer]);
     await pool.query(`UPDATE conversations SET updated_at = NOW(), status = 'human' WHERE id = $1`, [conv.id]);
     res.json(msg);
@@ -1215,19 +1216,20 @@ router.post('/conversations/:id/send-resource', authMiddleware, async (req, res)
     const axios = require('axios');
     const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
     const sesion = conv.line_id || req.client.id;
+    let envio;
     if (rec.kind === 'link') {
-      await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send`, { to: conv.customer_phone, message: rec.url, prioridad: 0, secret },
+      envio = await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send`, { to: conv.customer_phone, message: rec.url, prioridad: 0, secret },
         { headers: { 'x-service-secret': secret }, timeout: 300000 });
     } else {
-      await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send-media`, {
+      envio = await axios.post(`${process.env.QR_SERVICE_URL}/session/${sesion}/send-media`, {
         to: conv.customer_phone, mimetype: rec.mimetype, data: rec.data.toString('base64'), filename: rec.filename,
         caption: req.body.caption || '', asVoice: rec.kind === 'audio', prioridad: 0, secret
       }, { headers: { 'x-service-secret': secret }, timeout: 300000, maxBodyLength: Infinity });
     }
     const msg = (await pool.query(
-      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, resource_id, media_type)
-       VALUES ($1, 'assistant', $2, 'manual', $3, $4, $5) RETURNING *`,
-      [conv.id, `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}${req.body.caption ? ' ' + req.body.caption : ''}`, req.client.own_id || req.client.id, rec.id, rec.kind === 'link' ? null : rec.kind])).rows[0];
+      `INSERT INTO messages (conversation_id, role, content, origin, sent_by, resource_id, media_type, wa_id, ack)
+       VALUES ($1, 'assistant', $2, 'manual', $3, $4, $5, $6, $7) RETURNING *`,
+      [conv.id, `${rec.kind === 'audio' ? '🎙️' : '📎'} ${rec.name}${req.body.caption ? ' ' + req.body.caption : ''}`, req.client.own_id || req.client.id, rec.id, rec.kind === 'link' ? null : rec.kind, envio?.data?.waId || null, envio?.data?.waId ? 1 : null])).rows[0];
     await pool.query(`UPDATE conversations SET updated_at = NOW(), status = 'human', sent_resources = array_append(COALESCE(sent_resources, '{}'), $2) WHERE id = $1`, [conv.id, rec.id]);
     res.json(msg);
   } catch (err) {
@@ -1282,6 +1284,51 @@ router.post('/conversations/:id/label', authMiddleware, async (req, res) => {
     res.json({ tags: r.rows[0].tags, en_whatsapp: enWhatsApp });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// Borrar (para todos) o editar un mensaje que mandamos, desde la Bandeja
+async function mensajePropio(req) {
+  const r = await pool.query(
+    `SELECT m.*, c.line_id, c.customer_phone FROM messages m JOIN conversations c ON c.id = m.conversation_id
+     WHERE m.id = $1 AND c.id = $2 AND c.client_id = $3 AND m.role = 'assistant'
+       AND ($4::uuid IS NULL OR c.assigned_to = $4::uuid OR (c.assigned_to IS NULL AND COALESCE(c.line_id::text, $q$principal$q$) = ANY(ARRAY(SELECT unnest(line_ids) FROM clients WHERE id = $4::uuid))))`,
+    [req.params.mid, req.params.id, req.client.id, req.client.role === 'employee' ? req.client.own_id : null]);
+  return r.rows[0];
+}
+
+async function accionWA(req, m, body) {
+  const axios = require('axios');
+  const secret = process.env.QR_SERVICE_SECRET || 'whabot_qr_secret_2024';
+  return axios.post(`${process.env.QR_SERVICE_URL}/session/${m.line_id || req.client.id}/message-action`,
+    { ...body, waId: m.wa_id, secret }, { headers: { 'x-service-secret': secret }, timeout: 60000 });
+}
+
+router.post('/conversations/:id/messages/:mid/delete', authMiddleware, async (req, res) => {
+  try {
+    const m = await mensajePropio(req);
+    if (!m) return res.status(404).json({ error: 'No se encontró el mensaje' });
+    if (!m.wa_id) return res.status(400).json({ error: 'Este mensaje no se puede borrar en WhatsApp (no tiene su id)' });
+    await accionWA(req, m, { action: 'delete' });
+    await pool.query('UPDATE messages SET deleted = true WHERE id = $1', [m.id]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.error || 'WhatsApp no dejó borrarlo' });
+  }
+});
+
+router.put('/conversations/:id/messages/:mid', authMiddleware, async (req, res) => {
+  const text = String(req.body.text || '').trim();
+  if (!text) return res.status(400).json({ error: 'Falta el texto' });
+  try {
+    const m = await mensajePropio(req);
+    if (!m) return res.status(404).json({ error: 'No se encontró el mensaje' });
+    if (!m.wa_id || m.media_type) return res.status(400).json({ error: 'Solo se pueden editar mensajes de texto mandados desde acá' });
+    await accionWA(req, m, { action: 'edit', text });
+    await pool.query('UPDATE messages SET content = $2, edited = true WHERE id = $1', [m.id, text]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.error || 'WhatsApp no dejó editarlo' });
   }
 });
 

@@ -263,8 +263,10 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     }
 
     if (aiResponse) {
-      await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3)', [conversation.id, 'assistant', aiResponse]);
-      await sendFn(customerPhone, aiResponse);
+      const guardada = await pool.query('INSERT INTO messages (conversation_id, role, content) VALUES ($1,$2,$3) RETURNING id', [conversation.id, 'assistant', aiResponse]);
+      const envio = await sendFn(customerPhone, aiResponse);
+      // Con el id de WhatsApp se ven los tildes y se puede borrar o editar desde la Bandeja
+      if (envio?.data?.waId) await pool.query('UPDATE messages SET wa_id = $2, ack = 1 WHERE id = $1', [guardada.rows[0].id, envio.data.waId]);
     }
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
 

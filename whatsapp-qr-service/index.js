@@ -373,7 +373,7 @@ async function trabajarCola(clientId) {
         guardarEnviados();
         if (item.firma) rec.set(item.firma, Date.now());
         if (lista.length < LIMITE_DIARIO) { avisoTope[clientId] = new Set(); avisoManual[clientId] = false; }
-        item.resolve({ ok: true });
+        item.resolve({ ok: true, waId: (r && r.id && r.id._serialized) || null });
       } catch (e) {
         item.reject(e);
       }
@@ -519,6 +519,12 @@ function ensureClient(clientId) {
   // momento. WhatsApp no devuelve después la propia historia, así que si no se guarda acá
   // se pierde. Lo de este servicio se reconoce por el id: la sesión web arma ids que
   // empiezan con "3EB0"; los del celular son 32 caracteres hex (deviceType viene vacío).
+  client.on('message_ack', (msg, ack) => {
+    const waId = idDe(msg);
+    if (!waId || !msg.fromMe) return;
+    avisarBackend('ack', { clientId, waId, ack: Number(ack) || 0 }).catch(() => {});
+  });
+
   client.on('message_create', async (msg) => {
     try {
       if (!msg.fromMe) return;
@@ -867,6 +873,30 @@ app.post('/session/:clientId/send-media', checkSecret, async (req, res) => {
   } catch (err) {
     console.error(`[${req.params.clientId}] error enviando multimedia:`, err.message);
     res.status(err.status || 500).json({ error: err.message });
+  }
+});
+
+// Borrar para todos o editar un mensaje propio (WhatsApp pone sus límites de tiempo)
+app.post('/session/:clientId/message-action', checkSecret, async (req, res) => {
+  const rec = sesionLista(req.params.clientId);
+  if (!rec) return res.status(409).json({ error: 'WhatsApp no está conectado' });
+  const { waId, action, text } = req.body;
+  try {
+    const m = await rec.client.getMessageById(waId);
+    if (!m) return res.status(404).json({ error: 'WhatsApp ya no tiene ese mensaje' });
+    if (action === 'delete') {
+      await m.delete(true);
+      return res.json({ ok: true });
+    }
+    if (action === 'edit') {
+      if (!text) return res.status(400).json({ error: 'Falta el texto' });
+      const e = await m.edit(text);
+      if (!e) return res.status(422).json({ error: 'WhatsApp no dejó editarlo (solo se puede en los primeros 15 minutos y si es texto)' });
+      return res.json({ ok: true });
+    }
+    res.status(400).json({ error: 'Acción inválida' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
   }
 });
 
