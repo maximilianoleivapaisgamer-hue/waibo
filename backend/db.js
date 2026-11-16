@@ -2,12 +2,18 @@ const { Pool } = require('pg');
 
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  // Ninguna consulta puede quedar colgada para siempre trabando a las demás
+  statement_timeout: 120000
 });
 
-async function initDB() {
+// Revisión de tablas al arrancar. Si una tabla está ocupada (por ejemplo, el servidor viejo
+// todavía la está usando durante un deploy), no se queda esperando y trabando todo: corta a
+// los 5 segundos y lo vuelve a intentar más tarde. Mientras tanto la app funciona igual.
+async function initDB(intento = 1) {
   const client = await pool.connect();
   try {
+    await client.query("SET lock_timeout = '5s'");
     await client.query(`
       CREATE TABLE IF NOT EXISTS clients (
         id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -651,7 +657,12 @@ async function initDB() {
     console.log('✅ Base de datos inicializada correctamente');
   } catch (err) {
     console.error('❌ Error inicializando DB:', err.message);
+    if (err.code === '55P03' && intento < 10) {
+      console.log(`⏳ Tabla ocupada; se reintenta la revisión en 30s (intento ${intento + 1})`);
+      setTimeout(() => initDB(intento + 1), 30000);
+    }
   } finally {
+    await client.query('RESET lock_timeout').catch(() => {});
     client.release();
   }
 }
