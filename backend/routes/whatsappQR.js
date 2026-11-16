@@ -148,8 +148,8 @@ router.post('/outgoing', checkServiceSecret, async (req, res) => {
       }
     }
     const ins = await pool.query(
-      `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type)
-       SELECT $1, 'assistant', $2, 'phone', $3, $4
+      `INSERT INTO messages (conversation_id, role, content, origin, wa_id, media_type, ack)
+       SELECT $1, 'assistant', $2, 'phone', $3, $4, 1
        WHERE NOT EXISTS (SELECT 1 FROM messages WHERE conversation_id = $1 AND wa_id = $3)`,
       [convId, text, waId || null, mediaType || null]
     );
