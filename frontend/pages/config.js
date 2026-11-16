@@ -8,12 +8,44 @@ import SalesStepsPanel from '../components/SalesStepsPanel';
 import RecontactPanel from '../components/RecontactPanel';
 import SellerBuilderPanel from '../components/SellerBuilderPanel';
 import ReceptionPanel from '../components/ReceptionPanel';
+import BrainPanel from '../components/BrainPanel';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 export default function Config() {
   const router = useRouter();
   const [mainTab, setMainTab] = useState('config');
+  // Cerebros: Ventas (el principal, con todo) y otros como Soporte
+  const [cerebros, setCerebros] = useState([]);
+  const [cerebro, setCerebro] = useState('principal');
+  const [nuevoCerebro, setNuevoCerebro] = useState(null);
+  const cargarCerebros = () => axios.get(`${API}/api/brains`, { headers: { Authorization: `Bearer ${localStorage.getItem('whabot_token')}` } })
+    .then(r => setCerebros(r.data || [])).catch(() => {});
+  useEffect(() => {
+    cargarCerebros();
+    try { const c = localStorage.getItem('waibo_cerebro'); if (c) setCerebro(c); } catch (_) {}
+  }, []);
+  const elegirCerebro = (id) => {
+    setCerebro(id);
+    try { localStorage.setItem('waibo_cerebro', id); } catch (_) {}
+    if (id !== 'principal' && !['config', 'knowledge', 'resources'].includes(mainTab)) setMainTab('config');
+  };
+  const crearCerebro = async () => {
+    try {
+      const r = await axios.post(`${API}/api/brains`, nuevoCerebro, { headers: { Authorization: `Bearer ${localStorage.getItem('whabot_token')}` } });
+      setNuevoCerebro(null);
+      await cargarCerebros();
+      elegirCerebro(r.data.id);
+    } catch (e) { alert(e.response?.data?.error || 'No se pudo crear'); }
+  };
+  const borrarCerebro = async (id, nombre) => {
+    if (!confirm(`Borrar el cerebro "${nombre}"? Su base de conocimiento y sus archivos pasan al cerebro principal.`)) return;
+    try {
+      await axios.delete(`${API}/api/brains/${id}`, { headers: { Authorization: `Bearer ${localStorage.getItem('whabot_token')}` } });
+      elegirCerebro('principal');
+      cargarCerebros();
+    } catch (e) { alert(e.response?.data?.error || 'No se pudo borrar'); }
+  };
   const [config, setConfig] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -72,24 +104,58 @@ export default function Config() {
       <Sidebar active="config" />
       <div className="main-content">
         <div className="page-header">
-          <h1>⚙️ Configurar bot</h1>
-          <p>Personalizá cómo responde tu asistente y qué información conoce</p>
+          <h1>🧠 Cerebro IA</h1>
+          <p>Cada cerebro es una forma de atender, con sus instrucciones, su conocimiento y sus archivos. Cada línea de WhatsApp elige el suyo.</p>
+        </div>
+
+        <div className="card" style={{ padding: '12px 16px', marginBottom: 16 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 13, color: 'var(--text-muted)', marginRight: 4 }}>Cerebro:</span>
+            {(cerebros.length ? cerebros : [{ id: 'principal', name: 'Ventas', kind: 'ventas' }]).map(c => (
+              <button key={c.id} onClick={() => elegirCerebro(c.id)}
+                className={`btn ${cerebro === c.id ? 'btn-primary' : 'btn-secondary'}`}
+                style={{ width: 'auto', padding: '8px 16px', fontSize: 14 }}>
+                {c.kind === 'soporte' ? '🛟' : '💼'} {c.name}
+              </button>
+            ))}
+            {!nuevoCerebro && <button className="btn btn-secondary" style={{ width: 'auto', padding: '8px 14px', fontSize: 14 }} onClick={() => setNuevoCerebro({ name: 'Soporte', kind: 'soporte' })}>＋ Nuevo cerebro</button>}
+            {nuevoCerebro && (
+              <span style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                <input value={nuevoCerebro.name} onChange={e => setNuevoCerebro({ ...nuevoCerebro, name: e.target.value })} style={{ width: 160 }} />
+                <select value={nuevoCerebro.kind} onChange={e => setNuevoCerebro({ ...nuevoCerebro, kind: e.target.value })} style={{ width: 'auto' }}>
+                  <option value="soporte">Soporte</option>
+                  <option value="ventas">Ventas</option>
+                </select>
+                <button className="btn btn-primary" style={{ width: 'auto', padding: '8px 14px' }} onClick={crearCerebro}>Crear</button>
+                <button className="btn btn-secondary" style={{ width: 'auto', padding: '8px 14px' }} onClick={() => setNuevoCerebro(null)}>Cancelar</button>
+              </span>
+            )}
+            {cerebro !== 'principal' && cerebros.find(c => c.id === cerebro) && (
+              <button className="btn btn-secondary" style={{ width: 'auto', padding: '8px 14px', marginLeft: 'auto' }}
+                onClick={() => borrarCerebro(cerebro, cerebros.find(c => c.id === cerebro).name)}>🗑️ Borrar este cerebro</button>
+            )}
+          </div>
+          {cerebro !== 'principal' && (
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8 }}>
+              Para que una línea use este cerebro, elegilo en Líneas de WhatsApp. Recepción, pasos de venta y seguimiento son del cerebro principal.
+            </div>
+          )}
         </div>
 
         <div style={{ display: 'flex', gap: 8, marginBottom: 20, flexWrap: 'wrap' }}>
           {[
-            { key: 'builder', label: '✨ Armá tu vendedor con IA' },
+            { key: 'builder', label: '✨ Armá tu vendedor con IA', solo: true },
             { key: 'config', label: '🎭 Personalidad y comportamiento' },
             { key: 'knowledge', label: '🧠 Base de conocimiento' },
             { key: 'resources', label: '📎 Recursos y etiquetas' },
-            { key: 'reception', label: '📞 Recepción' },
-            { key: 'steps', label: '🧭 Pasos de venta' },
-            { key: 'recontact', label: '🔁 Seguimiento' },
+            { key: 'reception', label: '📞 Recepción', solo: true },
+            { key: 'steps', label: '🧭 Pasos de venta', solo: true },
+            { key: 'recontact', label: '🔁 Seguimiento', solo: true },
             { key: 'test', label: '🧪 Modo prueba' }
-          ].map(t => (
+          ].filter(t => cerebro === 'principal' || !t.solo).map(t => (
             <button
               key={t.key}
-              onClick={() => (t.key === 'test' ? router.push('/test-chat') : setMainTab(t.key))}
+              onClick={() => (t.key === 'test' ? router.push(cerebro === 'principal' ? '/test-chat' : `/test-chat?brain=${cerebro}`) : setMainTab(t.key))}
               className={`btn ${mainTab === t.key ? 'btn-primary' : 'btn-secondary'}`}
               style={{ width: 'auto', padding: '10px 20px', fontSize: 14 }}
             >
@@ -98,14 +164,15 @@ export default function Config() {
           ))}
         </div>
 
-        {mainTab === 'knowledge' && <KnowledgePanel />}
-        {mainTab === 'resources' && <ResourcesPanel />}
-        {mainTab === 'steps' && <SalesStepsPanel />}
-        {mainTab === 'recontact' && <RecontactPanel />}
-        {mainTab === 'builder' && <SellerBuilderPanel />}
-        {mainTab === 'reception' && <ReceptionPanel />}
+        {mainTab === 'knowledge' && <KnowledgePanel key={cerebro} brainId={cerebro} />}
+        {mainTab === 'resources' && <ResourcesPanel key={cerebro} brainId={cerebro} />}
+        {cerebro !== 'principal' && mainTab === 'config' && <BrainPanel brainId={cerebro} onChange={cargarCerebros} />}
+        {cerebro === 'principal' && mainTab === 'steps' && <SalesStepsPanel />}
+        {cerebro === 'principal' && mainTab === 'recontact' && <RecontactPanel />}
+        {cerebro === 'principal' && mainTab === 'builder' && <SellerBuilderPanel />}
+        {cerebro === 'principal' && mainTab === 'reception' && <ReceptionPanel />}
 
-        <form onSubmit={handleSave} style={{ display: mainTab === 'config' ? 'block' : 'none' }}>
+        <form onSubmit={handleSave} style={{ display: mainTab === 'config' && cerebro === 'principal' ? 'block' : 'none' }}>
           {success && <div className="success-msg">✅ {success}</div>}
           {error && <div className="error-msg">{error}</div>}
 

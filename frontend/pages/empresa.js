@@ -84,7 +84,7 @@ function Resumen({ lineas, chats, equipo }) {
   );
 }
 
-function Lineas({ lineas, recargar }) {
+function Lineas({ lineas, recargar, cerebros }) {
   const [nueva, setNueva] = useState({ name: '', kind: 'soporte' });
   const [qr, setQr] = useState({}); // id -> { status, qr }
   const [editando, setEditando] = useState({});
@@ -169,20 +169,13 @@ function Lineas({ lineas, recargar }) {
               </label>
               <span className="emp-suave">Equipo: {l.equipo?.length ? l.equipo.join(', ') : 'solo vos'}</span>
             </div>
-            {l.principal ? (
-              <p className="emp-suave">El bot de esta línea se configura en <a href="/config">Automatización</a> (recepción, pasos de venta, archivos).</p>
-            ) : (
-              <div>
-                <div className="emp-suave" style={{ marginBottom: 4 }}>
-                  Instrucciones del bot de esta línea {l.kind === 'soporte' ? '(soporte: cómo ayudar, qué pedirle al cliente, cuándo pasarlo a una persona)' : '(si lo dejás vacío usa las de la línea principal)'}
-                </div>
-                <textarea className="emp-input" rows={5} defaultValue={l.bot_prompt || ''} onChange={ev => setEditando(prev => ({ ...prev, [l.id]: { bot_prompt: ev.target.value } }))}
-                  placeholder={l.kind === 'soporte'
-                    ? 'Ej: Sos el soporte de CeluLock. Pedile al cliente su nombre y el problema. Si es un equipo que no vincula, pedile marca y modelo. Si no sabés resolverlo, escribí [[derivar:tema]] para que lo tome una persona.'
-                    : 'Instrucciones del bot de ventas de esta línea'} />
-                {ed.bot_prompt !== undefined && <button className="emp-btn" onClick={() => { guardar(l.id, { bot_prompt: ed.bot_prompt }); setEditando(prev => ({ ...prev, [l.id]: {} })); }}>Guardar instrucciones</button>}
-              </div>
-            )}
+            <div className="emp-fila" style={{ borderBottom: 'none', flexWrap: 'wrap' }}>
+              <span className="emp-suave">Cerebro que atiende esta línea:</span>
+              <select className="emp-input" style={{ width: 'auto' }} value={l.brain_id || 'principal'} onChange={ev => guardar(l.id, { brain_id: ev.target.value })}>
+                {(cerebros.length ? cerebros : [{ id: 'principal', name: 'Ventas', kind: 'ventas' }]).map(c => <option key={c.id} value={c.id}>{c.kind === 'soporte' ? '🛟' : '💼'} {c.name}</option>)}
+              </select>
+              <a href="/config" className="emp-suave">Editar cerebros ›</a>
+            </div>
           </section>
         );
       })}
@@ -247,6 +240,7 @@ export default function Empresa() {
   const [lineas, setLineas] = useState([]);
   const [chats, setChats] = useState([]);
   const [equipo, setEquipo] = useState([]);
+  const [cerebros, setCerebros] = useState([]);
   const [cargando, setCargando] = useState(true);
 
   const recargar = async () => {
@@ -259,6 +253,7 @@ export default function Empresa() {
       setLineas(l.data);
       setChats((c.data || []).filter(x => x.channel === 'whatsapp'));
       setEquipo(Array.isArray(e.data) ? e.data : (e.data.employees || []));
+      axios.get(`${API}/api/brains`, { headers: headers() }).then(r => setCerebros(r.data || [])).catch(() => {});
     } catch (err) {
       if ([401, 403].includes(err.response?.status)) router.push('/login');
     }
@@ -292,7 +287,7 @@ export default function Empresa() {
         {cargando ? <p className="emp-suave">Cargando…</p> : (
           <>
             {tab === 'resumen' && <Resumen lineas={lineas} chats={chats} equipo={equipo} />}
-            {tab === 'lineas' && <Lineas lineas={lineas} recargar={recargar} />}
+            {tab === 'lineas' && <Lineas lineas={lineas} recargar={recargar} cerebros={cerebros} />}
             {tab === 'equipo' && <Equipo equipo={equipo} lineas={lineas} recargar={recargar} />}
           </>
         )}

@@ -56,7 +56,7 @@ export default function TestChat() {
     try {
       const res = await axios.post(
         `${API}/api/bot/test-chat`,
-        { message: text, history: messages.filter(m => !m.isNote && !m.isError).map(m => m.media ? { role: 'assistant', content: `📎 ${m.media.name}${m.content ? ' ' + m.content : ''}` } : { role: m.role, content: m.content }), sales_step: salesStep, sent_resources: sentResources },
+        { brain: router.query.brain || undefined, message: text, history: messages.filter(m => !m.isNote && !m.isError).map(m => m.media ? { role: 'assistant', content: `📎 ${m.media.name}${m.content ? ' ' + m.content : ''}` } : { role: m.role, content: m.content }), sales_step: salesStep, sent_resources: sentResources },
         { headers: getHeaders() }
       );
       setSalesStep(res.data.sales_step ?? salesStep);
@@ -94,7 +94,7 @@ export default function TestChat() {
       <Sidebar active="test-chat" />
       <div className="main-content">
         <div className="page-header">
-          <h1>🧪 Modo prueba</h1>
+          <h1>🧪 Modo prueba{router.query.brain ? ' · cerebro elegido' : ''}</h1>
           <p>Probá cómo responde tu bot antes de que hable con clientes reales — esto no usa WhatsApp ni gasta nada</p>
         </div>
 

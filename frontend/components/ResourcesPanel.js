@@ -16,7 +16,9 @@ function tamano(bytes) {
 
 // Recursos (fotos, videos, archivos, links) que el bot manda por WhatsApp,
 // y reglas de etiquetado/archivado. Aplica al canal WhatsApp por QR.
-export default function ResourcesPanel() {
+export default function ResourcesPanel({ brainId = null }) {
+  // Cada cerebro tiene su propia resources
+  const bq = brainId && brainId !== 'principal' ? `?brain=${brainId}` : '';
   const [resources, setResources] = useState([]);
   const [labels, setLabels] = useState([]);
   const [labelsLoaded, setLabelsLoaded] = useState(false);
@@ -77,14 +79,14 @@ export default function ResourcesPanel() {
   const playResource = async (r) => {
     if (playing?.id === r.id) { setPlaying(null); return; }
     try {
-      const res = await axios.get(`${API}/api/resources/${r.id}/file`, { headers: getHeaders(), responseType: 'blob' });
+      const res = await axios.get(`${API}/api/resources/${r.id}/file${bq}`, { headers: getHeaders(), responseType: 'blob' });
       setPlaying({ id: r.id, url: URL.createObjectURL(res.data) });
     } catch { flash(setError, 'No se pudo cargar el audio.'); }
   };
 
   const loadResources = async () => {
     try {
-      const r = await axios.get(`${API}/api/resources`, { headers: getHeaders() });
+      const r = await axios.get(`${API}/api/resources${bq}`, { headers: getHeaders() });
       setResources(r.data);
     } catch { setError('No se pudieron cargar los recursos.'); }
   };
@@ -129,11 +131,11 @@ export default function ResourcesPanel() {
         fd.append('file', archivo);
         fd.append('name', form.name);
         fd.append('description', form.description);
-        await axios.post(`${API}/api/resources/file`, fd, { headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
+        await axios.post(`${API}/api/resources/file${bq}`, fd, { headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' }, timeout: 120000 });
         setRecordedBlob(null);
         setRecordedUrl(null);
       } else {
-        await axios.post(`${API}/api/resources/link`, { name: form.name, description: form.description, url: form.url }, { headers: getHeaders() });
+        await axios.post(`${API}/api/resources/link${bq}`, { name: form.name, description: form.description, url: form.url }, { headers: getHeaders() });
       }
       setForm({ name: '', description: '', url: '', file: null });
       e.target.reset();
@@ -146,7 +148,7 @@ export default function ResourcesPanel() {
 
   const deleteResource = async (id) => {
     if (!confirm('¿Eliminar este recurso?')) return;
-    await axios.delete(`${API}/api/resources/${id}`, { headers: getHeaders() });
+    await axios.delete(`${API}/api/resources/${id}${bq}`, { headers: getHeaders() });
     loadResources();
   };
 
@@ -155,6 +157,8 @@ export default function ResourcesPanel() {
       {success && <div className="success-msg">✅ {success}</div>}
       {error && <div className="error-msg">❌ {error}</div>}
 
+      {/* Las reglas de etiquetas de otros cerebros se editan en su Personalidad */}
+      {(!brainId || brainId === 'principal') && (
       <div className="card">
         <div className="card-title">🏷️ Etiquetas y archivado</div>
         <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '0 0 12px' }}>
@@ -188,6 +192,7 @@ export default function ResourcesPanel() {
           {busy ? 'Guardando…' : '💾 Guardar reglas'}
         </button>
       </div>
+      )}
 
       <div className="card">
         <div className="card-title">📎 Fotos, videos, audios y archivos para mandar</div>

@@ -4,7 +4,9 @@ import axios from 'axios';
 const API = process.env.NEXT_PUBLIC_API_URL;
 
 // Base de conocimiento embebida como pestaña dentro de Configurar bot
-export default function KnowledgePanel() {
+export default function KnowledgePanel({ brainId = null }) {
+  // Cada cerebro tiene su propia knowledge
+  const bq = brainId && brainId !== 'principal' ? `?brain=${brainId}` : '';
   const [entries, setEntries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState('text');
@@ -21,7 +23,7 @@ export default function KnowledgePanel() {
 
   const loadEntries = async () => {
     try {
-      const res = await axios.get(`${API}/api/knowledge`, { headers: getHeaders() });
+      const res = await axios.get(`${API}/api/knowledge${bq}`, { headers: getHeaders() });
       setEntries(res.data);
     } finally {
       setLoading(false);
@@ -32,7 +34,7 @@ export default function KnowledgePanel() {
     e.preventDefault();
     setSaving(true); setError(''); setSuccess('');
     try {
-      await axios.post(`${API}/api/knowledge/text`, {
+      await axios.post(`${API}/api/knowledge/text${bq}`, {
         title: form.title, content: form.content
       }, { headers: getHeaders() });
       setForm({ title: '', content: '', url: '' });
@@ -50,7 +52,7 @@ export default function KnowledgePanel() {
     e.preventDefault();
     setSaving(true); setError(''); setSuccess('');
     try {
-      const res = await axios.post(`${API}/api/knowledge/url`, { url: form.url }, { headers: getHeaders() });
+      const res = await axios.post(`${API}/api/knowledge/url${bq}`, { url: form.url }, { headers: getHeaders() });
       setForm({ title: '', content: '', url: '' });
       setSuccess(`✅ Se importaron ${res.data.chars?.toLocaleString()} caracteres de la web.`);
       loadEntries();
@@ -116,7 +118,7 @@ export default function KnowledgePanel() {
     const formData = new FormData();
     formData.append('file', file);
     try {
-      await axios.post(`${API}/api/knowledge/file`, formData, {
+      await axios.post(`${API}/api/knowledge/file${bq}`, formData, {
         headers: { ...getHeaders(), 'Content-Type': 'multipart/form-data' }
       });
       setSuccess('¡Archivo subido! El bot ya puede usar su contenido.');
@@ -131,7 +133,7 @@ export default function KnowledgePanel() {
 
   const handleDelete = async (id) => {
     if (!confirm('¿Eliminár esta entrada?')) return;
-    await axios.delete(`${API}/api/knowledge/${id}`, { headers: getHeaders() });
+    await axios.delete(`${API}/api/knowledge/${id}${bq}`, { headers: getHeaders() });
     loadEntries();
   };
 
@@ -141,7 +143,7 @@ export default function KnowledgePanel() {
     setRefreshing(id);
     setError(''); setSuccess('');
     try {
-      const res = await axios.put(`${API}/api/knowledge/url/${id}`, {}, { headers: getHeaders() });
+      const res = await axios.put(`${API}/api/knowledge/url/${id}${bq}`, {}, { headers: getHeaders() });
       setSuccess(`✅ Contenido actualizado (${res.data.chars?.toLocaleString()} caracteres importados)`);
       loadEntries();
     } catch (err) {
@@ -154,7 +156,7 @@ export default function KnowledgePanel() {
 
   const exportKnowledgeBase = async (format) => {
     try {
-      const res = await axios.get(`${API}/api/knowledge/export`, { headers: getHeaders() });
+      const res = await axios.get(`${API}/api/knowledge/export${bq}`, { headers: getHeaders() });
       const data = res.data;
       const dateStr = new Date().toISOString().slice(0, 10);
 
