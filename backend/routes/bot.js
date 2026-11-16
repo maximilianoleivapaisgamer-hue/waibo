@@ -1405,4 +1405,43 @@ router.post('/push/unsubscribe', authMiddleware, async (req, res) => {
   res.json({ ok: true });
 });
 
+// Nuevo chat con un número que nunca escribió (como "Nuevo chat" en WhatsApp).
+// Arma la conversación; el primer mensaje se manda con /conversations/:id/send.
+function telefonoArgentino(raw) {
+  let d = String(raw || '').replace(/\D/g, '');
+  if (d.startsWith('00')) d = d.slice(2);
+  if (d.startsWith('0')) d = d.slice(1);
+  if (d.length === 10) d = '549' + d;                                  // 11 3911 5462
+  else if (d.startsWith('54') && !d.startsWith('549') && d.length === 12) d = '549' + d.slice(2);
+  return d;
+}
+router.post('/conversations/new', authMiddleware, async (req, res) => {
+  const phone = telefonoArgentino(req.body.phone);
+  if (phone.length < 10 || phone.length > 15) return res.status(400).json({ error: 'Revisá el número (con código de área)' });
+  const lineId = req.body.lineId && req.body.lineId !== 'principal' ? String(req.body.lineId) : null;
+  try {
+    if (lineId) {
+      const l = (await pool.query('SELECT id FROM wa_lines WHERE id = $1 AND client_id = $2', [lineId, req.client.id])).rows[0];
+      if (!l) return res.status(400).json({ error: 'Esa línea no existe' });
+    }
+    if (req.client.role === 'employee') {
+      const yo = (await pool.query('SELECT line_ids FROM clients WHERE id = $1', [req.client.own_id])).rows[0];
+      if (yo && yo.line_ids && !yo.line_ids.includes(lineId || 'principal')) return res.status(403).json({ error: 'No tenés esa línea asignada' });
+    }
+    let conv = (await pool.query(
+      `SELECT * FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM $3 ORDER BY created_at DESC LIMIT 1`,
+      [req.client.id, phone, lineId])).rows[0];
+    if (!conv) {
+      const nombre = String(req.body.name || '').trim().slice(0, 80) || phone;
+      conv = (await pool.query(
+        `INSERT INTO conversations (client_id, customer_phone, customer_name, channel, status, line_id, assigned_to)
+         VALUES ($1, $2, $3, 'whatsapp', 'human', $4, $5) RETURNING *`,
+        [req.client.id, phone, nombre, lineId, req.client.role === 'employee' ? req.client.own_id : null])).rows[0];
+    }
+    res.json({ id: conv.id, nuevo: true, phone });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;

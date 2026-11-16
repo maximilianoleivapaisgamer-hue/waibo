@@ -202,7 +202,25 @@ export default function Inbox() {
       avisar('Listo: te van a llegar avisos de mensajes nuevos');
     } catch (e) { avisar('No se pudieron activar los avisos: ' + (e.message || '')); }
   };
-  const [agendando, setAgendando] = useState(null); // { nombre, apellido }
+  const [agendando, setAgendando] = useState(null);
+  // Nuevo chat con un número que nunca escribió
+  const [nuevoChat, setNuevoChat] = useState(null); // { phone, name, lineId, texto, mandando }
+  const empezarChat = async () => {
+    const n = nuevoChat;
+    if (!n?.phone?.trim() || !n?.texto?.trim()) return avisar('Poné el número y el mensaje');
+    setNuevoChat({ ...n, mandando: true });
+    try {
+      const r = await axios.post(`${API}/api/bot/conversations/new`, { phone: n.phone, name: n.name, lineId: n.lineId || null }, { headers: headers() });
+      await axios.post(`${API}/api/bot/conversations/${r.data.id}/send`, { message: n.texto.trim() }, { headers: headers(), timeout: 300000 });
+      const l = await axios.get(`${API}/api/bot/conversations`, { headers: headers() });
+      setChats((l.data || []).filter(c => c.channel === 'whatsapp'));
+      setNuevoChat(null);
+      setAbierto(r.data.id);
+    } catch (e) {
+      setNuevoChat({ ...n, mandando: false });
+      avisar(e.response?.data?.error || 'No se pudo mandar. Revisá que el número tenga WhatsApp.');
+    }
+  }; // { nombre, apellido }
   const [menuMsg, setMenuMsg] = useState(null);   // id del mensaje con el menú abierto
   const [editando, setEditando] = useState(null); // { id, texto }
   const [verDetalle, setVerDetalle] = useState(false);
@@ -586,7 +604,8 @@ export default function Inbox() {
             );
           })
   ), [visibles, abierto, lineas, soyVendedor]);
-  const listaMensajes = useMemo(() => (
+  // Sin chat abierto no se arma nada (al volver atrás quedaban mensajes del chat anterior y fallaba)
+  const listaMensajes = useMemo(() => !chat ? null : (
     conDias.map(m => m.dia ? (
                 <div key={m.key} className="wa-dia"><span>{m.dia}</span></div>
               ) : (
@@ -663,6 +682,8 @@ export default function Inbox() {
           {!soyVendedor && <a href="/empresa" className="wa-link">Empresa ›</a>}
           {avisos === 'no' && <button className="wa-boton-claro" style={{ marginLeft: 6 }} onClick={activarAvisos} title="Recibir avisos de mensajes nuevos">🔔 Avisos</button>}
           {avisos === 'bloqueado' && <span title="Las notificaciones están bloqueadas en este navegador. Habilitalas desde el candado de la barra de direcciones." style={{ marginLeft: 6, fontSize: 18, cursor: 'help' }}>🔕</span>}
+          <button className="wa-boton-claro" style={{ marginLeft: 6 }} title="Escribirle a un número nuevo"
+            onClick={() => setNuevoChat({ phone: '', name: '', lineId: lineaSel || '', texto: '' })}>✏️ Nuevo</button>
         </header>
         <div className="wa-buscar">
           <input placeholder="Buscar nombre, número o etiqueta" value={buscar} onChange={e => setBuscar(e.target.value)} />
@@ -697,6 +718,27 @@ export default function Inbox() {
           {listaChats}
         </div>
       </aside>
+
+      {nuevoChat && (
+        <div onClick={() => !nuevoChat.mandando && setNuevoChat(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(11,20,26,.55)', zIndex: 900, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+          <div onClick={e => e.stopPropagation()} className="wa-nuevo">
+            <h3 style={{ margin: '0 0 4px' }}>Nuevo chat</h3>
+            <div className="wa-nuevo-ayuda">Para escribirle a alguien que todavía no te habló. Con código de área, sin 0 ni 15 (ej: 11 3911 5462).</div>
+            <input inputMode="tel" placeholder="Número" value={nuevoChat.phone} onChange={e => setNuevoChat({ ...nuevoChat, phone: e.target.value })} autoFocus />
+            <input placeholder="Nombre (opcional)" value={nuevoChat.name} onChange={e => setNuevoChat({ ...nuevoChat, name: e.target.value })} />
+            {lineas.length > 1 && (
+              <select value={nuevoChat.lineId} onChange={e => setNuevoChat({ ...nuevoChat, lineId: e.target.value })}>
+                {lineas.map(l => <option key={l.id} value={l.id === 'principal' ? '' : l.id}>{l.kind === 'soporte' ? '🛟' : '💼'} {l.name}</option>)}
+              </select>
+            )}
+            <textarea rows={3} placeholder="Primer mensaje" value={nuevoChat.texto} onChange={e => setNuevoChat({ ...nuevoChat, texto: e.target.value })} />
+            <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+              <button className="wa-boton-claro" disabled={nuevoChat.mandando} onClick={() => setNuevoChat(null)}>Cancelar</button>
+              <button className="wa-boton-verde" disabled={nuevoChat.mandando} onClick={empezarChat}>{nuevoChat.mandando ? 'Mandando…' : 'Mandar'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Chat abierto ── */}
       <main className={`wa-chat ${abierto ? '' : 'oculta-movil'}`}>
@@ -1040,6 +1082,9 @@ export default function Inbox() {
         .wa-cita.mia b { color: #3a9fd0; }
         .wa-cita span { color: var(--wa-suave); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; white-space: pre-wrap; }
         .wa-cita-caja { display: flex; align-items: center; gap: 8px; padding: 6px 6px 4px; }
+        .wa-nuevo { background: var(--wa-panel); color: var(--wa-texto); border-radius: 12px; padding: 18px; width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 30px rgba(0,0,0,.3); }
+        .wa-nuevo input, .wa-nuevo textarea, .wa-nuevo select { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); border-radius: 8px; padding: 9px 12px; font-size: 15px; font-family: inherit; }
+        .wa-nuevo-ayuda { font-size: 13px; color: var(--wa-suave); }
         .wa-borrado { color: var(--wa-suave); font-style: italic; }
         .wa-editar textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--wa-borde); border-radius: 6px; padding: 6px; font-family: inherit; font-size: 14px; margin-bottom: 6px; background: var(--wa-panel); color: var(--wa-texto); }
         .wa-tilde { color: var(--wa-suave); letter-spacing: -3px; margin-left: 2px; }
