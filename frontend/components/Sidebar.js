@@ -7,6 +7,17 @@ export default function Sidebar({ active }) {
   const router = useRouter();
   const [trial, setTrial] = useState(null);
   const [isEmployee, setIsEmployee] = useState(false);
+  // Modo Empresa: mismo panel sin Mercado Libre, Tiendanube, pedidos, agenda ni catálogo
+  const [modo, setModo] = useState('completo');
+  useEffect(() => {
+    try { const m = localStorage.getItem('waibo_panel_mode'); if (m) setModo(m); } catch (_) {}
+    const token = typeof window !== 'undefined' && localStorage.getItem('whabot_token');
+    if (!token) return;
+    fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/bot/panel`, { headers: { Authorization: `Bearer ${token}` } })
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => { if (d?.mode) { setModo(d.mode); try { localStorage.setItem('waibo_panel_mode', d.mode); } catch (_) {} } })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     try {
@@ -94,7 +105,55 @@ export default function Sidebar({ active }) {
     }
   ];
 
-  const sections = allSections
+  const OCULTOS_EMPRESA = ['mercadolibre', 'tiendanube', 'orders', 'agenda', 'catalog', 'conversations', 'tiktok', 'pagos'];
+  const seccionesEmpresa = [
+    {
+      label: 'Principal',
+      onlyOwner: false,
+      items: [
+        { key: 'empresa', label: 'Resumen', icon: '📊', href: '/empresa', onlyOwner: true },
+        { key: 'inbox', label: 'Bandeja', icon: '📥', href: '/inbox' },
+        { key: 'lineas', label: 'Líneas de WhatsApp', icon: '📱', href: '/empresa?tab=lineas', onlyOwner: true },
+        { key: 'equipo', label: 'Equipo', icon: '👥', href: '/empresa?tab=equipo', onlyOwner: true },
+      ]
+    },
+    {
+      label: 'Cerebro IA',
+      onlyOwner: true,
+      items: [
+        { key: 'config', label: 'Instrucciones y bot', icon: '🧠', href: '/config' },
+        { key: 'knowledge', label: 'Base de conocimiento', icon: '📚', href: '/config?tab=knowledge' },
+        { key: 'resources', label: 'Archivos y etiquetas', icon: '📎', href: '/config?tab=resources' },
+        { key: 'reception', label: 'Recepción', icon: '📞', href: '/config?tab=reception' },
+        { key: 'steps', label: 'Pasos de venta', icon: '🪜', href: '/config?tab=steps' },
+        { key: 'recontact', label: 'Seguimiento', icon: '🔁', href: '/config?tab=recontact' },
+        { key: 'builder', label: 'Armá tu vendedor', icon: '✨', href: '/config?tab=builder' },
+        { key: 'test-chat', label: 'Modo prueba', icon: '🧪', href: '/test-chat' },
+      ]
+    },
+    ...allSections
+      .filter(s => !['Principal', 'Herramientas', 'Cuenta'].includes(s.label))
+      .map(s => ({ ...s, items: s.items.filter(i => !OCULTOS_EMPRESA.includes(i.key)) })),
+    {
+      label: 'Herramientas',
+      onlyOwner: true,
+      items: [
+        { key: 'reports', label: 'Reportes', icon: '📈', href: '/reports' },
+        { key: 'campaigns', label: 'Campañas masivas', icon: '📣', href: '/campaigns' },
+      ]
+    },
+    {
+      label: 'Cuenta',
+      onlyOwner: true,
+      items: [
+        { key: 'team', label: 'Usuarios del equipo', icon: '🔑', href: '/team' },
+        { key: 'billing', label: 'Mi plan', icon: '💳', href: '/billing' },
+        { key: 'profile', label: 'Mi cuenta', icon: '👤', href: '/profile' },
+      ]
+    }
+  ];
+
+  const sections = (modo === 'empresa' ? seccionesEmpresa : allSections)
     .filter(s => !isEmployee || !s.onlyOwner)
     .map(s => ({ ...s, items: s.items.filter(i => !isEmployee || !i.onlyOwner) }))
     .filter(s => s.items.length > 0);

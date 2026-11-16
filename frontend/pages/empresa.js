@@ -2,6 +2,7 @@ import Head from 'next/head';
 import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/router';
 import axios from 'axios';
+import Sidebar from '../components/Sidebar';
 
 const API = process.env.NEXT_PUBLIC_API_URL;
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
@@ -266,37 +267,28 @@ export default function Empresa() {
 
   useEffect(() => {
     if (!localStorage.getItem('whabot_token')) { router.push('/login'); return; }
-    if (router.query.tab) setTab(String(router.query.tab));
+    setTab(router.query.tab ? String(router.query.tab) : 'resumen');
     recargar();
     const t = setInterval(recargar, 30000);
     return () => clearInterval(t);
   }, [router.query.tab]);
 
-  const tabs = [
-    { k: 'resumen', t: '📊 Resumen' },
-    { k: 'lineas', t: '📱 Líneas' },
-    { k: 'equipo', t: '👥 Equipo' }
-  ];
+  const titulos = {
+    resumen: { h: '📊 Resumen', p: 'Cómo viene el día en tus líneas y tu equipo' },
+    lineas: { h: '📱 Líneas de WhatsApp', p: 'Cada número con su QR, su estado y su bot' },
+    equipo: { h: '👥 Equipo', p: 'Quién atiende qué línea y cómo viene cada uno' }
+  };
+  const t = titulos[tab] || titulos.resumen;
 
   return (
-    <div className="emp">
+    <div className="dashboard">
       <Head><title>Waibo Empresa</title></Head>
-      <header className="emp-top">
-        <div className="emp-marca">Waibo <span>Empresa</span></div>
-        <nav>
-          {tabs.map(x => <button key={x.k} className={tab === x.k ? 'on' : ''} onClick={() => setTab(x.k)}>{x.t}</button>)}
-          <a href="/inbox" className="emp-bandeja">📥 Bandeja</a>
-        </nav>
-        <details className="emp-mas">
-          <summary>Más</summary>
-          <a href="/config">🤖 Automatización (bot, recepción)</a>
-          <a href="/instagram">📷 Instagram</a>
-          <a href="/team">👥 Usuarios del equipo</a>
-          <a href="/dashboard">Panel completo</a>
-        </details>
-      </header>
-
-      <main className="emp-main">
+      <Sidebar active={tab === 'lineas' ? 'lineas' : tab === 'equipo' ? 'equipo' : 'empresa'} />
+      <div className="main-content emp">
+        <div className="page-header">
+          <h1>{t.h}</h1>
+          <p>{t.p}</p>
+        </div>
         {cargando ? <p className="emp-suave">Cargando…</p> : (
           <>
             {tab === 'resumen' && <Resumen lineas={lineas} chats={chats} equipo={equipo} />}
@@ -304,15 +296,11 @@ export default function Empresa() {
             {tab === 'equipo' && <Equipo equipo={equipo} lineas={lineas} recargar={recargar} />}
           </>
         )}
-      </main>
+      </div>
 
       <style jsx global>{`
         :root { --emp-fondo: #f4f6f8; --emp-card: #fff; --emp-borde: #e6e9ec; --emp-texto: #111b21; --emp-suave: #667781; --emp-verde: #00a884; }
-        @media (prefers-color-scheme: dark) {
-          :root { --emp-fondo: #0b141a; --emp-card: #111b21; --emp-borde: #222d34; --emp-texto: #e9edef; --emp-suave: #8696a0; }
-        }
-        body { margin: 0; background: var(--emp-fondo); }
-        .emp { min-height: 100vh; background: var(--emp-fondo); color: var(--emp-texto); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Helvetica, Arial, sans-serif; }
+        .emp { color: var(--emp-texto); }
         .emp-top { display: flex; align-items: center; gap: 16px; padding: 12px 24px; background: var(--emp-card); border-bottom: 1px solid var(--emp-borde); flex-wrap: wrap; }
         .emp-marca { font-weight: 800; font-size: 18px; }
         .emp-marca span { color: var(--emp-verde); font-weight: 600; }

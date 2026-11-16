@@ -22,7 +22,8 @@ export default function Config() {
 
   useEffect(() => {
     if (router.query.tab === 'knowledge' || router.query.tab === 'resources' || router.query.tab === 'steps' || router.query.tab === 'recontact' || router.query.tab === 'builder' || router.query.tab === 'reception') setMainTab(router.query.tab);
-  }, [router.query.tab]);
+    else if (router.isReady && !router.query.tab) setMainTab('config');
+  }, [router.query.tab, router.isReady]);
 
   useEffect(() => {
     const token = localStorage.getItem('whabot_token');

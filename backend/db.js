@@ -553,6 +553,8 @@ async function initDB() {
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS line_ids TEXT[];
       -- Nombre propio de la línea principal en el panel
       ALTER TABLE clients ADD COLUMN IF NOT EXISTS main_line_name VARCHAR(60);
+      -- 'empresa' = panel sin Mercado Libre, Tiendanube, pedidos, agenda ni catálogo
+      ALTER TABLE clients ADD COLUMN IF NOT EXISTS panel_mode VARCHAR(20);
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_enabled BOOLEAN DEFAULT false;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_question TEXT;
       ALTER TABLE bot_configs ADD COLUMN IF NOT EXISTS reception_segments JSONB DEFAULT '[]'::jsonb;

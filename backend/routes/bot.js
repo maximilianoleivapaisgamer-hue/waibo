@@ -1140,4 +1140,14 @@ router.put('/conversations/:id/case', authMiddleware, async (req, res) => {
   }
 });
 
+// Modo del panel de la cuenta (el menú se arma según esto)
+router.get('/panel', authMiddleware, async (req, res) => {
+  try {
+    const r = (await pool.query('SELECT panel_mode FROM clients WHERE id = $1', [req.client.id])).rows[0];
+    res.json({ mode: r?.panel_mode || 'completo' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 module.exports = router;
