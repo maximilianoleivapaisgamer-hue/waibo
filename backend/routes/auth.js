@@ -147,7 +147,7 @@ router.get('/employees', authMiddleware, async (req, res) => {
   const ownerId = req.client.own_id || req.client.id;
   try {
     const result = await pool.query(
-      `SELECT id, name, email, created_at FROM clients WHERE owner_id = $1 AND role = 'employee' ORDER BY created_at DESC`,
+      `SELECT id, name, email, created_at, line_ids FROM clients WHERE owner_id = $1 AND role = 'employee' ORDER BY created_at DESC`,
       [ownerId]
     );
     res.json(result.rows);

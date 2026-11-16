@@ -45,6 +45,7 @@ export default function Sidebar({ active }) {
       onlyOwner: false,
       items: [
         { key: 'dashboard', label: 'Panel principal', icon: '📊', href: '/dashboard', onlyOwner: true },
+        { key: 'empresa', label: 'Waibo Empresa', icon: '🏢', href: '/empresa', onlyOwner: true },
         { key: 'inbox', label: 'Bandeja (WhatsApp)', icon: '📥', href: '/inbox' },
         { key: 'conversations', label: 'Conversaciones', icon: '💬', href: '/conversations' },
       ]

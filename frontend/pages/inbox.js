@@ -56,6 +56,12 @@ const CALOR = {
   frio: { txt: '❄️ Frío', cls: 'gris' }
 };
 
+const CASO = {
+  abierto: { txt: '🟠 Abierto', cls: 'naranja' },
+  esperando: { txt: '⏳ Esperando al cliente', cls: 'azul' },
+  resuelto: { txt: '✅ Resuelto', cls: '' }
+};
+
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('whabot_token')}` });
 
 function Media({ m }) {
@@ -103,6 +109,7 @@ export default function Inbox() {
   const [verDetalle, setVerDetalle] = useState(false);
   const [aviso, setAviso] = useState('');
   const [etiquetaSel, setEtiquetaSel] = useState('');
+  const [lineaSel, setLineaSel] = useState('');
   const [conexion, setConexion] = useState(null); // null | 'ok' | 'caida'
   const finRef = useRef(null);
   const archivoRef = useRef(null);
@@ -179,6 +186,8 @@ export default function Inbox() {
     return chats.filter(c => {
       if (q && !(`${c.customer_name || ''} ${c.customer_phone || ''} ${(c.tags || []).join(' ')}`.toLowerCase().includes(q))) return false;
       if (etiquetaSel && !(c.tags || []).includes(etiquetaSel)) return false;
+      if (lineaSel && (c.line_id || 'principal') !== lineaSel) return false;
+      if (filtro === 'casos') return c.line_kind === 'soporte' && c.case_status !== 'resuelto';
       if (filtro === 'calientes') return c.heat === 'caliente';
       if (filtro.startsWith('seg:')) return c.segment === filtro.slice(4);
       if (filtro === 'sinleer') return c.unread;
@@ -187,9 +196,15 @@ export default function Inbox() {
       if (filtro !== 'todos') return c.assigned_to === filtro;
       return !c.archived || !!q;
     });
-  }, [chats, buscar, filtro, etiquetaSel]);
+  }, [chats, buscar, filtro, etiquetaSel, lineaSel]);
 
   const sinLeer = chats.filter(c => c.unread).length;
+  const lineas = useMemo(() => {
+    const m = new Map();
+    for (const c of chats) m.set(c.line_id || 'principal', { id: c.line_id || 'principal', name: c.line_name || 'Principal', kind: c.line_kind });
+    return [...m.values()];
+  }, [chats]);
+  const hayCasos = chats.some(c => c.line_kind === 'soporte');
   const segmentos = [...new Set(chats.map(c => c.segment).filter(Boolean))];
   const calientes = chats.filter(c => c.heat === 'caliente').length;
   const todasEtiquetas = useMemo(() => {
@@ -331,12 +346,19 @@ export default function Inbox() {
               ● {conexion === 'ok' ? 'Conectado' : 'Desconectado'}
             </span>
           )}
-          {!soyVendedor && <a href="/dashboard" className="wa-link">Panel ›</a>}
+          {!soyVendedor && <a href="/empresa" className="wa-link">Empresa ›</a>}
         </header>
         <div className="wa-buscar">
           <input placeholder="Buscar nombre, número o etiqueta" value={buscar} onChange={e => setBuscar(e.target.value)} />
         </div>
+        {lineas.length > 1 && (
+          <div className="wa-lineas">
+            <button className={!lineaSel ? 'on' : ''} onClick={() => setLineaSel('')}>Todas las líneas</button>
+            {lineas.map(l => <button key={l.id} className={lineaSel === l.id ? 'on' : ''} onClick={() => setLineaSel(l.id)}>{l.kind === 'soporte' ? '🛟' : '💼'} {l.name}</button>)}
+          </div>
+        )}
         <div className="wa-chips">
+          {hayCasos && <button className={filtro === 'casos' ? 'on' : ''} onClick={() => setFiltro('casos')}>🛟 Casos abiertos</button>}
           <button className={filtro === 'todos' ? 'on' : ''} onClick={() => setFiltro('todos')}>Todos</button>
           <button className={filtro === 'sinleer' ? 'on' : ''} onClick={() => setFiltro('sinleer')}>Sin leer{sinLeer ? ` ${sinLeer}` : ''}</button>
           <button className={filtro === 'calientes' ? 'on' : ''} onClick={() => setFiltro('calientes')}>🔥 Calientes{calientes ? ` ${calientes}` : ''}</button>
@@ -372,8 +394,10 @@ export default function Inbox() {
                     </span>
                     {c.unread && <span className="wa-burbuja-nueva">●</span>}
                   </div>
-                  {(c.tags?.length > 0 || c.follow_up_at || c.heat || c.segment || (!soyVendedor && c.assigned_name)) && (
+                  {(lineas.length > 1 || c.line_kind === 'soporte' || c.tags?.length > 0 || c.follow_up_at || c.heat || c.segment || (!soyVendedor && c.assigned_name)) && (
                     <div className="wa-item-tags">
+                      {lineas.length > 1 && <span className="wa-tag gris">{c.line_kind === 'soporte' ? '🛟' : '💼'} {c.line_name}</span>}
+                      {c.line_kind === 'soporte' && CASO[c.case_status || 'abierto'] && <span className={`wa-tag ${CASO[c.case_status || 'abierto'].cls}`}>{CASO[c.case_status || 'abierto'].txt}</span>}
                       {c.segment && <span className="wa-tag azul">📍 {c.segment}</span>}
                       {c.heat && CALOR[c.heat] && <span className={`wa-tag ${CALOR[c.heat].cls}`} title={c.heat_reason || ''}>{CALOR[c.heat].txt}</span>}
                       {c.follow_up_at && <span className={`wa-tag ${vencido ? 'rojo' : 'azul'}`}>⏰ {hora(c.follow_up_at)}</span>}
@@ -403,13 +427,25 @@ export default function Inbox() {
               <span className="wa-avatar wa-avatar-chico">{(chat.customer_name || chat.customer_phone || '?')[0]?.toUpperCase()}</span>
               <div className="wa-chat-titulo" onClick={() => setVerDetalle(v => !v)}>
                 <div className="wa-chat-nombre">{chat.customer_name || chat.customer_phone}</div>
-                <div className="wa-chat-sub">{chat.customer_phone}{chat.status === 'human' ? ' · atiende una persona' : ' · contesta el bot'}</div>
+                <div className="wa-chat-sub">{chat.customer_phone}{lineas.length > 1 ? ` · ${chat.line_name}` : ''}{chat.status === 'human' ? ' · atiende una persona' : ' · contesta el bot'}</div>
               </div>
               <button className="wa-boton-claro" onClick={() => setVerDetalle(v => !v)}>{verDetalle ? 'Cerrar' : 'Ficha'}</button>
             </header>
 
             {verDetalle && (
               <div className="wa-ficha">
+                {chat.line_kind === 'soporte' && (
+                  <div className="wa-ficha-fila">
+                    <span className="wa-ficha-titulo">Caso</span>
+                    {Object.entries(CASO).map(([k, v]) => (
+                      <button key={k} className="wa-boton-claro" style={(chat.case_status || 'abierto') === k ? { borderColor: '#00a884', fontWeight: 600 } : {}}
+                        onClick={async () => {
+                          try { await axios.put(`${API}/api/bot/conversations/${abierto}/case`, { status: k }, { headers: headers() }); actualizarChat({ case_status: k }); }
+                          catch (_) { avisar('No se pudo cambiar el caso'); }
+                        }}>{v.txt}</button>
+                    ))}
+                  </div>
+                )}
                 {chat.heat && CALOR[chat.heat] && (
                   <div className="wa-ficha-fila">
                     <span className="wa-ficha-titulo">Temperatura</span>
@@ -562,6 +598,9 @@ export default function Inbox() {
         .wa-tag.naranja { background: #fff1e0; color: #9a4a00; }
         .wa-tag.gris { background: #eef1f3; color: #54656f; }
         .wa-chips-etiquetas { padding-top: 0; }
+        .wa-lineas { display: flex; gap: 6px; padding: 0 12px 8px; overflow-x: auto; flex-shrink: 0; }
+        .wa-lineas button { border: 1px solid var(--wa-borde); background: var(--wa-panel); color: var(--wa-texto); padding: 6px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; white-space: nowrap; }
+        .wa-lineas button.on { border-color: var(--wa-verde); color: var(--wa-verde-oscuro); font-weight: 600; }
         .wa-chips-etiquetas button { font-size: 12px; padding: 4px 10px; }
         .wa-conexion { font-size: 12px; font-weight: 600; white-space: nowrap; }
         .wa-conexion.ok { color: var(--wa-verde); }
