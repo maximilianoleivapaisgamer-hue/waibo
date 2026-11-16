@@ -567,26 +567,14 @@ function ensureClient(clientId) {
       // Railway para que lo transcriba un proveedor en la nube (TRANSCRIPCION=auto|local|nube).
       let audioParaNube = null;
       let audioBajado = null;
+      let transcribirDespues = null;
       if (msg.type === 'ptt' || msg.type === 'audio') {
         let b64 = null;
         try { audioBajado = await bajarDeMensaje(client, msg); b64 = audioBajado.b64; }
         catch (e) { console.error(`[${clientId}] No se pudo bajar el audio:`, e.message); }
-        if (b64) {
-          let listo = false;
-          if (MODO_TRANSCRIPCION !== 'nube' && fs.existsSync(TRANSCRIBIR_PY)) {
-            try {
-              const t0 = Date.now();
-              const dicho = (await transcribir(b64)).trim();
-              if (dicho) { text = `[Audio del cliente]: ${dicho}`; listo = true; }
-              console.log(`[${clientId}] Audio transcripto en la PC en ${Math.round((Date.now() - t0) / 1000)}s: ${dicho.slice(0, 60)}`);
-            } catch (e) {
-              console.error(`[${clientId}] Whisper local falló:`, e.message);
-            }
-          }
-          if (!listo && MODO_TRANSCRIPCION !== 'local') {
-            audioParaNube = { data: b64, mimetype: msg._data?.mimetype || 'audio/ogg; codecs=opus' };
-          }
-        }
+        // El audio se muestra en la Bandeja enseguida; la transcripción (que tarda) llega después
+        if (b64 && MODO_TRANSCRIPCION !== 'nube' && fs.existsSync(TRANSCRIBIR_PY)) transcribirDespues = b64;
+        else if (b64 && MODO_TRANSCRIPCION !== 'local') audioParaNube = { data: b64, mimetype: msg._data?.mimetype || 'audio/ogg; codecs=opus' };
       }
 
       const tel = await telefonoDe(client, from);
@@ -616,7 +604,21 @@ function ensureClient(clientId) {
         if (audioBajado) subirMedia(client, clientId, waId, audioBajado);
         else bajarDeMensaje(client, msg).then((m) => subirMedia(client, clientId, waId, m)).catch((e) => console.error(`[${clientId}] no se pudo bajar el archivo:`, e.message));
       }
-      await avisarBackend('message', { clientId, from: phone, name, savedName, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }) }, 120000);
+      await avisarBackend('message', { clientId, from: phone, name, savedName, text, labels, ...media, ...(audioParaNube && { audio: audioParaNube }), ...(transcribirDespues && { pendingTranscription: true }) }, 120000);
+      if (transcribirDespues) {
+        let dicho = '';
+        try {
+          const t0 = Date.now();
+          dicho = (await transcribir(transcribirDespues)).trim();
+          console.log(`[${clientId}] Audio transcripto en la PC en ${Math.round((Date.now() - t0) / 1000)}s: ${dicho.slice(0, 60)}`);
+        } catch (e) {
+          console.error(`[${clientId}] Whisper local falló:`, e.message);
+        }
+        await avisarBackend('transcript', {
+          clientId, from: phone, name, waId, text: dicho ? `[Audio del cliente]: ${dicho}` : null,
+          ...(!dicho && MODO_TRANSCRIPCION !== 'local' && { audio: { data: transcribirDespues, mimetype: msg._data?.mimetype || 'audio/ogg; codecs=opus' } })
+        }, 120000);
+      }
     } catch (err) {
       console.error(`[${clientId}] Error del backend:`, err.response?.data?.error || err.message);
     }
@@ -995,6 +997,45 @@ app.post('/session/:clientId/disconnect', checkSecret, async (req, res) => {
   try { fs.rmSync(path.join(AUTH_DIR, `session-${clientId}`), { recursive: true, force: true }); } catch (_) {}
   res.json({ ok: true });
 });
+
+/* Etiquetas de WhatsApp Business → Bandeja. WhatsApp no avisa cuando alguien cambia una
+   etiqueta desde el celular o desde otro WhatsApp Web, así que cada 2 minutos se leen las
+   etiquetas de todos los chats y se mandan las que cambiaron. */
+const firmasEtiquetas = {}; // clientId -> { chatId: 'id1|id2' }
+async function sincronizarEtiquetas(clientId, rec) {
+  rec.labelsCache = null;
+  const todas = await etiquetasDe(rec);
+  if (!todas.length) return;
+  const nombre = Object.fromEntries(todas.map((l) => [String(l.id), l.name]));
+  const chats = await rec.client.pupPage.evaluate(() => {
+    const Coll = window.require('WAWebCollections');
+    const arr = Coll.Chat.getModelsArray ? Coll.Chat.getModelsArray() : (Coll.Chat.models || []);
+    return arr.filter((c) => c.id && c.id._serialized && !c.id._serialized.includes('@g.us'))
+      .map((c) => ({ id: c.id._serialized, labels: (c.labels || []).map(String).sort() }));
+  });
+  const telDe = {};
+  for (const [tel, chatId] of Object.entries(chatmap[clientId] || {})) telDe[chatId] = tel;
+  const antes = (firmasEtiquetas[clientId] = firmasEtiquetas[clientId] || {});
+  const cambios = [];
+  for (const c of chats) {
+    const firma = c.labels.join('|');
+    const tel = telDe[c.id];
+    if (!tel || antes[c.id] === firma) continue;
+    antes[c.id] = firma;
+    cambios.push({ phone: tel, labels: c.labels.map((id) => nombre[id]).filter(Boolean) });
+  }
+  if (!cambios.length) return;
+  for (let i = 0; i < cambios.length; i += 200) {
+    await avisarBackend('labels-sync', { clientId, all: todas.map((l) => l.name), chats: cambios.slice(i, i + 200) }, 60000);
+  }
+  console.log(`[${clientId}] etiquetas actualizadas en ${cambios.length} chats`);
+}
+setInterval(async () => {
+  for (const [clientId, rec] of Object.entries(sessions)) {
+    if (rec.status !== 'connected') continue;
+    try { await sincronizarEtiquetas(clientId, rec); } catch (e) { console.error(`[${clientId}] etiquetas:`, e.message); }
+  }
+}, 120000);
 
 // Vigilante: una sesión puede decir "connected" con la página de Chrome muerta
 // ("detached Frame"). Cada 2 minutos la probamos y si no responde la reiniciamos.

@@ -220,6 +220,79 @@ router.post('/ack', checkServiceSecret, async (req, res) => {
   }
 });
 
+// Llega la transcripción de un audio que ya se guardó: se completa el mensaje y, si el bot
+// está prendido, contesta recién ahora (con el texto del audio)
+router.post('/transcript', checkServiceSecret, async (req, res) => {
+  const sesion = req.body.clientId;
+  const _lin = await resolverSesion(sesion);
+  const clientId = _lin.clientId;
+  const lineId = _lin.lineId;
+  const L = lineaSql(lineId);
+  const { from, name, waId, audio } = req.body;
+  let { text } = req.body;
+  res.json({ ok: true });
+  try {
+    if (!text && audio && audio.data) {
+      const { transcribeAudio } = require('../services/voice');
+      const dicho = await transcribeAudio(Buffer.from(audio.data, 'base64'), audio.mimetype || 'audio/ogg');
+      if (dicho) text = `[Audio del cliente]: ${dicho}`;
+    }
+    if (text) {
+      await pool.query(
+        `UPDATE messages m SET content = $3 FROM conversations c
+         WHERE c.id = m.conversation_id AND c.client_id = $1 AND m.wa_id = $2`, [clientId, waId, text]);
+    }
+    const cfg = (await pool.query('SELECT label_instructions, whatsapp_actions_enabled, qr_auto_reply, sales_steps, sales_steps_enabled FROM bot_configs WHERE client_id = $1', [clientId])).rows[0] || {};
+    const botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
+    if (!botPrendido) return;
+    const brain = await require('../services/lines').cerebroDe(clientId, lineId);
+    if (brain && brain.label_instructions) cfg.label_instructions = brain.label_instructions;
+    if ((brain && brain.kind === 'soporte') || (_lin.line && _lin.line.kind === 'soporte')) cfg.sales_steps_enabled = false;
+    const { buildSalesExtras } = require('../services/salesActions');
+    const extras = buildSalesExtras({
+      clientId, to: from, cfg, brainId: brain ? brain.id : null,
+      channel: {
+        sendText: (t) => qrPost(sesion, 'send', { to: from, message: t }),
+        sendMedia: (rec, caption) => qrPost(sesion, 'send-media', { to: from, mimetype: rec.mimetype, data: rec.data.toString('base64'), filename: rec.filename, caption: caption || '', asVoice: rec.kind === 'audio' }),
+        applyLabel: (n) => qrPost(sesion, 'label', { to: from, label: n }),
+        archive: () => qrPost(sesion, 'archive', { to: from }),
+        labels: () => labelsDeLinea(sesion)
+      }
+    });
+    const sendFn = (phone, message) => qrPost(sesion, 'send', { to: phone, message });
+    await processIncomingMessage(clientId, from, name || 'Cliente', text || '[El cliente mandó un audio]', sendFn,
+      { ...extras, messageMeta: { waId, mediaType: 'ptt' }, lineId, line: _lin.line, brain, skipInsert: true });
+  } catch (err) {
+    console.error('Error con la transcripción:', err.message);
+  }
+});
+
+// Etiquetas de WhatsApp que cambiaron en el celular u otro WhatsApp Web: se reemplazan las
+// etiquetas de WhatsApp del chat y se conservan las propias de Waibo
+router.post('/labels-sync', checkServiceSecret, async (req, res) => {
+  const _lin = await resolverSesion(req.body.clientId);
+  const L = lineaSql(_lin.lineId);
+  const todas = Array.isArray(req.body.all) ? req.body.all.map(String) : [];
+  let n = 0;
+  try {
+    for (const c of req.body.chats || []) {
+      const r = await pool.query(
+        `UPDATE conversations SET tags = ARRAY(
+           SELECT DISTINCT x FROM (
+             SELECT unnest(COALESCE(tags, '{}')) AS x EXCEPT SELECT unnest($3::text[])
+             UNION SELECT unnest($4::text[])
+           ) t)
+         WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}`,
+        [_lin.clientId, String(c.phone), todas, Array.isArray(c.labels) ? c.labels.map(String) : []]
+      );
+      n += r.rowCount;
+    }
+    res.json({ ok: true, actualizados: n });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // El servicio QR avisa que WhatsApp cerró la sesión
 router.post('/disconnected', checkServiceSecret, async (req, res) => {
   const sesion = req.body.clientId;
@@ -574,7 +647,7 @@ router.post('/message', checkServiceSecret, async (req, res) => {
   req.body.clientId = _lin.clientId;
   const lineId = _lin.lineId;
   const L = lineaSql(lineId);
-  const { clientId, from, name, labels, audio, waId, mediaType, savedName } = req.body;
+  const { clientId, from, name, labels, audio, waId, mediaType, savedName, pendingTranscription } = req.body;
   if (savedName) {
     await pool.query(
       `UPDATE conversations SET customer_name = $3 WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L}`,
@@ -611,7 +684,8 @@ router.post('/message', checkServiceSecret, async (req, res) => {
 
     // Bot apagado: solo guardamos el mensaje para verlo en el panel, nadie responde.
     const botPrendido = lineId ? !!_lin.line.bot_enabled : !!cfg.qr_auto_reply;
-    if (!botPrendido) {
+    // Audio que se está transcribiendo: se guarda ya y el bot contesta cuando llega el texto (/transcript)
+    if (!botPrendido || pendingTranscription) {
       let conv = await pool.query(
         `SELECT id FROM conversations WHERE client_id = $1 AND customer_phone = $2 AND channel = 'whatsapp' AND line_id IS NOT DISTINCT FROM ${L} ORDER BY created_at DESC LIMIT 1`,
         [clientId, from]

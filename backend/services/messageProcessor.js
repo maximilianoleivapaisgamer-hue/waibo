@@ -18,6 +18,8 @@ const { extractActions } = require('./whatsappActions');
 async function processIncomingMessage(clientId, customerPhoneRaw, customerName, rawMessage, sendFn, extras = {}) {
   const customerPhone = normalizePhone(customerPhoneRaw);
   const meta = extras.messageMeta || {};
+  // skipInsert: el mensaje del cliente ya está guardado (audio que llegó antes que su transcripción)
+  const yaEstaba = !!extras.skipInsert;
   // Línea por la que entró (null = la principal). Las líneas extra pueden tener su propio bot.
   const L = require('./lines').lineaSql(extras.lineId || null);
 
@@ -104,7 +106,7 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
     if (conversation.status === 'human') {
       // Lo atiende una persona: el bot no contesta, pero el mensaje se guarda igual
       // (antes se perdía y el vendedor no lo veía en la Bandeja).
-      await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)',
+      if (!yaEstaba) await pool.query('INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5)',
         [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]);
       await pool.query('UPDATE conversations SET updated_at = NOW(), archived = false, recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [conversation.id]);
       return;
@@ -117,13 +119,15 @@ async function processIncomingMessage(clientId, customerPhoneRaw, customerName, 
   // El cliente contestó: el seguimiento vuelve a empezar de cero.
   await pool.query('UPDATE conversations SET recontact_count = 0, recontact_hold_until = NULL WHERE id = $1', [conversation.id]);
 
-  let yaGuardado = false;
+  let yaGuardado = yaEstaba;
   const demora = Math.min(Number(config.reply_delay_seconds) || 0, 900);
   if (demora > 0) {
-    const ins = await pool.query(
-      'INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5) RETURNING timestamp',
-      [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]
-    );
+    const ins = yaEstaba
+      ? { rows: [{ timestamp: (await pool.query('SELECT NOW()::timestamp AS t')).rows[0].t }] }
+      : await pool.query(
+        'INSERT INTO messages (conversation_id, role, content, wa_id, media_type) VALUES ($1,$2,$3,$4,$5) RETURNING timestamp',
+        [conversation.id, 'user', customerMessage, meta.waId || null, meta.mediaType || null]
+      );
     yaGuardado = true;
     await pool.query('UPDATE conversations SET updated_at = NOW() WHERE id = $1', [conversation.id]);
     await new Promise((r) => setTimeout(r, demora * 1000 * (0.85 + Math.random() * 0.3)));
